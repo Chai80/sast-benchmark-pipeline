@@ -13,7 +13,6 @@ def parse_args():
     )
     p.add_argument(
         "--repo-url",
-        required=True,
         help="Git URL of the repo to scan (e.g. https://github.com/juice-shop/juice-shop.git)",
     )
     p.add_argument(
@@ -26,7 +25,10 @@ def parse_args():
         default="p/security-audit",
         help="Semgrep config to use (default: p/security-audit)",
     )
-    return p.parse_args()
+    args = p.parse_args()
+    if not args.repo_url:
+        args.repo_url = input("Enter Git repo URL to scan: ").strip()
+    return args
 
 
 def get_repo_name(repo_url: str) -> str:
