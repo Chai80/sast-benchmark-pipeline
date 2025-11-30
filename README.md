@@ -69,9 +69,12 @@ python tools/scan_semgrep.py \
   --config p/security-audit \
   --output-root runs/semgrep
 ```
+
+```bash
 **Outputs (example)**
 runs/semgrep/2025113001/juice-shop.json
 runs/semgrep/2025113001/metadata.json
+```
 
 ### 2. Aikido
 
@@ -108,11 +111,11 @@ python tools/scan_aikido.py \
   --output-root runs/aikido
 ```
 
-
+```bash
 **Outputs (example)**
 runs/aikido/2025113001/juice-shop.json
 runs/aikido/2025113001/metadata.json
-
+```
 
 ### 3. SonarScan
 **Script:** `tools/scan_sonar.py`
@@ -146,6 +149,9 @@ python tools/scan_sonar.py \
   --skip-scan \
   --output-root runs/sonar
 ```
+
+```bash
 **Outputs (example)**
 runs/sonar/2025113003/juice-shop.json
 runs/sonar/2025113003/metadata.json
+```
