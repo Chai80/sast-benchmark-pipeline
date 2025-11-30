@@ -96,23 +96,6 @@ python tools/scan_aikido.py \
   --git-ref <owner/repo or repo_name> \
   --output-root runs/aikido
 ```
-** Example **
-
-export AIKIDO_CLIENT_ID=your_client_id
-export AIKIDO_CLIENT_SECRET=your_client_secret
-
-python tools/scan_aikido.py \
-  --git-ref Chai80/juice-shop \
-  --output-root runs/aikido
-
-
-```bash
-export AIKIDO_CLIENT_ID=<your_client_id>
-export AIKIDO_CLIENT_SECRET=<your_client_secret>
-python tools/scan_aikido.py \
-  --git-ref <owner/repo or repo_name> \
-  --output-root runs/aikido
-```
 
 ** Example scan_aikido.py run **
 
