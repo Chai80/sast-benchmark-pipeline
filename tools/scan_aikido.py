@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-import argparse, base64, json, os, sys, time, datetime
+import argparse
+import base64
+import datetime
+import json
+import os
+import sys
+import time
 from pathlib import Path
 
 import requests
@@ -21,15 +27,42 @@ def get_access_token(client_id, client_secret):
 
 
 def list_code_repos(token):
+    """Return all Aikido code repos for this workspace."""
     url = f"{API_ROOT}/repositories/code"
     headers = {"Authorization": f"Bearer {token}"}
     resp = requests.get(url, headers=headers)
     resp.raise_for_status()
     data = resp.json()
-    return data["data"] if isinstance(data, dict) and "data" in data else data
+    repos = data["data"] if isinstance(data, dict) and "data" in data else data
+    return repos
+
+
+def choose_git_ref_interactively(repos):
+    """Show a numbered menu [1–N] and return the chosen repo's git_ref (name)."""
+    print("Available Aikido code repos:")
+    for idx, r in enumerate(repos, start=1):
+        print(
+            f"[{idx}] id={r['id']} | "
+            f"name={r.get('name')} | "
+            f"url={r.get('url')}"
+        )
+
+    while True:
+        choice = input(f"Enter the number of the repo to scan (1-{len(repos)}): ").strip()
+        try:
+            idx = int(choice)
+            if 1 <= idx <= len(repos):
+                selected = repos[idx - 1]
+                git_ref = selected.get("name") or selected.get("url")
+                print(f"Selected repo: {git_ref}")
+                return git_ref
+        except ValueError:
+            pass
+        print("Invalid choice, please try again.")
 
 
 def find_repo_by_git_ref(repos, git_ref: str):
+    """Find an Aikido repo by name or GitHub URL fragment."""
     git_ref = git_ref.strip().lower()
     for r in repos:
         name = (r.get("name") or "").lower()
@@ -40,6 +73,7 @@ def find_repo_by_git_ref(repos, git_ref: str):
 
 
 def export_all_issues(token):
+    """Export all issues from Aikido."""
     url = f"{API_ROOT}/issues/export"
     headers = {"Authorization": f"Bearer {token}"}
     resp = requests.get(url, headers=headers)
@@ -51,12 +85,10 @@ def export_all_issues(token):
 def filter_issues_for_repo(issues, code_repo_id):
     """Return only issues belonging to the given Aikido code_repo_id."""
     return [issue for issue in issues if issue.get("code_repo_id") == code_repo_id]
-...
-# (keep the rest of the file the same)
-
 
 
 def create_run_dir(output_root: Path):
+    """Create a dated run directory like YYYYMMDD01 under output_root."""
     output_root.mkdir(parents=True, exist_ok=True)
     today = datetime.datetime.now().strftime("%Y%m%d")
     existing = [
@@ -78,10 +110,11 @@ def create_run_dir(output_root: Path):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run Aikido scan and export issues for a connected GitHub repo.")
+        description="Run Aikido scan and export issues for a connected GitHub repo."
+    )
     parser.add_argument(
         "--git-ref",
-        required=True,
+        required=False,
         help="Repo name or GitHub URL fragment (e.g. 'juice-shop' or 'Chai80/juice-shop')",
     )
     parser.add_argument(
@@ -99,8 +132,16 @@ def main():
 
     token = get_access_token(client_id, client_secret)
 
+    # Get all repos from Aikido
     repos = list_code_repos(token)
-    code_repo_id, repo_obj = find_repo_by_git_ref(repos, args.git_ref)
+
+    # Decide which repo to scan: CLI flag or interactive menu
+    if args.git_ref:
+        git_ref = args.git_ref
+    else:
+        git_ref = choose_git_ref_interactively(repos)
+
+    code_repo_id, repo_obj = find_repo_by_git_ref(repos, git_ref)
     repo_name = repo_obj.get("name") or "unknown_repo"
 
     output_root = Path(args.output_root)
@@ -137,7 +178,8 @@ def main():
         "timestamp": datetime.datetime.now().isoformat(),
         "issues_count": len(repo_issues),
         "trigger_http_seconds": float(trigger_http_seconds)
-            if trigger_http_seconds is not None else None,
+        if trigger_http_seconds is not None
+        else None,
     }
     with (run_dir / "metadata.json").open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
