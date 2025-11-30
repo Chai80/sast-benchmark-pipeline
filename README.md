@@ -66,10 +66,9 @@ python tools/scan_sonar.py \
   --output-root runs/sonar
   
 ***Example scan_sonar.py run
+
 export SONAR_ORG=your_sonarcloud_org_key   # e.g. chai80
 export SONAR_TOKEN=your_sonarcloud_token   # do NOT commit this
-# sonar-scanner CLI must be installed and on PATH
-
 python tools/scan_sonar.py \
   --repo-url https://github.com/Chai80/juice-shop.git \
   --project-key chai80_juice_shop \
