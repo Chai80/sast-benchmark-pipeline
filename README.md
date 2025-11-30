@@ -1,27 +1,43 @@
 # SAST Benchmark Pipeline
 
-This repo contains small, scriptable pipelines to run static analyzers on real GitHub repos and save JSON results plus benchmark metadata.
+This repo contains small, scriptable pipelines to run static analyzers (SAST tools) on real GitHub repos and save their raw JSON results plus benchmark metadata.
 
-## Current tools
+The idea: given a GitHub repo, each tool script produces:
 
-- `tools/scan_semgrep.py`: runs Semgrep on a target repo and stores JSON + metadata under a dated run folder.
+- `<output-root>/YYYYMMDDXX/<repo_name>.json` – raw scanner output
+- `<output-root>/YYYYMMDDXX/metadata.json` – scanner/version/run metadata
+
+Later, separate analysis code can load these JSON files and compute things like noise level, security_ratio, precision/recall/F1, etc.
+
+---
+
+## Tools
+
+### Semgrep
+
+`tools/scan_semgrep.py`
+
+- Clones a target Git repo locally under `repos/`.
+- Runs Semgrep with a given ruleset (default: `p/security-audit`).
+- Writes raw Semgrep JSON and a `metadata.json` file under a dated run folder.
+
+### Aikido
+
+`tools/scan_aikido.py`
+
+- Uses the Aikido Public REST API.
+- Lists the connected GitHub repos in your Aikido workspace.
+- Chooses a repo **either**:
+  - from `--git-ref` (repo name, `owner/repo`, or URL fragment), **or**
+  - via a small interactive CLI menu if `--git-ref` is omitted and you run it in a real terminal.
+- Optionally triggers a new scan for that repo (if your Aikido API client has the right scopes).
+- Exports all Aikido issues, filters them to that repo’s `code_repo_id`, and writes JSON + metadata under a dated run folder.
+
+---
 
 ## Requirements
 
+Python 3.9+ and:
+
 ```bash
-pip install semgrep
-```
-# How to run the Semgrep pipeline
-git clone https://github.com/Chai80/sast-benchmark-pipeline.git
-cd sast-benchmark-pipeline
-
-# Example: scan OWASP Juice Shop with the security-audit ruleset
-python tools/scan_semgrep.py \
-  --repo-url https://github.com/juice-shop/juice-shop.git \
-  --config p/security-audit
-
-This creates outputs:
-runs/semgrep/YYYYMMDDXX/
-  ├─ <repo_name>.json     # raw Semgrep JSON
-  └─ metadata.json        # scanner version, repo URL, commit, command, timing
-
+pip install semgrep requests
