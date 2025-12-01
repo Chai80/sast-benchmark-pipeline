@@ -5,30 +5,28 @@ We normalize them into a **common structure** so we can compare tools directly.
 
 ---
 
-### Understanding the Schema 
+> **Schema v1.1 note**  
+> In v1.0, metadata about the run (tool, repo, commit, run ID, etc.) only existed once at the top of the file.  
+> In v1.1, **each finding also carries a `metadata` object** so every finding can stand on its own as a “row”. 
+
+---
+### Understanding the Schema
 
 Each normalized JSON file is **one scan** of **one repo** by **one tool**.
 
 Inside the file there are 3 main parts:
 
-1. **Scan header** (top level + `target_repo` + `scan`)
-   - which tool ran (`tool`, `tool_version`)
-   - which repo & commit (`target_repo`)
-   - when and how it ran (`scan` → `run_id`, `scan_date`, `command`)
-
-2. **Findings list** (`findings[]`)
-   - one object per issue the tool reported
-   - always has: `finding_id`, `severity`, `rule_id`, file + line, and a human-readable `title`
-
-3. **Vendor details** (`vendor.raw_result`)
-   - the original tool-specific JSON for that finding
-   - we don’t throw away anything; we just wrap it in a common envelope
+1. **Scan header** (top level: `schema_version`, `tool`, `tool_version`, `target_repo`, `scan`)  
+2. **Findings list** (`findings[]`)  
+   - one object per issue  
+   - now includes a `metadata` object copied from the scan header  
+3. **Vendor details** (`vendor.raw_result`)  
+   - the original tool‑specific JSON for that finding
 
 If you imagine this as tables:
 
-- Table **Scan** → 1 row  
-- Table **Findings** → many rows linked to that scan
-
+- Table **Findings** → one row per finding, with metadata columns repeated  
+- Top‑level **Scan header** → one row summary for the file (convenience only)
 ---
 
 ### 1. Conceptual model
@@ -37,20 +35,18 @@ At a high level, each JSON file represents **one tool run** on **one repo**:
 
 ```text
 +---------------------------+
-|   Tool run (top level)    |
+|      Scan header          |   (summary)
 +---------------------------+
 | schema_version            |
 | tool, tool_version        |
 | target_repo { ... }       |
 | scan { ... }              |
-| findings [ ... ]          |
 +---------------------------+
-               |
-               | one-to-many
-               v
+
 +---------------------------+
-|         Finding           |
+|   Finding (per row)       |
 +---------------------------+
+| metadata { ... }          |  <-- per‑finding copy of scan + repo info
 | finding_id                |
 | cwe_id, rule_id           |
 | severity                  |
@@ -60,10 +56,10 @@ At a high level, each JSON file represents **one tool run** on **one repo**:
 +---------------------------+
 ```
 
-You can think of it as a small pair of tables:
+For analytics, we  will treat findings[] as a flat table:
 
-- **One** scan (per tool, per repo, per run)  
-- **Many** findings attached to that scan
+One row per finding
+Columns = finding fields + metadata fields
 
 ---
 
@@ -92,6 +88,7 @@ Every normalized JSON file has this top-level structure:
 | `findings`       | array<object> | List of normalized findings (one element per issue).                      |
 
 ---
+The contents of tool, tool_version, target_repo, and scan are duplicated inside each finding.metadata so each finding is self‑contained.
 
 ### 3. `target_repo`: what did we scan?
 
@@ -139,10 +136,28 @@ These fields describe **how and when** the scan was run, and where to find raw o
 
 ### 5. `findings[]`: the actual issues
 
-Each element of `findings` is **one normalized issue**:
-
+Each element of findings is one normalized issue with its own metadata:
 ```json
 {
+  "metadata": {
+    "tool": "snyk",
+    "tool_version": "1.1301.0",
+    "target_repo": {
+      "name": "juice-shop",
+      "url": "https://github.com/juice-shop/juice-shop.git",
+      "commit": "ded6fc5f7ed4...",
+      "commit_author_name": "Björn Kimminich",
+      "commit_author_email": "github.com@kimminich.de",
+      "commit_date": "2025-11-26T11:38:38+01:00"
+    },
+    "scan": {
+      "run_id": "2025113004",
+      "scan_date": "2025-11-30T21:03:34.518761",
+      "command": "snyk code test --json-file-output runs/snyk/2025113004/juice-shop.json",
+      "raw_results_path": "runs/snyk/2025113004/juice-shop.json",
+      "metadata_path": "metadata.json"
+    }
+  },
   "finding_id": "snyk:javascript/Sqli:routes/search.ts:23",
   "cwe_id": "CWE-89",
   "rule_id": "javascript/Sqli",
@@ -157,7 +172,19 @@ Each element of `findings` is **one normalized issue**:
   }
 }
 ```
+5.1 metadata (per‑finding)
+| Field          | Type   | Description                                           |
+| -------------- | ------ | ----------------------------------------------------- |
+| `tool`         | string | Scanner name (copied from top level).                 |
+| `tool_version` | string | Scanner version (copied from top level).              |
+| `target_repo`  | object | Same structure as the top‑level `target_repo` object. |
+| `scan`         | object | Same structure as the top‑level `scan` object.        |
 
+
+This object is identical across all findings from the same file.
+It exists so each finding JSON object is self‑contained and can be treated as a single “row”.
+
+5.2 Finding fields
 | Field             | Type         | Description                                                        |
 | ----------------- | ------------ | ------------------------------------------------------------------ |
 | `finding_id`      | string       | Stable identifier (`<tool>:<rule_id>:<file_path>:<line>`).         |
@@ -171,4 +198,4 @@ Each element of `findings` is **one normalized issue**:
 | `line_content`    | string|null  | Source code line at `line_number` (for context).                   |
 | `vendor`          | object       | Tool‑specific data; we store the original JSON under `raw_result`. |
 
-The vendor.raw_result object contains whatever the original scanner produced (e.g. full Snyk SARIF result). You can ignore it for KPIs and dashboards, and only use it when you need deep tool-specific context.
+The vendor.raw_result object contains whatever the original scanner produced (e.g. full Snyk SARIF result).
