@@ -15,7 +15,7 @@ Given a Git repo URL, this script:
 
 Requirements (outside this script):
   * SonarScanner CLI installed and on PATH
-  * SONAR_ORG and SONAR_TOKEN set in the environment
+  * SONAR_ORG and SONAR_TOKEN set in the environment (or in .env)
   * optional: SONAR_HOST (default: https://sonarcloud.io)
 """
 
@@ -29,8 +29,13 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
+from dotenv import load_dotenv  # NEW
 
 SONAR_HOST_DEFAULT = "https://sonarcloud.io"
+
+# Load .env from project root (one level up from tools/)
+ROOT_DIR = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT_DIR / ".env")
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--repo-url",
         required=True,
-        help="Git URL of the repo (e.g. https://github.com/Chai80/juice-shop.git)",
+        help="Git URL of the repo (e.g. https://github.com/juice-shop/juice-shop.git)",
     )
     parser.add_argument(
         "--output-root",
@@ -82,8 +87,8 @@ def clone_repo(repo_url: str, base: Path) -> Path:
             ["git", "clone", "--depth", "1", repo_url, str(path)],
             text=True,
         )
-        if result.returncode != 0:
-            raise RuntimeError(f"git clone failed with code {resultreturncode}")
+        if result.returncode != 0:  # BUGFIX: was resultreturncode
+            raise RuntimeError(f"git clone failed with code {result.returncode}")
     else:
         print(f"✅ Repo already exists, reusing: {path}")
 
@@ -169,7 +174,6 @@ def run_sonar_scan(
         f"-Dsonar.projectKey={project_key}",
         f"-Dsonar.organization={sonar_org}",
         f"-Dsonar.host.url={sonar_host}",
-        f"-Dsonar.token={sonar_token}",
         "-Dsonar.sources=.",
     ]
     if java_binaries:
@@ -177,17 +181,28 @@ def run_sonar_scan(
 
     print("\n🔍 Running sonar-scanner:")
     print("  cwd:", repo_path)
-    print("  command:", " ".join(cmd))
+    print("  command:", " ".join(cmd))  # token is NOT printed
+
+    env = dict(os.environ)
+    env["SONAR_TOKEN"] = sonar_token  # scanner reads token from env
 
     t0 = time.time()
-    with log_path.open("w", encoding="utf-8") as log_file:
-        result = subprocess.run(
-            cmd,
-            cwd=repo_path,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            text=True,
+    try:
+        with log_path.open("w", encoding="utf-8") as log_file:
+            result = subprocess.run(
+                cmd,
+                cwd=repo_path,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+            )
+    except FileNotFoundError:
+        raise RuntimeError(
+            "sonar-scanner CLI not found on PATH. "
+            "Install the SonarScanner CLI and make sure `sonar-scanner -v` works."
         )
+
     elapsed = time.time() - t0
     return result.returncode, elapsed
 

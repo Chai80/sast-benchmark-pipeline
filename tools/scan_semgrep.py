@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from project root (one level up from tools/)
+ROOT_DIR = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT_DIR / ".env")
 
 
 def parse_args():
@@ -92,8 +99,38 @@ def create_run_dir(output_root: Path) -> tuple[str, Path]:
     return run_id, run_dir
 
 
+def ensure_semgrep_token() -> str | None:
+    """
+    Make sure SEMGREP_APP_TOKEN is set.
+
+    - First, try to read it from environment (.env might have loaded it).
+    - If not set, prompt the user once.
+    - If the user enters a token, store it in os.environ so Semgrep CLI can use it.
+    """
+    token = os.getenv("SEMGREP_APP_TOKEN")
+    if token:
+        return token
+
+    print(
+        "ℹ️  SEMGREP_APP_TOKEN is not set.\n"
+        "    If you use Semgrep Cloud or paid rulesets, paste your token now.\n"
+        "    Otherwise, just press Enter to run without a token."
+    )
+    token = input("Semgrep token (optional): ").strip()
+    if token:
+        os.environ["SEMGREP_APP_TOKEN"] = token
+        print("✅ Semgrep token set in environment for this run.")
+        return token
+
+    print("▶️  Continuing without Semgrep token.")
+    return None
+
+
 def main():
     args = parse_args()
+
+    # 0. Ensure token (optional)
+    ensure_semgrep_token()
 
     # 1. Clone repo
     repo_base = Path("repos")
@@ -134,7 +171,9 @@ def main():
 
     # 4. Build metadata
     commit = get_git_commit(repo_path)
-    scanner_version = subprocess.check_output(["semgrep", "--version"], text=True).strip()
+    scanner_version = subprocess.check_output(
+        ["semgrep", "--version"], text=True
+    ).strip()
     metadata = {
         "scanner": "semgrep",
         "scanner_version": scanner_version,
