@@ -80,6 +80,7 @@ Every normalized JSON file has this top-level structure:
   "scan": { ... },
   "findings": [ ... ]
 }
+```
 
 | Field            | Type          | Description                                                               |
 | ---------------- | ------------- | ------------------------------------------------------------------------- |
@@ -105,7 +106,7 @@ These fields describe **which repository** and **which commit** this scan ran on
   "commit_author_email": "github.com@kimminich.de",
   "commit_date": "2025-11-26T11:38:38+01:00"
 }
-
+```
 | Field                 | Type   | Description                      |
 | --------------------- | ------ | -------------------------------- |
 | `name`                | string | Repo name (derived from URL).    |
@@ -127,7 +128,7 @@ These fields describe **how and when** the scan was run, and where to find raw o
   "raw_results_path": "runs/snyk/2025113004/juice-shop.json",
   "metadata_path": "metadata.json"
 }
-
+```
 | Field              | Type   | Description                                                     |
 | ------------------ | ------ | --------------------------------------------------------------- |
 | `run_id`           | string | Run directory ID (`YYYYMMDDNN`).                                |
@@ -155,6 +156,7 @@ Each element of `findings` is **one normalized issue**:
     "raw_result": { "... full Snyk object ..." }
   }
 }
+```
 
 | Field             | Type         | Description                                                        |
 | ----------------- | ------------ | ------------------------------------------------------------------ |
