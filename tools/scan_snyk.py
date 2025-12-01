@@ -3,9 +3,16 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from project root (one level up from tools/)
+ROOT_DIR = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT_DIR / ".env")
 
 
 def parse_args() -> argparse.Namespace:
@@ -14,8 +21,10 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--repo-url",
-        help="Git URL of the repo to scan "
-             "(e.g. https://github.com/juice-shop/juice-shop.git)",
+        help=(
+            "Git URL of the repo to scan "
+            "(e.g. https://github.com/juice-shop/juice-shop.git)"
+        ),
     )
     p.add_argument(
         "--output-root",
@@ -146,13 +155,11 @@ def normalize_snyk_results(
     """
     Convert Snyk Code JSON (SARIF-like) into the common normalized schema.
 
-    NOTE: This assumes `snyk code test` JSON has SARIF structure:
+    Assumes `snyk code test` JSON looks like:
       { "runs": [ { "results": [ ... ] } ] }
-    You may need to tweak field names once you inspect a real Snyk JSON file.
     """
     if not raw_results_path.exists():
-        # For SAST, Snyk may not create a JSON file if there are no issues.
-        # Just emit an empty findings list.
+        # Snyk didn't create a JSON file (or we pointed to wrong location)
         normalized = {
             "schema_version": "1.0",
             "tool": "snyk",
@@ -202,12 +209,14 @@ def normalize_snyk_results(
                 line = None
                 end_line = None
 
-            # Try to read the line of code
+            # Try to read the line of code for context
             line_content = None
             if file_path and line:
                 file_abs = repo_path / file_path
                 try:
-                    lines = file_abs.read_text(encoding="utf-8", errors="replace").splitlines()
+                    lines = file_abs.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).splitlines()
                     if 1 <= line <= len(lines):
                         line_content = lines[line - 1].rstrip("\n")
                 except OSError:
@@ -220,7 +229,7 @@ def normalize_snyk_results(
             else:
                 cwe_id = cwe
 
-            # Map SARIF level to our generic severity
+            # Map SARIF level to normalized severity
             if level == "error":
                 severity = "HIGH"
             elif level == "warning":
@@ -275,10 +284,15 @@ def normalize_snyk_results(
 def main() -> None:
     args = parse_args()
 
-    # 0. Make sure SNYK_TOKEN is set
-    if not os.getenv("SNYK_TOKEN"):
-        print("⚠️  SNYK_TOKEN env var is not set. "
-              "Snyk CLI will likely fail to authenticate.")
+    # 0. Make sure SNYK_TOKEN is set (from .env or environment)
+    snyk_token = os.getenv("SNYK_TOKEN")
+    if not snyk_token:
+        print(
+            "ERROR: SNYK_TOKEN is not set.\n"
+            "Add it to your .env or export it in your shell before running.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # 1. Clone repo
     repo_base = Path("repos")
@@ -289,6 +303,9 @@ def main() -> None:
     output_root = Path(args.output_root)
     run_id, run_dir = create_run_dir(output_root)
 
+    # Important: use absolute path so Snyk writes to the pipeline folder,
+    # not inside repos/<repo_name> when cwd=repo_path
+    run_dir = run_dir.resolve()
     raw_results_path = run_dir / f"{repo_name}.json"
     normalized_path = run_dir / f"{repo_name}.normalized.json"
     metadata_path = run_dir / "metadata.json"
@@ -304,23 +321,32 @@ def main() -> None:
     print("Command:", " ".join(cmd))
 
     t0 = time.time()
-    proc = subprocess.run(
-        cmd,
-        cwd=repo_path,
-        text=True,
-        capture_output=True,
-    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=repo_path,
+            text=True,
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        print(
+            "ERROR: 'snyk' CLI not found on PATH. "
+            "Install it with 'npm install -g snyk' and make sure 'snyk --version' works.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     elapsed = time.time() - t0
 
     # Exit codes: 0 = no vulns, 1 = vulns found, 2/3 = failure
     if proc.returncode in (0, 1):
-        print(f"✅ Snyk Code finished in {elapsed:.2f}s "
-              f"(exit code {proc.returncode})")
+        print(
+            f"✅ Snyk Code finished in {elapsed:.2f}s "
+            f"(exit code {proc.returncode})"
+        )
     else:
         print(f"⚠️ Snyk Code failed with exit code {proc.returncode}")
         print(proc.stderr[:2000])
-        # still try to write metadata so we know what happened
-    print("Raw JSON path (if created):", raw_results_path)
+    print("Raw JSON path (expected):", raw_results_path)
 
     # 4. Build metadata
     commit = get_git_commit(repo_path)
