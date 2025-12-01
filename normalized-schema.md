@@ -3,7 +3,35 @@
 Each tool has its own native format (SARIF, REST API JSON, etc).  
 We normalize them into a **common structure** so we can compare tools directly.
 
-### 5.1 Conceptual model
+---
+
+### TL;DR: how to think about this
+
+Each normalized JSON file is **one scan** of **one repo** by **one tool**.
+
+Inside the file there are 3 main parts:
+
+1. **Scan header** (top level + `target_repo` + `scan`)
+   - which tool ran (`tool`, `tool_version`)
+   - which repo & commit (`target_repo`)
+   - when and how it ran (`scan` → `run_id`, `scan_date`, `command`)
+
+2. **Findings list** (`findings[]`)
+   - one object per issue the tool reported
+   - always has: `finding_id`, `severity`, `rule_id`, file + line, and a human-readable `title`
+
+3. **Vendor details** (`vendor.raw_result`)
+   - the original tool-specific JSON for that finding
+   - we don’t throw away anything; we just wrap it in a common envelope
+
+If you imagine this as tables:
+
+- Table **Scan** → 1 row  
+- Table **Findings** → many rows linked to that scan
+
+---
+
+### 1. Conceptual model
 
 At a high level, each JSON file represents **one tool run** on **one repo**:
 
@@ -31,12 +59,13 @@ At a high level, each JSON file represents **one tool run** on **one repo**:
 | vendor.raw_result { ... } |
 +---------------------------+
 
-You can think of it as a small “scan” table and a “findings” table:
+You can think of it as a small “Scan” table and a “Findings” table:
+One scan (per tool, per repo, per run)
+Many findings attached to that scan
 
-1.One scan (per tool, per repo, per run)
-2.Many findings attached to that scan
+2. Top‑level fields
 
-5.2 Top‑level fields
+Every normalized JSON file has this top-level structure:
 {
   "schema_version": "1.0",
   "tool": "snyk",
@@ -45,6 +74,7 @@ You can think of it as a small “scan” table and a “findings” table:
   "scan": { ... },
   "findings": [ ... ]
 }
+
 | Field            | Type          | Description                                                               |
 | ---------------- | ------------- | ------------------------------------------------------------------------- |
 | `schema_version` | string        | Version of this normalized schema (`"1.0"` for now).                      |
@@ -54,7 +84,8 @@ You can think of it as a small “scan” table and a “findings” table:
 | `scan`           | object        | Metadata about this particular run/command.                               |
 | `findings`       | array<object> | List of normalized findings (one element per issue).                      |
 
-target_repo
+3. target_repo: what did we scan?
+These fields describe which repository and which commit this scan ran on.
 "target_repo": {
   "name": "juice-shop",
   "url": "https://github.com/juice-shop/juice-shop.git",
@@ -72,7 +103,10 @@ target_repo
 | `commit_author_email` | string | Author email.                    |
 | `commit_date`         | string | ISO 8601 author date.            |
 
-scan
+4. scan: how did we run the tool?
+
+These fields describe how and when the scan was run, and where to find raw outputs.
+
 "scan": {
   "run_id": "2025113004",
   "scan_date": "2025-11-30T21:03:34.518761",
@@ -80,6 +114,7 @@ scan
   "raw_results_path": "runs/snyk/2025113004/juice-shop.json",
   "metadata_path": "metadata.json"
 }
+
 | Field              | Type   | Description                                                     |
 | ------------------ | ------ | --------------------------------------------------------------- |
 | `run_id`           | string | Run directory ID (`YYYYMMDDNN`).                                |
@@ -88,7 +123,7 @@ scan
 | `raw_results_path` | string | Where the original vendor JSON is stored on disk.               |
 | `metadata_path`    | string | Path to the per-run `metadata.json`.                            |
 
-5.3 Findings
+5. findings[]: the actual issues
 Each element of findings is one normalized issue:
 
 {
@@ -119,3 +154,4 @@ Each element of findings is one normalized issue:
 | `line_content`    | string|null  | Source code line at `line_number` (for context).                   |
 | `vendor`          | object       | Tool‑specific data; we store the original JSON under `raw_result`. |
 
+The vendor.raw_result object contains whatever the original scanner produced (e.g. full Snyk SARIF result). You can ignore it for KPIs and dashboards, and only use it when you need deep tool-specific context.
