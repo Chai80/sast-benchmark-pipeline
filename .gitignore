@@ -1,4 +1,6 @@
+# .gitignore
 repos/
-runs/
 .env
-.venv/
+.env/
+runs/
+.idea/
