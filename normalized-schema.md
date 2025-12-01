@@ -5,7 +5,7 @@ We normalize them into a **common structure** so we can compare tools directly.
 
 ---
 
-### TL;DR: how to think about this
+### Understanding the Schema 
 
 Each normalized JSON file is **one scan** of **one repo** by **one tool**.
 
@@ -59,13 +59,19 @@ At a high level, each JSON file represents **one tool run** on **one repo**:
 | vendor.raw_result { ... } |
 +---------------------------+
 
-You can think of it as a small “Scan” table and a “Findings” table:
-One scan (per tool, per repo, per run)
-Many findings attached to that scan
 
-2. Top‑level fields
+You can think of it as a small pair of tables:
+
+- **One** scan (per tool, per repo, per run)  
+- **Many** findings attached to that scan
+
+---
+
+### 2. Top‑level fields
 
 Every normalized JSON file has this top-level structure:
+
+```json
 {
   "schema_version": "1.0",
   "tool": "snyk",
@@ -84,8 +90,13 @@ Every normalized JSON file has this top-level structure:
 | `scan`           | object        | Metadata about this particular run/command.                               |
 | `findings`       | array<object> | List of normalized findings (one element per issue).                      |
 
-3. target_repo: what did we scan?
-These fields describe which repository and which commit this scan ran on.
+---
+
+### 3. `target_repo`: what did we scan?
+
+These fields describe **which repository** and **which commit** this scan ran on.
+
+```json
 "target_repo": {
   "name": "juice-shop",
   "url": "https://github.com/juice-shop/juice-shop.git",
@@ -94,6 +105,7 @@ These fields describe which repository and which commit this scan ran on.
   "commit_author_email": "github.com@kimminich.de",
   "commit_date": "2025-11-26T11:38:38+01:00"
 }
+
 | Field                 | Type   | Description                      |
 | --------------------- | ------ | -------------------------------- |
 | `name`                | string | Repo name (derived from URL).    |
@@ -103,10 +115,11 @@ These fields describe which repository and which commit this scan ran on.
 | `commit_author_email` | string | Author email.                    |
 | `commit_date`         | string | ISO 8601 author date.            |
 
-4. scan: how did we run the tool?
+### 4. `scan`: how did we run the tool?
 
-These fields describe how and when the scan was run, and where to find raw outputs.
+These fields describe **how and when** the scan was run, and where to find raw outputs.
 
+```json
 "scan": {
   "run_id": "2025113004",
   "scan_date": "2025-11-30T21:03:34.518761",
@@ -123,9 +136,11 @@ These fields describe how and when the scan was run, and where to find raw outpu
 | `raw_results_path` | string | Where the original vendor JSON is stored on disk.               |
 | `metadata_path`    | string | Path to the per-run `metadata.json`.                            |
 
-5. findings[]: the actual issues
-Each element of findings is one normalized issue:
+### 5. `findings[]`: the actual issues
 
+Each element of `findings` is **one normalized issue**:
+
+```json
 {
   "finding_id": "snyk:javascript/Sqli:routes/search.ts:23",
   "cwe_id": "CWE-89",
