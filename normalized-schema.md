@@ -58,7 +58,7 @@ At a high level, each JSON file represents **one tool run** on **one repo**:
 | line_content              |
 | vendor.raw_result { ... } |
 +---------------------------+
-
+```
 
 You can think of it as a small pair of tables:
 
