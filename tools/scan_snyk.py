@@ -157,28 +157,42 @@ def normalize_snyk_results(
 
     Assumes `snyk code test` JSON looks like:
       { "runs": [ { "results": [ ... ] } ] }
+
+    Schema v1.1: every finding includes its own `metadata` block so that
+    each finding can stand on its own when exported to a table.
     """
+    # Build common metadata once so we can reuse it at the top level and
+    # inside every finding.
+    target_repo = {
+        "name": metadata.get("repo_name"),
+        "url": metadata.get("repo_url"),
+        "commit": metadata.get("repo_commit"),
+        "commit_author_name": metadata.get("commit_author_name"),
+        "commit_author_email": metadata.get("commit_author_email"),
+        "commit_date": metadata.get("commit_date"),
+    }
+    scan_info = {
+        "run_id": metadata.get("run_id"),
+        "scan_date": metadata.get("timestamp"),
+        "command": metadata.get("command"),
+        "raw_results_path": str(raw_results_path),
+        "metadata_path": "metadata.json",
+    }
+    per_finding_metadata = {
+        "tool": "snyk",
+        "tool_version": metadata.get("scanner_version"),
+        "target_repo": target_repo,
+        "scan": scan_info,
+    }
+
     if not raw_results_path.exists():
-        # Snyk didn't create a JSON file (or we pointed to wrong location)
+        # Snyk didn't create a JSON file (or we pointed to the wrong location)
         normalized = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "tool": "snyk",
             "tool_version": metadata.get("scanner_version"),
-            "target_repo": {
-                "name": metadata.get("repo_name"),
-                "url": metadata.get("repo_url"),
-                "commit": metadata.get("repo_commit"),
-                "commit_author_name": metadata.get("commit_author_name"),
-                "commit_author_email": metadata.get("commit_author_email"),
-                "commit_date": metadata.get("commit_date"),
-            },
-            "scan": {
-                "run_id": metadata.get("run_id"),
-                "scan_date": metadata.get("timestamp"),
-                "command": metadata.get("command"),
-                "raw_results_path": str(raw_results_path),
-                "metadata_path": "metadata.json",
-            },
+            "target_repo": target_repo,
+            "scan": scan_info,
             "findings": [],
         }
         with normalized_path.open("w", encoding="utf-8") as f:
@@ -240,6 +254,7 @@ def normalize_snyk_results(
                 severity = None
 
             finding = {
+                "metadata": per_finding_metadata,
                 "finding_id": f"snyk:{rule_id}:{file_path}:{line}",
                 "cwe_id": cwe_id,
                 "rule_id": rule_id,
@@ -256,24 +271,11 @@ def normalize_snyk_results(
             findings.append(finding)
 
     normalized = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "tool": "snyk",
         "tool_version": metadata.get("scanner_version"),
-        "target_repo": {
-            "name": metadata.get("repo_name"),
-            "url": metadata.get("repo_url"),
-            "commit": metadata.get("repo_commit"),
-            "commit_author_name": metadata.get("commit_author_name"),
-            "commit_author_email": metadata.get("commit_author_email"),
-            "commit_date": metadata.get("commit_date"),
-        },
-        "scan": {
-            "run_id": metadata.get("run_id"),
-            "scan_date": metadata.get("timestamp"),
-            "command": metadata.get("command"),
-            "raw_results_path": str(raw_results_path),
-            "metadata_path": "metadata.json",
-        },
+        "target_repo": target_repo,
+        "scan": scan_info,
         "findings": findings,
     }
 

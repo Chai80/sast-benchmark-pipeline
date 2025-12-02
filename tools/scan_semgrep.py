@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 import subprocess
 import time
 from datetime import datetime
@@ -16,7 +15,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Run Semgrep on a repo and save JSON + metadata."
+        description="Run Semgrep on a repo and save JSON + metadata + normalized output."
     )
     p.add_argument(
         "--repo-url",
@@ -73,6 +72,35 @@ def get_git_commit(path: Path) -> str:
         return "unknown"
 
 
+def get_commit_author_info(repo_path: Path, commit: str) -> dict:
+    """Return author name/email/date for the commit we scanned."""
+    try:
+        out = subprocess.check_output(
+            [
+                "git",
+                "-C",
+                str(repo_path),
+                "show",
+                "-s",
+                "--format=%an%n%ae%n%aI",
+                commit,
+            ],
+            text=True,
+        )
+        lines = out.splitlines()
+        return {
+            "commit_author_name": lines[0] if len(lines) > 0 else None,
+            "commit_author_email": lines[1] if len(lines) > 1 else None,
+            "commit_date": lines[2] if len(lines) > 2 else None,
+        }
+    except subprocess.CalledProcessError:
+        return {
+            "commit_author_name": None,
+            "commit_author_email": None,
+            "commit_date": None,
+        }
+
+
 def create_run_dir(output_root: Path) -> tuple[str, Path]:
     today = datetime.now().strftime("%Y%m%d")
     output_root.mkdir(parents=True, exist_ok=True)
@@ -99,38 +127,140 @@ def create_run_dir(output_root: Path) -> tuple[str, Path]:
     return run_id, run_dir
 
 
-def ensure_semgrep_token() -> str | None:
+def normalize_semgrep_results(
+    repo_path: Path,
+    raw_results_path: Path,
+    metadata: dict,
+    normalized_path: Path,
+) -> None:
     """
-    Make sure SEMGREP_APP_TOKEN is set.
+    Convert Semgrep JSON into the common normalized schema (schema v1.1).
 
-    - First, try to read it from environment (.env might have loaded it).
-    - If not set, prompt the user once.
-    - If the user enters a token, store it in os.environ so Semgrep CLI can use it.
+    Semgrep `--json` output looks roughly like:
+      {
+        "results": [ { ... }, ... ],
+        "errors": [ ... ],
+        ...
+      }
     """
-    token = os.getenv("SEMGREP_APP_TOKEN")
-    if token:
-        return token
+    # Shared metadata blocks for top-level and per-finding metadata
+    target_repo = {
+        "name": metadata.get("repo_name"),
+        "url": metadata.get("repo_url"),
+        "commit": metadata.get("repo_commit"),
+        "commit_author_name": metadata.get("commit_author_name"),
+        "commit_author_email": metadata.get("commit_author_email"),
+        "commit_date": metadata.get("commit_date"),
+    }
+    scan_info = {
+        "run_id": metadata.get("run_id"),
+        "scan_date": metadata.get("timestamp"),
+        "command": metadata.get("command"),
+        "raw_results_path": str(raw_results_path),
+        "metadata_path": "metadata.json",
+    }
+    per_finding_metadata = {
+        "tool": "semgrep",
+        "tool_version": metadata.get("scanner_version"),
+        "target_repo": target_repo,
+        "scan": scan_info,
+    }
 
-    print(
-        "ℹ️  SEMGREP_APP_TOKEN is not set.\n"
-        "    If you use Semgrep Cloud or paid rulesets, paste your token now.\n"
-        "    Otherwise, just press Enter to run without a token."
-    )
-    token = input("Semgrep token (optional): ").strip()
-    if token:
-        os.environ["SEMGREP_APP_TOKEN"] = token
-        print("✅ Semgrep token set in environment for this run.")
-        return token
+    # If Semgrep never wrote a JSON file, emit an empty findings list
+    if not raw_results_path.exists():
+        normalized = {
+            "schema_version": "1.1",
+            "tool": "semgrep",
+            "tool_version": metadata.get("scanner_version"),
+            "target_repo": target_repo,
+            "scan": scan_info,
+            "findings": [],
+        }
+        with normalized_path.open("w", encoding="utf-8") as f:
+            json.dump(normalized, f, indent=2)
+        return
 
-    print("▶️  Continuing without Semgrep token.")
-    return None
+    with raw_results_path.open(encoding="utf-8") as f:
+        data = json.load(f)
+
+    semgrep_results = data.get("results") or []
+    findings: list[dict] = []
+
+    for res in semgrep_results:
+        rule_id = res.get("check_id")
+        file_path = res.get("path")
+        start = res.get("start") or {}
+        end = res.get("end") or {}
+
+        line = start.get("line")
+        end_line = end.get("line", line)
+
+        extra = res.get("extra") or {}
+        message = extra.get("message")
+        severity_raw = (extra.get("severity") or "").upper()
+        meta = extra.get("metadata") or {}
+
+        cwe = meta.get("cwe")
+        if isinstance(cwe, list):
+            cwe_id = cwe[0] if cwe else None
+        else:
+            cwe_id = cwe
+
+        # Map Semgrep severities to HIGH / MEDIUM / LOW
+        if severity_raw in ("ERROR", "CRITICAL", "HIGH"):
+            severity = "HIGH"
+        elif severity_raw in ("WARNING", "MEDIUM"):
+            severity = "MEDIUM"
+        elif severity_raw in ("INFO", "LOW"):
+            severity = "LOW"
+        else:
+            severity = None
+
+        # Try to read the source line for context
+        line_content = None
+        if file_path and line:
+            file_abs = repo_path / file_path
+            try:
+                lines = file_abs.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
+                if 1 <= line <= len(lines):
+                    line_content = lines[line - 1].rstrip("\n")
+            except OSError:
+                pass
+
+        finding = {
+            "metadata": per_finding_metadata,
+            "finding_id": f"semgrep:{rule_id}:{file_path}:{line}",
+            "cwe_id": cwe_id,
+            "rule_id": rule_id,
+            "title": message,
+            "severity": severity,
+            "file_path": file_path,
+            "line_number": line,
+            "end_line_number": end_line,
+            "line_content": line_content,
+            "vendor": {
+                "raw_result": res,
+            },
+        }
+        findings.append(finding)
+
+    normalized = {
+        "schema_version": "1.1",
+        "tool": "semgrep",
+        "tool_version": metadata.get("scanner_version"),
+        "target_repo": target_repo,
+        "scan": scan_info,
+        "findings": findings,
+    }
+
+    with normalized_path.open("w", encoding="utf-8") as f:
+        json.dump(normalized, f, indent=2)
 
 
 def main():
     args = parse_args()
-
-    # 0. Ensure token (optional)
-    ensure_semgrep_token()
 
     # 1. Clone repo
     repo_base = Path("repos")
@@ -142,6 +272,7 @@ def main():
     run_id, run_dir = create_run_dir(output_root)
 
     results_path = run_dir / f"{repo_name}.json"
+    normalized_path = run_dir / f"{repo_name}.normalized.json"
     metadata_path = run_dir / "metadata.json"
 
     # 3. Run Semgrep
@@ -164,16 +295,20 @@ def main():
     if result.returncode != 0:
         print(f"⚠️ Semgrep failed with code {result.returncode}")
         print(result.stderr[:2000])
-        return
-
-    print(f"✅ Semgrep finished in {elapsed:.2f}s")
-    print("JSON saved to:", results_path)
+    else:
+        print(f"✅ Semgrep finished in {elapsed:.2f}s")
+        print("JSON saved to:", results_path)
 
     # 4. Build metadata
     commit = get_git_commit(repo_path)
-    scanner_version = subprocess.check_output(
-        ["semgrep", "--version"], text=True
-    ).strip()
+    author_info = get_commit_author_info(repo_path, commit)
+    try:
+        scanner_version = subprocess.check_output(
+            ["semgrep", "--version"], text=True
+        ).strip()
+    except Exception:
+        scanner_version = "unknown"
+
     metadata = {
         "scanner": "semgrep",
         "scanner_version": scanner_version,
@@ -184,11 +319,17 @@ def main():
         "timestamp": datetime.now().isoformat(),
         "command": " ".join(cmd),
         "scan_time_seconds": elapsed,
+        "exit_code": result.returncode,
+        **author_info,
     }
     with metadata_path.open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
 
     print("📄 Metadata saved to:", metadata_path)
+
+    # 5. Normalized JSON
+    normalize_semgrep_results(repo_path, results_path, metadata, normalized_path)
+    print("📄 Normalized JSON saved to:", normalized_path)
 
 
 if __name__ == "__main__":

@@ -2,16 +2,17 @@
 """
 scan_sonar.py
 
-Minimal SonarCloud pipeline script for the sast-benchmark-pipeline.
+SonarCloud pipeline script for the sast-benchmark-pipeline.
 
 Given a Git repo URL, this script:
 
   * clones the repo into repos/<name> (reuses if already cloned)
-  * runs sonar-scanner CLI on that repo
+  * runs sonar-scanner CLI on that repo (unless --skip-scan)
   * fetches issues for the project via SonarCloud REST API
   * writes:
-        runs/sonar/YYYYMMDDXX/<repo_name>.json   (issues)
-        runs/sonar/YYYYMMDDXX/metadata.json      (run metadata)
+        runs/sonar/YYYYMMDDXX/<repo_name>.json             (raw issues payload)
+        runs/sonar/YYYYMMDDXX/<repo_name>.normalized.json  (normalized v1.1)
+        runs/sonar/YYYYMMDDXX/metadata.json                (run metadata)
 
 Requirements (outside this script):
   * SonarScanner CLI installed and on PATH
@@ -27,9 +28,10 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Tuple, List, Dict, Any
 
 import requests
-from dotenv import load_dotenv  # NEW
+from dotenv import load_dotenv
 
 SONAR_HOST_DEFAULT = "https://sonarcloud.io"
 
@@ -40,7 +42,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run SonarCloud scan on a repo and save JSON + metadata."
+        description="Run SonarCloud scan on a repo and save JSON + metadata + normalized output."
     )
     parser.add_argument(
         "--repo-url",
@@ -87,12 +89,52 @@ def clone_repo(repo_url: str, base: Path) -> Path:
             ["git", "clone", "--depth", "1", repo_url, str(path)],
             text=True,
         )
-        if result.returncode != 0:  # BUGFIX: was resultreturncode
+        if result.returncode != 0:
             raise RuntimeError(f"git clone failed with code {result.returncode}")
     else:
         print(f"✅ Repo already exists, reusing: {path}")
 
     return path
+
+
+def get_git_commit(path: Path) -> str:
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(path), "rev-parse", "HEAD"],
+            text=True,
+        )
+        return out.strip()
+    except Exception:
+        return "unknown"
+
+
+def get_commit_author_info(repo_path: Path, commit: str) -> Dict[str, Any]:
+    """Return author name/email/date for the commit we scanned."""
+    try:
+        out = subprocess.check_output(
+            [
+                "git",
+                "-C",
+                str(repo_path),
+                "show",
+                "-s",
+                "--format=%an%n%ae%n%aI",
+                commit,
+            ],
+            text=True,
+        )
+        lines = out.splitlines()
+        return {
+            "commit_author_name": lines[0] if len(lines) > 0 else None,
+            "commit_author_email": lines[1] if len(lines) > 1 else None,
+            "commit_date": lines[2] if len(lines) > 2 else None,
+        }
+    except subprocess.CalledProcessError:
+        return {
+            "commit_author_name": None,
+            "commit_author_email": None,
+            "commit_date": None,
+        }
 
 
 def validate_sonarcloud_credentials(host: str, org: str, token: str) -> None:
@@ -127,7 +169,7 @@ def validate_sonarcloud_credentials(host: str, org: str, token: str) -> None:
     print(f"✅ SonarCloud credentials OK. Organization '{org}' is accessible.")
 
 
-def create_run_dir(output_root: Path) -> tuple[str, Path]:
+def create_run_dir(output_root: Path) -> Tuple[str, Path]:
     """
     Create a dated run directory like YYYYMMDD01, YYYYMMDD02, ... under output_root.
     """
@@ -164,9 +206,9 @@ def run_sonar_scan(
     sonar_token: str,
     java_binaries: str,
     log_path: Path,
-) -> tuple[int, float]:
+) -> Tuple[int, float, List[str]]:
     """
-    Run sonar-scanner in the repo and return (returncode, elapsed_seconds).
+    Run sonar-scanner in the repo and return (returncode, elapsed_seconds, cmd).
     Assumes sonar-scanner is on PATH.
     """
     cmd = [
@@ -204,7 +246,7 @@ def run_sonar_scan(
         )
 
     elapsed = time.time() - t0
-    return result.returncode, elapsed
+    return result.returncode, elapsed, cmd
 
 
 def wait_for_ce_success(
@@ -268,10 +310,10 @@ def fetch_all_issues_for_project(
     project_key: str,
     org: str,
     token: str,
-) -> list[dict]:
+) -> List[Dict[str, Any]]:
     """Fetch all issues for a given projectKey using paginated API calls."""
     headers = {"Authorization": f"Bearer {token}"}
-    all_issues: list[dict] = []
+    all_issues: List[Dict[str, Any]] = []
     page = 1
     page_size = 500
 
@@ -324,6 +366,153 @@ def get_scanner_version() -> str:
         return "unknown"
 
 
+def normalize_sonar_results(
+    repo_path: Path,
+    raw_results_path: Path,
+    metadata: Dict[str, Any],
+    normalized_path: Path,
+) -> None:
+    """
+    Convert Sonar issues JSON into the common normalized schema (schema v1.1).
+
+    raw_results_path is expected to contain a JSON object like:
+      {
+        "projectKey": ...,
+        "organization": ...,
+        "repo_name": ...,
+        "scan_time_seconds": ...,
+        "issue_count": ...,
+        "issues": [ { ... }, ... ],
+        ...
+      }
+    """
+    target_repo = {
+        "name": metadata.get("repo_name"),
+        "url": metadata.get("repo_url"),
+        "commit": metadata.get("repo_commit"),
+        "commit_author_name": metadata.get("commit_author_name"),
+        "commit_author_email": metadata.get("commit_author_email"),
+        "commit_date": metadata.get("commit_date"),
+    }
+    scan_info = {
+        "run_id": metadata.get("run_id"),
+        "scan_date": metadata.get("timestamp"),
+        "command": metadata.get("command"),
+        "raw_results_path": str(raw_results_path),
+        "metadata_path": "metadata.json",
+    }
+    per_finding_metadata = {
+        "tool": "sonar",
+        "tool_version": metadata.get("scanner_version"),
+        "target_repo": target_repo,
+        "scan": scan_info,
+    }
+
+    if not raw_results_path.exists():
+        normalized = {
+            "schema_version": "1.1",
+            "tool": "sonar",
+            "tool_version": metadata.get("scanner_version"),
+            "target_repo": target_repo,
+            "scan": scan_info,
+            "findings": [],
+        }
+        with normalized_path.open("w", encoding="utf-8") as f:
+            json.dump(normalized, f, indent=2)
+        return
+
+    with raw_results_path.open(encoding="utf-8") as f:
+        data = json.load(f)
+
+    issues = data.get("issues") or []
+    findings: List[Dict[str, Any]] = []
+
+    for issue in issues:
+        rule_id = issue.get("rule")
+        severity_raw = (issue.get("severity") or "").upper()
+        message = issue.get("message")
+        component = issue.get("component") or ""
+        line = issue.get("line")
+
+        text_range = issue.get("textRange") or {}
+        if line is None:
+            line = text_range.get("startLine")
+        end_line = text_range.get("endLine", line)
+
+        # Map component (e.g. "myproj:src/main/java/Foo.java") to file path
+        file_path = None
+        if component:
+            if ":" in component:
+                file_path = component.split(":", 1)[1]
+            else:
+                file_path = component
+
+        # Try to infer CWE from tags (e.g. "cwe", "cwe-89")
+        tags = issue.get("tags") or []
+        cwe_id = None
+        for t in tags:
+            if not isinstance(t, str):
+                continue
+            lower = t.lower()
+            if lower.startswith("cwe-"):
+                num = lower.split("cwe-", 1)[1]
+                if num:
+                    cwe_id = f"CWE-{num.upper()}"
+                    break
+
+        # Map Sonar severity to HIGH/MEDIUM/LOW
+        if severity_raw in ("BLOCKER", "CRITICAL", "MAJOR"):
+            severity = "HIGH"
+        elif severity_raw == "MINOR":
+            severity = "MEDIUM"
+        elif severity_raw == "INFO":
+            severity = "LOW"
+        else:
+            severity = None
+
+        # Try to read the source line for context
+        line_content = None
+        if file_path and line:
+            file_abs = repo_path / file_path
+            try:
+                lines = file_abs.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
+                if 1 <= line <= len(lines):
+                    line_content = lines[line - 1].rstrip("\n")
+            except OSError:
+                pass
+
+        finding = {
+            "metadata": per_finding_metadata,
+            "finding_id": f"sonar:{rule_id}:{file_path}:{line}",
+            "cwe_id": cwe_id,
+            "rule_id": rule_id,
+            "title": message,
+            "severity": severity,
+            "file_path": file_path,
+            "line_number": line,
+            "end_line_number": end_line,
+            "line_content": line_content,
+            "vendor": {
+                "raw_result": issue,
+            },
+        }
+        findings.append(finding)
+
+    normalized = {
+        "schema_version": "1.1",
+        "tool": "sonar",
+        "tool_version": metadata.get("scanner_version"),
+        "target_repo": target_repo,
+        "scan": scan_info,
+        "findings": findings,
+    }
+
+    with normalized_path.open("w", encoding="utf-8") as f:
+        json.dump(normalized, f, indent=2)
+
+
 def main() -> None:
     args = parse_args()
 
@@ -354,12 +543,16 @@ def main() -> None:
     run_id, run_dir = create_run_dir(output_root)
 
     log_path = run_dir / f"{repo_name}_sonar_scan.log"
+    results_path = run_dir / f"{repo_name}.json"
+    normalized_path = run_dir / f"{repo_name}.normalized.json"
 
-    scan_time = None
+    scan_time: float | None = None
     status = "skipped" if args.skip_scan else "success"
+    command_str: str | None = None
+    exit_code: int | None = None
 
     if not args.skip_scan:
-        returncode, elapsed = run_sonar_scan(
+        returncode, elapsed, cmd = run_sonar_scan(
             repo_path,
             project_key,
             sonar_host,
@@ -369,11 +562,16 @@ def main() -> None:
             log_path,
         )
         scan_time = elapsed
+        command_str = " ".join(cmd)
+        exit_code = returncode
+
         if returncode != 0:
             print(f"⚠️ sonar-scanner failed with code {returncode}. See log: {log_path}")
             status = "scan_failed"
         else:
             print(f"✅ sonar-scanner finished in {elapsed:.2f}s. Log: {log_path}")
+    else:
+        print("⏭️ Skipping sonar-scanner run (per --skip-scan).")
 
     if status == "success":
         wait_for_ce_success(sonar_host, sonar_org, project_key, sonar_token)
@@ -381,7 +579,7 @@ def main() -> None:
     issues = fetch_all_issues_for_project(sonar_host, project_key, sonar_org, sonar_token)
     print(f"📥 Retrieved {len(issues)} issues from SonarCloud")
 
-    results_path = run_dir / f"{repo_name}.json"
+    # Raw results payload
     payload = {
         "projectKey": project_key,
         "organization": sonar_org,
@@ -396,6 +594,10 @@ def main() -> None:
         json.dump(payload, f, indent=2)
 
     scanner_version = get_scanner_version()
+    commit = get_git_commit(repo_path)
+    author_info = get_commit_author_info(repo_path, commit)
+
+    # Metadata JSON (per run)
     metadata = {
         "scanner": "sonar",
         "scanner_kind": "sonar-scanner-cli",
@@ -406,12 +608,16 @@ def main() -> None:
         "repo_name": repo_name,
         "repo_url": args.repo_url,
         "repo_local_path": str(repo_path),
+        "repo_commit": commit,
         "run_id": run_id,
         "timestamp": datetime.now().isoformat(),
         "scan_time_seconds": scan_time,
         "issues_count": len(issues),
         "status": status,
         "log_path": str(log_path),
+        "command": command_str,
+        "exit_code": exit_code,
+        **author_info,
     }
     metadata_path = run_dir / "metadata.json"
     with metadata_path.open("w", encoding="utf-8") as f:
@@ -419,6 +625,10 @@ def main() -> None:
 
     print("📄 Issues JSON saved to:", results_path)
     print("📄 Metadata saved to:", metadata_path)
+
+    # Normalized JSON (schema v1.1)
+    normalize_sonar_results(repo_path, results_path, metadata, normalized_path)
+    print("📄 Normalized JSON saved to:", normalized_path)
 
 
 if __name__ == "__main__":
