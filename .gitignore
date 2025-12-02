@@ -1,6 +1,16 @@
-# .gitignore
+# local repos cloned by tools
 repos/
+
+# environment files
 .env
-.env/
+.env.*
+
+# local scan runs / results
 runs/
+
+# Python virtualenv (optional but recommended)
+venv/
+.venv/
+
+# IDE settings
 .idea/
