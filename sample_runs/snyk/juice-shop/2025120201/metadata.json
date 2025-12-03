@@ -1,0 +1,15 @@
+{
+  "scanner": "snyk",
+  "scanner_version": "1.1301.0",
+  "repo_name": "juice-shop",
+  "repo_url": "https://github.com/juice-shop/juice-shop.git",
+  "repo_commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+  "run_id": "2025120201",
+  "timestamp": "2025-12-02T23:48:30.504575",
+  "command": "snyk code test --json-file-output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/snyk/juice-shop/2025120201/juice-shop.json",
+  "scan_time_seconds": 9.212580919265747,
+  "exit_code": 1,
+  "commit_author_name": "Bjoern Kimminich",
+  "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+  "commit_date": "2025-12-01T11:11:50+01:00"
+}
