@@ -14,8 +14,18 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env")
 
+# Shared helpers used across scan_* tools
+from run_utils import (
+    get_repo_name,
+    clone_repo,
+    get_git_commit,
+    get_commit_author_info,
+    create_run_dir,
+)
+
 
 def parse_args() -> argparse.Namespace:
+    """CLI arguments for running Snyk Code on a repo."""
     p = argparse.ArgumentParser(
         description="Run Snyk Code on a repo and save JSON + metadata."
     )
@@ -48,97 +58,8 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def get_repo_name(repo_url: str) -> str:
-    last = repo_url.rstrip("/").split("/")[-1]
-    return last[:-4] if last.endswith(".git") else last
-
-
-def clone_repo(repo_url: str, base: Path) -> Path:
-    base.mkdir(parents=True, exist_ok=True)
-    name = get_repo_name(repo_url)
-    path = base / name
-
-    if not path.exists():
-        print(f"📥 Cloning {name} from {repo_url} ...")
-        result = subprocess.run(
-            ["git", "clone", "--depth", "1", repo_url, str(path)],
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"git clone failed with code {result.returncode}")
-    else:
-        print(f"✅ Repo already exists, reusing: {path}")
-
-    return path
-
-
-def get_git_commit(path: Path) -> str:
-    try:
-        out = subprocess.check_output(
-            ["git", "-C", str(path), "rev-parse", "HEAD"],
-            text=True,
-        )
-        return out.strip()
-    except Exception:
-        return "unknown"
-
-
-def get_commit_author_info(repo_path: Path, commit: str) -> dict:
-    """Return author name/email/date for the commit we scanned."""
-    try:
-        out = subprocess.check_output(
-            [
-                "git",
-                "-C",
-                str(repo_path),
-                "show",
-                "-s",
-                "--format=%an%n%ae%n%aI",
-                commit,
-            ],
-            text=True,
-        )
-        lines = out.splitlines()
-        return {
-            "commit_author_name": lines[0] if len(lines) > 0 else None,
-            "commit_author_email": lines[1] if len(lines) > 1 else None,
-            "commit_date": lines[2] if len(lines) > 2 else None,
-        }
-    except subprocess.CalledProcessError:
-        return {
-            "commit_author_name": None,
-            "commit_author_email": None,
-            "commit_date": None,
-        }
-
-
-def create_run_dir(output_root: Path) -> tuple[str, Path]:
-    today = datetime.now().strftime("%Y%m%d")
-    output_root.mkdir(parents=True, exist_ok=True)
-
-    existing = [
-        d.name
-        for d in output_root.iterdir()
-        if d.is_dir() and d.name.startswith(today)
-    ]
-    if not existing:
-        idx = 1
-    else:
-        last = max(existing)
-        try:
-            last_idx = int(last[-2:])
-        except ValueError:
-            last_idx = len(existing)
-        idx = last_idx + 1
-
-    run_id = f"{today}{idx:02d}"
-    run_dir = output_root / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    print("📂 Using run directory:", run_dir)
-    return run_id, run_dir
-
-
 def get_snyk_version() -> str:
+    """Return the installed Snyk CLI version, or 'unknown' if it fails."""
     try:
         out = subprocess.check_output(["snyk", "--version"], text=True)
         return out.strip()
@@ -153,13 +74,13 @@ def normalize_snyk_results(
     normalized_path: Path,
 ) -> None:
     """
-    Convert Snyk Code JSON (SARIF-like) into the common normalized schema.
+    Convert Snyk Code JSON (SARIF-like) into the common normalized schema (schema v1.1).
 
     Assumes `snyk code test` JSON looks like:
       { "runs": [ { "results": [ ... ] } ] }
 
-    Schema v1.1: every finding includes its own `metadata` block so that
-    each finding can stand on its own when exported to a table.
+    In schema v1.1 every finding includes its own `metadata` block so that each
+    finding can stand on its own when exported to a table.
     """
     # Build common metadata once so we can reuse it at the top level and
     # inside every finding.
@@ -210,6 +131,7 @@ def normalize_snyk_results(
             rule_id = res.get("ruleId")
             level = res.get("level")  # error|warning|note
             message = (res.get("message") or {}).get("text")
+
             locations = res.get("locations") or []
             if locations:
                 physical = (locations[0].get("physicalLocation") or {})
@@ -296,12 +218,12 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # 1. Clone repo
+    # 1. Clone repo (shared helpers)
     repo_base = Path("repos")
     repo_path = clone_repo(args.repo_url, repo_base)
     repo_name = get_repo_name(args.repo_url)
 
-    # 2. Prepare output paths
+    # 2. Prepare output paths (shared run_dir helper)
     output_root = Path(args.output_root)
     run_id, run_dir = create_run_dir(output_root)
 

@@ -30,6 +30,9 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+# Shared helper for run directories
+from run_utils import create_run_dir
+
 TOKEN_URL = "https://app.aikido.dev/api/oauth/token"
 API_ROOT = "https://app.aikido.dev/api/public/v1"
 AIKIDO_TOOL_VERSION = "public-api-v1"
@@ -109,30 +112,6 @@ def export_all_issues(token: str) -> list[dict]:
 def filter_issues_for_repo(issues: list[dict], code_repo_id: str) -> list[dict]:
     """Return only issues belonging to the given Aikido code_repo_id."""
     return [issue for issue in issues if str(issue.get("code_repo_id")) == str(code_repo_id)]
-
-
-def create_run_dir(output_root: Path) -> tuple[str, Path]:
-    """Create a dated run directory like YYYYMMDD01 under output_root."""
-    output_root.mkdir(parents=True, exist_ok=True)
-    today = datetime.now().strftime("%Y%m%d")
-
-    existing = [
-        d.name
-        for d in output_root.iterdir()
-        if d.is_dir() and d.name.startswith(today)
-    ]
-    if not existing:
-        idx = 1
-    else:
-        try:
-            idx = max(int(name[-2:]) for name in existing) + 1
-        except ValueError:
-            idx = len(existing) + 1
-
-    run_id = f"{today}{idx:02d}"
-    run_dir = output_root / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_id, run_dir
 
 
 def normalize_aikido_results(
@@ -314,6 +293,7 @@ def main() -> None:
     repo_name = repo_obj.get("name") or "unknown_repo"
     repo_url = repo_obj.get("url")
 
+    # Run directory (shared helper)
     output_root = Path(args.output_root)
     run_id, run_dir = create_run_dir(output_root)
 

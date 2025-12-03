@@ -1,25 +1,3 @@
-#!/usr/bin/env python3
-"""
-benchmarks/runtime.py
-
-Runtime benchmark harness for the sast-benchmark-pipeline.
-
-Given a logical benchmark target (e.g. "juice_shop") and a list of scanners
-(e.g. ["semgrep", "snyk", "sonar", "aikido"]), this script:
-
-  * builds the appropriate scan command for each scanner using sast_cli.build_command()
-  * runs each scanner as a subprocess and measures wall-clock runtime
-  * finds the latest run directory for that scanner under runs/<scanner>/
-  * reads metadata.json to get run_id and tool-reported scan_time_seconds
-  * prints a summary table
-  * optionally writes a JSON summary under runs/benchmarks/
-
-Usage examples:
-
-    python benchmarks/runtime.py --target juice_shop
-    python benchmarks/runtime.py --target juice_shop --scanners semgrep,snyk
-"""
-
 import argparse
 import json
 import subprocess
@@ -124,6 +102,13 @@ def run_sast_runtime_benchmark(
             ...
           ]
         }
+
+    Notes
+    -----
+    - wall_clock_seconds is measured here around the full scanner command.
+    - scan_time_seconds is taken from each tool's metadata.json:
+        * Semgrep/Snyk/Sonar: usually the tool-reported scan duration.
+        * Aikido: HTTP trigger latency for the /scan API call, not full engine time.
     """
     if target_key not in BENCHMARKS:
         raise ValueError(
@@ -158,6 +143,9 @@ def run_sast_runtime_benchmark(
         print(f"  Finished with exit_code={exit_code}, wall_clock={wall_seconds:.2f}s")
 
         meta = read_metadata_from_run(scanner)
+
+        # For most tools this is the scanner's own timing; for Aikido this is
+        # the HTTP trigger time we store in scan_aikido.py (see its metadata block).
         run_id = meta.get("run_id")
         scan_time_seconds = meta.get("scan_time_seconds")
 

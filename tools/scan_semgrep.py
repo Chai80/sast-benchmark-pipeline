@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""
+scan_semgrep.py
+
+Run Semgrep on a repo and save:
+  - raw JSON results
+  - metadata.json
+  - normalized findings JSON (schema v1.1)
+"""
+
 import argparse
 import json
 import subprocess
@@ -12,8 +21,20 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env")
 
+# Shared helpers used by all scanners
+from run_utils import (
+    get_repo_name,
+    clone_repo,
+    get_git_commit,
+    get_commit_author_info,
+    create_run_dir,
+)
 
-def parse_args():
+
+def parse_args() -> argparse.Namespace:
+    """
+    Parse CLI arguments for the Semgrep scan.
+    """
     p = argparse.ArgumentParser(
         description="Run Semgrep on a repo and save JSON + metadata + normalized output."
     )
@@ -35,96 +56,6 @@ def parse_args():
     if not args.repo_url:
         args.repo_url = input("Enter Git repo URL to scan: ").strip()
     return args
-
-
-def get_repo_name(repo_url: str) -> str:
-    last = repo_url.rstrip("/").split("/")[-1]
-    return last[:-4] if last.endswith(".git") else last
-
-
-def clone_repo(repo_url: str, base: Path) -> Path:
-    base.mkdir(parents=True, exist_ok=True)
-    name = get_repo_name(repo_url)
-    path = base / name
-
-    if not path.exists():
-        print(f"📥 Cloning {name} from {repo_url} ...")
-        result = subprocess.run(
-            ["git", "clone", "--depth", "1", repo_url, str(path)],
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"git clone failed with code {result.returncode}")
-    else:
-        print(f"✅ Repo already exists, reusing: {path}")
-
-    return path
-
-
-def get_git_commit(path: Path) -> str:
-    try:
-        out = subprocess.check_output(
-            ["git", "-C", str(path), "rev-parse", "HEAD"],
-            text=True,
-        )
-        return out.strip()
-    except Exception:
-        return "unknown"
-
-
-def get_commit_author_info(repo_path: Path, commit: str) -> dict:
-    """Return author name/email/date for the commit we scanned."""
-    try:
-        out = subprocess.check_output(
-            [
-                "git",
-                "-C",
-                str(repo_path),
-                "show",
-                "-s",
-                "--format=%an%n%ae%n%aI",
-                commit,
-            ],
-            text=True,
-        )
-        lines = out.splitlines()
-        return {
-            "commit_author_name": lines[0] if len(lines) > 0 else None,
-            "commit_author_email": lines[1] if len(lines) > 1 else None,
-            "commit_date": lines[2] if len(lines) > 2 else None,
-        }
-    except subprocess.CalledProcessError:
-        return {
-            "commit_author_name": None,
-            "commit_author_email": None,
-            "commit_date": None,
-        }
-
-
-def create_run_dir(output_root: Path) -> tuple[str, Path]:
-    today = datetime.now().strftime("%Y%m%d")
-    output_root.mkdir(parents=True, exist_ok=True)
-
-    existing = [
-        d.name
-        for d in output_root.iterdir()
-        if d.is_dir() and d.name.startswith(today)
-    ]
-    if not existing:
-        idx = 1
-    else:
-        last = max(existing)
-        try:
-            last_idx = int(last[-2:])
-        except ValueError:
-            last_idx = len(existing)
-        idx = last_idx + 1
-
-    run_id = f"{today}{idx:02d}"
-    run_dir = output_root / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    print("📂 Using run directory:", run_dir)
-    return run_id, run_dir
 
 
 def normalize_semgrep_results(
@@ -227,6 +158,7 @@ def normalize_semgrep_results(
                 if 1 <= line <= len(lines):
                     line_content = lines[line - 1].rstrip("\n")
             except OSError:
+                # If we can't read the file for some reason, just skip line_content
                 pass
 
         finding = {
@@ -259,15 +191,15 @@ def normalize_semgrep_results(
         json.dump(normalized, f, indent=2)
 
 
-def main():
+def main() -> None:
     args = parse_args()
 
-    # 1. Clone repo
+    # 1. Clone repo (shared helper)
     repo_base = Path("repos")
     repo_path = clone_repo(args.repo_url, repo_base)
     repo_name = get_repo_name(args.repo_url)
 
-    # 2. Prepare output paths
+    # 2. Prepare output paths (shared run_dir helper)
     output_root = Path(args.output_root)
     run_id, run_dir = create_run_dir(output_root)
 

@@ -33,6 +33,15 @@ from typing import Tuple, List, Dict, Any
 import requests
 from dotenv import load_dotenv
 
+# Shared helpers used across scan_* tools
+from run_utils import (
+    get_repo_name,
+    clone_repo,
+    get_git_commit,
+    get_commit_author_info,
+    create_run_dir,
+)
+
 SONAR_HOST_DEFAULT = "https://sonarcloud.io"
 
 # Load .env from project root (one level up from tools/)
@@ -73,70 +82,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def get_repo_name(repo_url: str) -> str:
-    last = repo_url.rstrip("/").split("/")[-1]
-    return last[:-4] if last.endswith(".git") else last
-
-
-def clone_repo(repo_url: str, base: Path) -> Path:
-    base.mkdir(parents=True, exist_ok=True)
-    name = get_repo_name(repo_url)
-    path = base / name
-
-    if not path.exists():
-        print(f"📥 Cloning {name} from {repo_url} ...")
-        result = subprocess.run(
-            ["git", "clone", "--depth", "1", repo_url, str(path)],
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"git clone failed with code {result.returncode}")
-    else:
-        print(f"✅ Repo already exists, reusing: {path}")
-
-    return path
-
-
-def get_git_commit(path: Path) -> str:
-    try:
-        out = subprocess.check_output(
-            ["git", "-C", str(path), "rev-parse", "HEAD"],
-            text=True,
-        )
-        return out.strip()
-    except Exception:
-        return "unknown"
-
-
-def get_commit_author_info(repo_path: Path, commit: str) -> Dict[str, Any]:
-    """Return author name/email/date for the commit we scanned."""
-    try:
-        out = subprocess.check_output(
-            [
-                "git",
-                "-C",
-                str(repo_path),
-                "show",
-                "-s",
-                "--format=%an%n%ae%n%aI",
-                commit,
-            ],
-            text=True,
-        )
-        lines = out.splitlines()
-        return {
-            "commit_author_name": lines[0] if len(lines) > 0 else None,
-            "commit_author_email": lines[1] if len(lines) > 1 else None,
-            "commit_date": lines[2] if len(lines) > 2 else None,
-        }
-    except subprocess.CalledProcessError:
-        return {
-            "commit_author_name": None,
-            "commit_author_email": None,
-            "commit_date": None,
-        }
-
-
 def validate_sonarcloud_credentials(host: str, org: str, token: str) -> None:
     """Validate token and organization with simple SonarCloud API calls."""
     headers = {"Authorization": f"Bearer {token}"}
@@ -167,35 +112,6 @@ def validate_sonarcloud_credentials(host: str, org: str, token: str) -> None:
         )
 
     print(f"✅ SonarCloud credentials OK. Organization '{org}' is accessible.")
-
-
-def create_run_dir(output_root: Path) -> Tuple[str, Path]:
-    """
-    Create a dated run directory like YYYYMMDD01, YYYYMMDD02, ... under output_root.
-    """
-    today = datetime.now().strftime("%Y%m%d")
-    output_root.mkdir(parents=True, exist_ok=True)
-
-    existing = [
-        d.name
-        for d in output_root.iterdir()
-        if d.is_dir() and d.name.startswith(today)
-    ]
-    if not existing:
-        idx = 1
-    else:
-        last = max(existing)
-        try:
-            last_idx = int(last[-2:])
-        except ValueError:
-            last_idx = len(existing)
-        idx = last_idx + 1
-
-    run_id = f"{today}{idx:02d}"
-    run_dir = output_root / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    print(f"📂 Using run directory: {run_dir}")
-    return run_id, run_dir
 
 
 def run_sonar_scan(
@@ -532,6 +448,7 @@ def main() -> None:
 
     validate_sonarcloud_credentials(sonar_host, sonar_org, sonar_token)
 
+    # 1. Clone repo (shared helpers)
     repo_base = Path("repos")
     repo_path = clone_repo(args.repo_url, repo_base)
     repo_name = get_repo_name(args.repo_url)
@@ -539,6 +456,7 @@ def main() -> None:
     project_key = args.project_key or f"{sonar_org}_{repo_name}"
     print(f"Sonar project key: {project_key}")
 
+    # 2. Prepare output paths (shared run_dir helper)
     output_root = Path(args.output_root)
     run_id, run_dir = create_run_dir(output_root)
 
@@ -551,6 +469,7 @@ def main() -> None:
     command_str: str | None = None
     exit_code: int | None = None
 
+    # 3. Run sonar-scanner (unless skipped)
     if not args.skip_scan:
         returncode, elapsed, cmd = run_sonar_scan(
             repo_path,
@@ -576,10 +495,10 @@ def main() -> None:
     if status == "success":
         wait_for_ce_success(sonar_host, sonar_org, project_key, sonar_token)
 
+    # 4. Fetch issues from SonarCloud
     issues = fetch_all_issues_for_project(sonar_host, project_key, sonar_org, sonar_token)
     print(f"📥 Retrieved {len(issues)} issues from SonarCloud")
 
-    # Raw results payload
     payload = {
         "projectKey": project_key,
         "organization": sonar_org,
@@ -593,11 +512,11 @@ def main() -> None:
     with results_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 
+    # 5. Metadata JSON (per run)
     scanner_version = get_scanner_version()
     commit = get_git_commit(repo_path)
     author_info = get_commit_author_info(repo_path, commit)
 
-    # Metadata JSON (per run)
     metadata = {
         "scanner": "sonar",
         "scanner_kind": "sonar-scanner-cli",
@@ -626,7 +545,7 @@ def main() -> None:
     print("📄 Issues JSON saved to:", results_path)
     print("📄 Metadata saved to:", metadata_path)
 
-    # Normalized JSON (schema v1.1)
+    # 6. Normalized JSON (schema v1.1)
     normalize_sonar_results(repo_path, results_path, metadata, normalized_path)
     print("📄 Normalized JSON saved to:", normalized_path)
 
