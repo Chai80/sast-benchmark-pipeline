@@ -15,21 +15,32 @@ Every script:
 - Runs the corresponding scanner
 - Writes JSON + `metadata.json` under `runs/<tool>/<YYYYMMDDNN>/`
 
+There is also a unified CLI, `sast_cli.py`, which can:
+
+- Run a **single scan** with any tool
+- Run a **runtime benchmark** across multiple tools
+
 ---
 
-## 1. Requirements (read this first)
+## 1. Requirements
 
 ### General
 
-- Python **3.9+**
+- Python **3.9+** (tested with Python 3.10)
 - `git` installed
 - Python deps (from the repo root):
 
-  ```bash
-  pip install -r requirements.txt
-  # or, if you don’t have that file yet:
-  pip install semgrep requests python-dotenv
+```bash
+pip install -r requirements.txt
+# or, if you don’t have that file yet:
+pip install semgrep requests python-dotenv
+```
 
+### Environment variables (`.env`)
+
+Create a `.env` file in the project root:
+
+```dotenv
 # Aikido
 AIKIDO_CLIENT_ID=your_aikido_client_id
 AIKIDO_CLIENT_SECRET=your_aikido_client_secret
@@ -41,200 +52,253 @@ SONAR_HOST=https://sonarcloud.io
 
 # Snyk
 SNYK_TOKEN=your_snyk_api_token
+```
 
-##Tool‑specific prerequisites
-Semgrep CLI (via pip is easiest):
+### Tool‑specific prerequisites
 
-- For **Semgrep** and **SonarCloud**, use the *upstream* repo URLs above as `<GIT_REPO_URL>` (or swap in your own repos if you prefer).
-- For **Aikido**, `--git-ref` should match the repo names as they appear in your Aikido workspace. In our case we connected forks under the `Chai80/...` GitHub account, so our examples use those values (e.g. `Chai80/juice-shop`). You should substitute your own forks if your workspace uses a different account.
-
----
-
-## Requirements
-
-- Python 3.9+
-- `pip install semgrep requests`
-- For **Aikido**: Aikido workspace + Public REST API client
-- For **SonarCloud**:
+- **Semgrep**
+  - `pip install semgrep`
+- **Aikido**
+  - Aikido workspace
+  - Aikido Public REST API client (client ID + secret)
+- **SonarCloud**
   - Java 17+
   - `git` installed
   - `sonar-scanner` CLI installed and on `PATH`
-  - SonarCloud org + project(s) already created
+  - SonarCloud org + projects already created (or created once via the UI)
+- **Snyk**
+  - `snyk` CLI installed (`npm install -g snyk`)
+  - A Snyk account + API token
 
 ---
 
-## Tools
+## 2. Unified CLI (`sast_cli.py`)
 
-### 1. Semgrep
+The CLI has two modes:
+
+- **scan** – run a single scanner against a target repo
+- **benchmark** – run a benchmark suite (currently: runtime benchmark across tools)
+
+### 2.1 Interactive usage
+
+```bash
+python sast_cli.py
+```
+
+You’ll see menus like:
+
+- Choose an action:
+  - Scan a repo with a single tool
+  - Run benchmarks
+- Then choose a scanner / target / benchmark suite from numbered menus.  
+  - Only valid numbers are accepted.
+  - Press `Z` at any menu to exit.
+
+### 2.2 Non‑interactive examples
+
+**Run a single scan (Snyk on Juice Shop)**
+
+```bash
+python sast_cli.py --mode scan --scanner snyk --target juice_shop
+```
+
+**Run a runtime benchmark (all tools) on Juice Shop**
+
+```bash
+python sast_cli.py --mode benchmark --target juice_shop
+```
+
+**Runtime benchmark for a subset of tools**
+
+```bash
+python sast_cli.py --mode benchmark   --target juice_shop   --scanners semgrep,snyk
+```
+
+Benchmark summary JSON will be written under `runs/benchmarks/`.
+
+---
+
+## 3. Individual Tools
+
+You can still call each tool’s script directly if you want.
+
+### 3.1 Semgrep
 
 **Script:** `tools/scan_semgrep.py`
+
 What it does:
 
 - Clones a target Git repo locally under `repos/<repo_name>/`.
 - Runs Semgrep using the specified configuration (default: `p/security-audit`).
-- Writes raw Semgrep JSON results + a `metadata.json` file under:
+- Writes raw Semgrep JSON results + `metadata.json` + normalized JSON under `runs/semgrep/...`.
 
-
-## Usage (generic)
-
-```bash
-python tools/scan_semgrep.py \
---repo-url <GIT_REPO_URL> \
---config p/security-audit \
---output-root runs/semgrep
-```
-
-## Usage (JuiceShop)
+**Usage (generic)**
 
 ```bash
-python tools/scan_semgrep.py \
-  --repo-url https://github.com/juice-shop/juice-shop.git \
-  --config p/security-audit \
-  --output-root runs/semgrep
+python tools/scan_semgrep.py   --repo-url <GIT_REPO_URL>   --config p/security-audit   --output-root runs/semgrep
 ```
 
-#Outputs
+**Usage (Juice Shop)**
+
 ```bash
-runs/semgrep/2025113001/juice-shop.json
-runs/semgrep/2025113001/metadata.json
+python tools/scan_semgrep.py   --repo-url https://github.com/juice-shop/juice-shop.git   --config p/security-audit   --output-root runs/semgrep
 ```
 
-### 2. Aikido
+---
+
+### 3.2 Aikido
+
 **Script:** `tools/scan_aikido.py`
 
-## Usage (generic)
+**Usage (generic)**
+
 ```bash
-python tools/scan_aikido.py \
-  --git-ref <owner/repo or repo_name> \
-  --output-root runs/aikido
+python tools/scan_aikido.py   --git-ref <owner/repo or repo_name>   --output-root runs/aikido
 ```
 
-## Usage (JuiceShop)
+**Usage (Juice Shop)**
+
 ```bash
-python tools/scan_aikido.py \
-  --git-ref <owner/repo or repo_name> \
-  --output-root runs/aikido
+python tools/scan_aikido.py   --git-ref Chai80/juice-shop   --output-root runs/aikido
 ```
 
-#Outputs
-```bash
-runs/aikido/2025113001/juice-shop.json
-runs/aikido/2025113001/metadata.json
-```
-### 3. SonarCloud (SonarScanner)
+> Note: `--git-ref` should match how the repo appears in your Aikido workspace  
+> (e.g. `OrgName/juice-shop` or just `juice-shop` depending on your setup).
+
+---
+
+### 3.3 SonarCloud (SonarScanner)
+
 **Script:** `tools/scan_sonar.py`
 
-## Usage (generic)
+**Usage (generic)**
+
 ```bash
-python tools/scan_sonar.py \
-  --repo-url <GIT_REPO_URL> \
-  --output-root runs/sonar
-```
-## Usage (JuiceShop)
-```bash
-python tools/scan_sonar.py \
-  --repo-url https://github.com/juice-shop/juice-shop.git \
-  --project-key chai80_juice-shop \
-  --output-root runs/sonar
-```
-##Pull previous scan results without running a current Scan
-```bash
-python tools/scan_sonar.py \
-  --repo-url https://github.com/juice-shop/juice-shop.git \
-  --project-key chai80_juice-shop \
-  --skip-scan \
-  --output-root runs/sonar
+python tools/scan_sonar.py   --repo-url <GIT_REPO_URL>   --output-root runs/sonar
 ```
 
-#Outputs
+**Usage (Juice Shop)**
+
 ```bash
-runs/sonar/2025113003/juice-shop.json
-runs/sonar/2025113003/metadata.json
-runs/sonar/2025113003/juice-shop_sonar_scan.log
+python tools/scan_sonar.py   --repo-url https://github.com/juice-shop/juice-shop.git   --project-key chai80_juice_shop   --output-root runs/sonar
 ```
 
-### 4. SnykCode
+**Pull previous scan results without running a new scan**
+
+```bash
+python tools/scan_sonar.py   --repo-url https://github.com/juice-shop/juice-shop.git   --project-key chai80_juice_shop   --skip-scan   --output-root runs/sonar
+```
+
+---
+
+### 3.4 Snyk Code
+
 **Script:** `tools/scan_snyk.py`
 
 What it does:
 
-1.Clones the repo into repos/<repo_name>/
-
+1. Clones the repo into `repos/<repo_name>/`
 2. Runs:
 
-```bash
-snyk code test --json-file-output <absolute_path>
-```
+   ```bash
+   snyk code test --json-file-output <absolute_path>
+   ```
 
-Produces:
+3. Produces:
+   - Raw SARIF-style Snyk output (`<repo>.json`)
+   - Normalized output (`<repo>.normalized.json`)
+   - Metadata about the scanner/version/commit/timing
 
-  -Raw SARIF-style Snyk output (<repo>.json)
-
-  -Normalized output (<repo>.normalized.json)
-
-  -Metadata about the scanner/version/commit/timing
-  
-## Usage (generic)
+**Usage (generic)**
 
 ```bash
-python tools/scan_snyk.py \
-  --repo-url <GIT_REPO_URL> \
-  --output-root runs/snyk
+python tools/scan_snyk.py   --repo-url <GIT_REPO_URL>   --output-root runs/snyk
 ```
 
-## Usage (JuiceShop)
+**Usage (Juice Shop)**
 
 ```bash
-python tools/scan_snyk.py \
-  --repo-url https://github.com/juice-shop/juice-shop.git \
-  --output-root runs/snyk
+python tools/scan_snyk.py   --repo-url https://github.com/juice-shop/juice-shop.git   --output-root runs/snyk
 ```
 
-#Outputs
+---
+
+## 4. Unified Outputs
+
+After running scans and benchmarks, you’ll see a structure like:
+
 ```bash
-runs/snyk/2025113004/juice-shop.json
-runs/snyk/2025113004/juice-shop.normalized.json
-runs/snyk/2025113004/metadata.json
+runs/
+  semgrep/
+    2025120201/
+      juice-shop.json
+      juice-shop.normalized.json
+      metadata.json
+  snyk/
+    2025120201/
+      juice-shop.json
+      juice-shop.normalized.json
+      metadata.json
+  sonar/
+    2025120201/
+      juice-shop.json
+      juice-shop.normalized.json
+      juice-shop_sonar_scan.log
+      metadata.json
+  aikido/
+    2025120201/
+      juice-shop.json
+      juice-shop.normalized.json
+      metadata.json
+  benchmarks/
+    20251202T010406_juice_shop_runtime.json
 ```
 
-## Folder Layout Summary
+Each run directory ID is `YYYYMMDDNN` (date + counter for that day).
+
+---
+
+## 5. Folder Layout Summary
+
 ```bash
 sast-benchmark-pipeline/
 ├── benchmarks/
 │   ├── __init__.py
-│   ├── runtime.py
-│   └── targets.py          # NEW: holds BENCHMARKS + BENCHMARK_SUITES
+│   ├── runtime.py              # benchmark suite runner
+│   └── targets.py              # central BENCHMARKS + BENCHMARK_SUITES config
 ├── tools/
-│   ├── run_utils.py
+│   ├── run_utils.py            # shared helpers (clone repo, run dirs, git info)
 │   ├── scan_semgrep.py
 │   ├── scan_snyk.py
 │   ├── scan_sonar.py
 │   └── scan_aikido.py
-├── repos/                  # created at runtime (cloned repos)
+├── repos/                      # cloned repos (auto-created)
 ├── runs/
-│   ├── semgrep/
-│   ├── snyk/
-│   ├── sonar/
-│   ├── aikido/
-│   └── benchmarks/         # runtime benchmark summaries
-├── .env
+│   ├── semgrep/<run_id>/
+│   ├── snyk/<run_id>/
+│   ├── sonar/<run_id>/
+│   ├── aikido/<run_id>/
+│   └── benchmarks/<timestamp>_<target>_runtime.json
+├── sast_cli.py                 # unified CLI (scan + benchmark)
 ├── normalized-schema.md
 ├── README.md
 ├── requirements.txt
-└── sast_cli.py             # main entrypoint
+└── .env
 ```
 
-## Possible BenchMarkRepos you can use to scan
+---
+
+## 6. Benchmark Targets
 
 Our examples use 5 well‑known intentionally vulnerable applications:
 
-| Logical name            | Upstream GitHub repo (`<GIT_REPO_URL>` for Semgrep/Sonar/Snyk)                                                                 | Fork used in Aikido workspace (`--git-ref`) | SonarCloud project key (our setup) |
-|-------------------------|---------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------|------------------------------------|
-| Juice Shop              | https://github.com/juice-shop/juice-shop.git                                                                                   | Chai80/juice-shop                           | chai80_juice_shop                  |
-| DVPWA                   | https://github.com/vulnerable-apps/dvpwa.git                                                                                   | Chai80/dvpwa                                | chai80_dvpwa                       |
-| OWASP Benchmark (Java)  | https://github.com/OWASP-Benchmark/BenchmarkJava.git                                                                           | Chai80/owasp_benchmark                      | chai80_owasp_benchmark             |
-| Spring Boot RealWorld   | https://github.com/gothinkster/spring-boot-realworld-example-app.git                                                           | Chai80/spring_realworld                     | chai80_spring_realworld            |
-| vuln_node_express       | https://github.com/vulnerable-apps/vuln_node_express.git                                                                       | Chai80/vuln_node_express                    | chai80_vuln_node_express           |
+| Logical name            | Upstream GitHub repo (`<GIT_REPO_URL>` for Semgrep/Sonar/Snyk) | Fork used in Aikido workspace (`--git-ref`) | SonarCloud project key (our setup) |
+|-------------------------|-----------------------------------------------------------------|---------------------------------------------|------------------------------------|
+| Juice Shop              | https://github.com/juice-shop/juice-shop.git                   | Chai80/juice-shop                           | chai80_juice_shop                  |
+| DVPWA                   | https://github.com/vulnerable-apps/dvpwa.git                   | Chai80/dvpwa                                | chai80_dvpwa                       |
+| OWASP Benchmark (Java)  | https://github.com/OWASP-Benchmark/BenchmarkJava.git           | Chai80/owasp_benchmark                      | chai80_owasp_benchmark             |
+| Spring Boot RealWorld   | https://github.com/gothinkster/spring-boot-realworld-example-app.git | Chai80/spring_realworld             | chai80_spring_realworld            |
+| vuln_node_express       | https://github.com/vulnerable-apps/vuln_node_express.git       | Chai80/vuln_node_express                    | chai80_vuln_node_express           |
 
 - For **Semgrep**, **SonarCloud**, and **Snyk**, use the “Upstream GitHub repo” column as `<GIT_REPO_URL>`.
 - For **Aikido**, use the “Fork used in Aikido workspace” column as `--git-ref`.
