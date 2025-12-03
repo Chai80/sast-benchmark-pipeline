@@ -14,8 +14,15 @@ Given an Aikido-connected code repository, this script:
         runs/aikido/YYYYMMDDXX/<repo_name>.normalized.json  (normalized findings)
         runs/aikido/YYYYMMDDXX/metadata.json                (run metadata)
 
+Notes on timings:
+  * For Aikido, we do not see internal engine time.
+  * We measure HTTP latency for the /scan trigger call as trigger_http_seconds.
+  * In metadata, scan_time_seconds is set equal to trigger_http_seconds so the
+    runtime benchmark can compare this field across tools (with this caveat).
+
 Requirements:
-  * AIKIDO_CLIENT_ID and AIKIDO_CLIENT_SECRET set in .env at project root or in the environment
+  * AIKIDO_CLIENT_ID and AIKIDO_CLIENT_SECRET set in .env at project root
+    or in the environment.
 """
 
 import argparse
@@ -294,6 +301,7 @@ def main() -> None:
     repo_url = repo_obj.get("url")
 
     # Run directory (shared helper)
+    # Layout: runs/aikido/<run_id>/...
     output_root = Path(args.output_root)
     run_id, run_dir = create_run_dir(output_root)
 
@@ -325,6 +333,7 @@ def main() -> None:
     # Command string for normalized schema: describe the API call we used
     command_str = f"GET {API_ROOT}/issues/export (code_repo_id={code_repo_id})"
 
+    # Note: for Aikido, scan_time_seconds is the HTTP trigger time for /scan.
     metadata = {
         "scanner": "aikido",
         "scanner_version": AIKIDO_TOOL_VERSION,
@@ -335,7 +344,12 @@ def main() -> None:
         "run_id": run_id,
         "timestamp": datetime.now().isoformat(),
         "issues_count": len(repo_issues),
+        # Tool-specific timing: HTTP latency when triggering /scan
         "trigger_http_seconds": float(trigger_http_seconds)
+        if trigger_http_seconds is not None
+        else None,
+        # Generic timing field used by benchmarks/runtime.py
+        "scan_time_seconds": float(trigger_http_seconds)
         if trigger_http_seconds is not None
         else None,
         "command": command_str,

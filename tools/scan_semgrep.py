@@ -6,6 +6,13 @@ Run Semgrep on a repo and save:
   - raw JSON results
   - metadata.json
   - normalized findings JSON (schema v1.1)
+
+Output layout (with step 3):
+
+  runs/semgrep/<repo_name>/<run_id>/
+    ├── <repo_name>.json
+    ├── <repo_name>.normalized.json
+    └── metadata.json
 """
 
 import argparse
@@ -200,7 +207,8 @@ def main() -> None:
     repo_name = get_repo_name(args.repo_url)
 
     # 2. Prepare output paths (shared run_dir helper)
-    output_root = Path(args.output_root)
+    #    This creates: runs/semgrep/<repo_name>/<run_id>/
+    output_root = Path(args.output_root) / repo_name
     run_id, run_dir = create_run_dir(output_root)
 
     results_path = run_dir / f"{repo_name}.json"

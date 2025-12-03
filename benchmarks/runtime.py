@@ -7,9 +7,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+# --- Make sure we can import `sast_cli` even when this file is run as a script ---
+#
+# When you run:
+#   python benchmarks/runtime.py ...
+# Python sets sys.path[0] to "benchmarks/", so it cannot see "sast_cli.py"
+# in the project root by default.
+#
+# We detect the project root (one level above benchmarks/) and prepend it
+# to sys.path so that:
+#   import sast_cli
+# works reliably.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 # One-way dependency: this module imports from sast_cli.
 # sast_cli SHOULD NOT import benchmarks.runtime at module import time.
 from sast_cli import BENCHMARKS, build_command  # type: ignore[attr-defined]
+
+
+# Anchor all paths under the project root (one level up from benchmarks/)
+ROOT_DIR = Path(__file__).resolve().parents[1]
 
 
 def run_and_time(cmd: List[str]) -> Tuple[int, float]:
@@ -24,35 +43,76 @@ def run_and_time(cmd: List[str]) -> Tuple[int, float]:
     return result.returncode, elapsed
 
 
-def get_latest_run_dir(scanner: str) -> Path | None:
+def _repo_name_for_target(target_key: str) -> str:
     """
-    Find the latest run directory for a given scanner, e.g.:
+    Derive the repo folder name for a given benchmark target.
 
-        runs/semgrep/2025120101
-        runs/snyk/2025120103
-
-    We assume run directory names are YYYYMMDDNN and lexicographically sortable.
+    This mirrors what the scan_* scripts use for <repo_name>, i.e. the last
+    part of the repo_url, with an optional '.git' suffix stripped.
     """
-    root = Path("runs") / scanner
-    if not root.exists():
-        return None
+    entry = BENCHMARKS.get(target_key)
+    if not entry:
+        raise ValueError(f"Unknown target '{target_key}' in BENCHMARKS")
 
-    candidates = [p for p in root.iterdir() if p.is_dir()]
-    if not candidates:
-        return None
+    repo_url = entry.get("repo_url")
+    if not repo_url:
+        # In theory you could have an Aikido-only target with no repo_url;
+        # for now we require repo_url for runtime benchmarks.
+        raise ValueError(f"No repo_url configured for target '{target_key}'")
 
-    # Lexicographically largest YYYYMMDDNN is "latest"
-    latest = max(candidates, key=lambda p: p.name)
-    return latest
+    last = repo_url.rstrip("/").split("/")[-1]
+    return last[:-4] if last.endswith(".git") else last
 
 
-def read_metadata_from_run(scanner: str) -> Dict[str, Any]:
+def get_latest_run_dir(scanner: str, target_key: str) -> Path | None:
     """
-    Load metadata.json from the latest run directory for the given scanner.
+    Find the latest run directory for a given scanner + target.
+
+    Preferred layout (new):
+        runs/<scanner>/<repo_name>/<run_id>/
+        e.g. runs/semgrep/juice-shop/2025120201
+
+    Backward-compatible fallback (old):
+        runs/<scanner>/<run_id>/
+        e.g. runs/semgrep/2025120201
+
+    We assume run_id folders are YYYYMMDDNN and lexicographically sortable.
+    """
+    roots_to_try: List[Path] = []
+
+    # Try the new structured layout first: runs/<scanner>/<repo_name>/
+    try:
+        repo_name = _repo_name_for_target(target_key)
+        roots_to_try.append(ROOT_DIR / "runs" / scanner / repo_name)
+    except Exception:
+        # If we can't derive repo_name, we'll just skip this and rely on flat layout.
+        pass
+
+    # Then fall back to the old flat layout: runs/<scanner>/
+    roots_to_try.append(ROOT_DIR / "runs" / scanner)
+
+    for root in roots_to_try:
+        if not root.exists():
+            continue
+
+        candidates = [p for p in root.iterdir() if p.is_dir()]
+        if not candidates:
+            continue
+
+        # Lexicographically largest YYYYMMDDNN is "latest"
+        latest = max(candidates, key=lambda p: p.name)
+        return latest
+
+    return None
+
+
+def read_metadata_from_run(scanner: str, target_key: str) -> Dict[str, Any]:
+    """
+    Load metadata.json from the latest run directory for the given scanner+target.
 
     Returns {} if we can't find it.
     """
-    run_dir = get_latest_run_dir(scanner)
+    run_dir = get_latest_run_dir(scanner, target_key)
     if run_dir is None:
         return {}
 
@@ -142,7 +202,7 @@ def run_sast_runtime_benchmark(
         exit_code, wall_seconds = run_and_time(cmd)
         print(f"  Finished with exit_code={exit_code}, wall_clock={wall_seconds:.2f}s")
 
-        meta = read_metadata_from_run(scanner)
+        meta = read_metadata_from_run(scanner, target_key)
 
         # For most tools this is the scanner's own timing; for Aikido this is
         # the HTTP trigger time we store in scan_aikido.py (see its metadata block).
@@ -202,7 +262,9 @@ def save_benchmark_summary(
     Returns the path to the saved file.
     """
     if output_root is None:
-        output_root = Path("runs") / "benchmarks"
+        output_root = ROOT_DIR / "runs" / "benchmarks"
+    elif not output_root.is_absolute():
+        output_root = ROOT_DIR / output_root
 
     output_root.mkdir(parents=True, exist_ok=True)
 

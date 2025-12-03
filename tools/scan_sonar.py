@@ -9,10 +9,10 @@ Given a Git repo URL, this script:
   * clones the repo into repos/<name> (reuses if already cloned)
   * runs sonar-scanner CLI on that repo (unless --skip-scan)
   * fetches issues for the project via SonarCloud REST API
-  * writes:
-        runs/sonar/YYYYMMDDXX/<repo_name>.json             (raw issues payload)
-        runs/sonar/YYYYMMDDXX/<repo_name>.normalized.json  (normalized v1.1)
-        runs/sonar/YYYYMMDDXX/metadata.json                (run metadata)
+  * writes (grouped by repo name):
+        runs/sonar/<repo_name>/<run_id>/<repo_name>.json
+        runs/sonar/<repo_name>/<run_id>/<repo_name>.normalized.json
+        runs/sonar/<repo_name>/<run_id>/metadata.json
 
 Requirements (outside this script):
   * SonarScanner CLI installed and on PATH
@@ -456,8 +456,9 @@ def main() -> None:
     project_key = args.project_key or f"{sonar_org}_{repo_name}"
     print(f"Sonar project key: {project_key}")
 
-    # 2. Prepare output paths (shared run_dir helper)
-    output_root = Path(args.output_root)
+    # 2. Prepare output paths (grouped by repo name)
+    #    This creates: runs/sonar/<repo_name>/<run_id>/
+    output_root = Path(args.output_root) / repo_name
     run_id, run_dir = create_run_dir(output_root)
 
     log_path = run_dir / f"{repo_name}_sonar_scan.log"

@@ -223,8 +223,9 @@ def main() -> None:
     repo_path = clone_repo(args.repo_url, repo_base)
     repo_name = get_repo_name(args.repo_url)
 
-    # 2. Prepare output paths (shared run_dir helper)
-    output_root = Path(args.output_root)
+    # 2. Prepare output paths (group by repo name)
+    #    This creates: ROOT/runs/snyk/<repo_name>/<run_id>/
+    output_root = Path(args.output_root) / repo_name
     run_id, run_dir = create_run_dir(output_root)
 
     # Important: use absolute path so Snyk writes to the pipeline folder,

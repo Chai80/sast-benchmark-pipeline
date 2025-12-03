@@ -200,20 +200,28 @@ runs/snyk/2025113004/metadata.json
 ## Folder Layout Summary
 ```bash
 sast-benchmark-pipeline/
+├── benchmarks/
+│   ├── __init__.py
+│   ├── runtime.py
+│   └── targets.py          # NEW: holds BENCHMARKS + BENCHMARK_SUITES
 ├── tools/
+│   ├── run_utils.py
 │   ├── scan_semgrep.py
-│   ├── scan_aikido.py
+│   ├── scan_snyk.py
 │   ├── scan_sonar.py
-│   └── scan_snyk.py
-├── repos/               # cloned repos (auto-created)
+│   └── scan_aikido.py
+├── repos/                  # created at runtime (cloned repos)
 ├── runs/
 │   ├── semgrep/
-│   ├── sonar/
 │   ├── snyk/
-│   └── aikido/
-├── .env                 # DO NOT COMMIT
+│   ├── sonar/
+│   ├── aikido/
+│   └── benchmarks/         # runtime benchmark summaries
+├── .env
+├── normalized-schema.md
 ├── README.md
-└── requirements.txt
+├── requirements.txt
+└── sast_cli.py             # main entrypoint
 ```
 
 ## Possible BenchMarkRepos you can use to scan
