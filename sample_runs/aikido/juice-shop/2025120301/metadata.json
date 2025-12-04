@@ -1,0 +1,18 @@
+{
+  "scanner": "aikido",
+  "scanner_version": "public-api-v1",
+  "repo_name": "juice-shop",
+  "repo_url": "https://api.github.com/repos/kobe4201/juice-shop",
+  "code_repo_id": "1269471",
+  "branch": "master",
+  "run_id": "2025120301",
+  "timestamp": "2025-12-03T22:59:30.278739",
+  "issues_count": 166,
+  "trigger_http_seconds": 1.525745153427124,
+  "scan_time_seconds": 1.525745153427124,
+  "command": "GET https://app.aikido.dev/api/public/v1/issues/export (code_repo_id=1269471)",
+  "repo_commit": null,
+  "commit_author_name": null,
+  "commit_author_email": null,
+  "commit_date": null
+}
