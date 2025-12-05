@@ -28,7 +28,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List, Dict, Any, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -71,8 +71,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--java-binaries",
         default="",
-        help="Optional path to compiled Java classes for sonar.java.binaries "
-             "(e.g. target/classes or build/classes).",
+        help=(
+            "Optional path to compiled Java classes for sonar.java.binaries "
+            "(e.g. target/classes or build/classes)."
+        ),
     )
     parser.add_argument(
         "--skip-scan",
@@ -227,7 +229,14 @@ def fetch_all_issues_for_project(
     org: str,
     token: str,
 ) -> List[Dict[str, Any]]:
-    """Fetch all issues for a given projectKey using paginated API calls."""
+    """
+    Fetch all issues for a given projectKey using paginated API calls.
+
+    This is best-effort:
+      * 404 → project not found, return whatever we have (usually empty)
+      * 400 "first 10000 results" → stop and return partial list
+      * 5xx / network errors → log warning, stop and return partial list
+    """
     headers = {"Authorization": f"Bearer {token}"}
     all_issues: List[Dict[str, Any]] = []
     page = 1
@@ -240,34 +249,72 @@ def fetch_all_issues_for_project(
             "ps": page_size,
             "p": page,
         }
-        resp = requests.get(
-            f"{host}/api/issues/search",
-            params=params,
-            headers=headers,
-            timeout=30,
-        )
 
+        try:
+            resp = requests.get(
+                f"{host}/api/issues/search",
+                params=params,
+                headers=headers,
+                timeout=30,
+            )
+        except requests.RequestException as e:
+            print(
+                f"⚠️ Issues search request error for {project_key} page {page}: {e}. "
+                f"Returning {len(all_issues)} issues collected so far."
+            )
+            break
+
+        # Project not found → nothing to do
         if resp.status_code == 404:
             print(f"⚠️ Issues search: project '{project_key}' not found (404).")
-            return all_issues
+            break
 
+        # Hit SonarCloud's 10k issue limit
         if resp.status_code == 400 and "Can return only the first 10000 results" in resp.text:
             print(
-                f"⚠️ Hit SonarCloud 10k issue limit for {project_key}. "
+                f"⚠️ Hit SonarCloud 10k issue limit for {project_key} on page {page}. "
                 f"Returning first {len(all_issues)} issues."
             )
-            return all_issues
+            break
 
-        resp.raise_for_status()
-        data = resp.json()
-        issues = data.get("issues", [])
+        # 5xx or other server-side errors → keep what we have
+        if 500 <= resp.status_code < 600:
+            print(
+                f"⚠️ Issues search server error {resp.status_code} for {project_key} "
+                f"page {page}: {resp.text[:200]!r}. "
+                f"Returning {len(all_issues)} issues collected so far."
+            )
+            break
+
+        # Any other non-OK → log and stop
+        if not resp.ok:
+            print(
+                f"⚠️ Issues search HTTP {resp.status_code} for {project_key} "
+                f"page {page}: {resp.text[:200]!r}. "
+                f"Returning {len(all_issues)} issues collected so far."
+            )
+            break
+
+        try:
+            data = resp.json()
+        except ValueError:
+            print(
+                f"⚠️ Could not decode JSON for {project_key} page {page}. "
+                f"Returning {len(all_issues)} issues collected so far."
+            )
+            break
+
+        issues = data.get("issues", []) or []
         all_issues.extend(issues)
 
         if len(issues) < page_size:
+            # Last page (fewer than page_size issues)
             break
+
         page += 1
 
     return all_issues
+
 
 
 def get_scanner_version() -> str:
@@ -315,6 +362,9 @@ def normalize_sonar_results(
         "scan_date": metadata.get("timestamp"),
         "command": metadata.get("command"),
         "raw_results_path": str(raw_results_path),
+        # enriched with performance / status info from metadata.json
+        "scan_time_seconds": metadata.get("scan_time_seconds"),
+        "exit_code": metadata.get("exit_code"),
         "metadata_path": "metadata.json",
     }
     per_finding_metadata = {
@@ -331,6 +381,8 @@ def normalize_sonar_results(
             "tool_version": metadata.get("scanner_version"),
             "target_repo": target_repo,
             "scan": scan_info,
+            # embed full metadata.json content
+            "run_metadata": metadata,
             "findings": [],
         }
         with normalized_path.open("w", encoding="utf-8") as f:
@@ -422,6 +474,8 @@ def normalize_sonar_results(
         "tool_version": metadata.get("scanner_version"),
         "target_repo": target_repo,
         "scan": scan_info,
+        # full copy of metadata.json for convenience
+        "run_metadata": metadata,
         "findings": findings,
     }
 
@@ -465,10 +519,10 @@ def main() -> None:
     results_path = run_dir / f"{repo_name}.json"
     normalized_path = run_dir / f"{repo_name}.normalized.json"
 
-    scan_time: float | None = None
+    scan_time: Optional[float] = None
     status = "skipped" if args.skip_scan else "success"
-    command_str: str | None = None
-    exit_code: int | None = None
+    command_str: Optional[str] = None
+    exit_code: Optional[int] = None
 
     # 3. Run sonar-scanner (unless skipped)
     if not args.skip_scan:

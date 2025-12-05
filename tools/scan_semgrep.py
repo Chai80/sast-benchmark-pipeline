@@ -95,6 +95,9 @@ def normalize_semgrep_results(
         "scan_date": metadata.get("timestamp"),
         "command": metadata.get("command"),
         "raw_results_path": str(raw_results_path),
+        # enriched from metadata.json
+        "scan_time_seconds": metadata.get("scan_time_seconds"),
+        "exit_code": metadata.get("exit_code"),
         "metadata_path": "metadata.json",
     }
     per_finding_metadata = {
@@ -112,6 +115,8 @@ def normalize_semgrep_results(
             "tool_version": metadata.get("scanner_version"),
             "target_repo": target_repo,
             "scan": scan_info,
+            # embed full metadata.json content
+            "run_metadata": metadata,
             "findings": [],
         }
         with normalized_path.open("w", encoding="utf-8") as f:
@@ -191,6 +196,8 @@ def normalize_semgrep_results(
         "tool_version": metadata.get("scanner_version"),
         "target_repo": target_repo,
         "scan": scan_info,
+        # full copy of metadata.json for convenience
+        "run_metadata": metadata,
         "findings": findings,
     }
 

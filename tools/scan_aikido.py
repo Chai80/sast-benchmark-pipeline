@@ -145,6 +145,9 @@ def normalize_aikido_results(
         "scan_date": metadata.get("timestamp"),
         "command": metadata.get("command"),
         "raw_results_path": str(raw_results_path),
+        # enriched timing / status to match other scanners
+        "scan_time_seconds": metadata.get("scan_time_seconds"),
+        "exit_code": metadata.get("exit_code"),
         "metadata_path": "metadata.json",
     }
     per_finding_metadata = {
@@ -161,6 +164,8 @@ def normalize_aikido_results(
             "tool_version": metadata.get("scanner_version"),
             "target_repo": target_repo,
             "scan": scan_info,
+            # embed full metadata.json content for convenience
+            "run_metadata": metadata,
             "findings": [],
         }
         with normalized_path.open("w", encoding="utf-8") as f:
@@ -252,6 +257,8 @@ def normalize_aikido_results(
         "tool_version": metadata.get("scanner_version"),
         "target_repo": target_repo,
         "scan": scan_info,
+        # full run metadata for reference
+        "run_metadata": metadata,
         "findings": findings,
     }
 
@@ -353,6 +360,8 @@ def main() -> None:
         if trigger_http_seconds is not None
         else None,
         "command": command_str,
+        # For Aikido there is no CLI exit code; treat as success (0) for consistency.
+        "exit_code": 0,
         # We do not currently know commit / author data from Aikido, so leave them None.
         "repo_commit": None,
         "commit_author_name": None,
