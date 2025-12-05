@@ -1,0 +1,739 @@
+{
+  "schema_version": "1.1",
+  "tool": "semgrep",
+  "tool_version": "1.144.0",
+  "target_repo": {
+    "name": "juice-shop",
+    "url": "https://github.com/juice-shop/juice-shop.git",
+    "commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+    "commit_author_name": "Bjoern Kimminich",
+    "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+    "commit_date": "2025-12-01T11:11:50+01:00"
+  },
+  "scan": {
+    "run_id": "2025120401",
+    "scan_date": "2025-12-04T19:22:49.792368",
+    "command": "semgrep --config p/security-audit --json --quiet --output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop",
+    "raw_results_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json",
+    "scan_time_seconds": 16.754586696624756,
+    "exit_code": 0,
+    "metadata_path": "metadata.json"
+  },
+  "run_metadata": {
+    "scanner": "semgrep",
+    "scanner_version": "1.144.0",
+    "repo_name": "juice-shop",
+    "repo_url": "https://github.com/juice-shop/juice-shop.git",
+    "repo_commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+    "run_id": "2025120401",
+    "timestamp": "2025-12-04T19:22:49.792368",
+    "command": "semgrep --config p/security-audit --json --quiet --output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop",
+    "scan_time_seconds": 16.754586696624756,
+    "exit_code": 0,
+    "commit_author_name": "Bjoern Kimminich",
+    "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+    "commit_date": "2025-12-01T11:11:50+01:00"
+  },
+  "findings": [
+    {
+      "metadata": {
+        "tool": "semgrep",
+        "tool_version": "1.144.0",
+        "target_repo": {
+          "name": "juice-shop",
+          "url": "https://github.com/juice-shop/juice-shop.git",
+          "commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+          "commit_author_name": "Bjoern Kimminich",
+          "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+          "commit_date": "2025-12-01T11:11:50+01:00"
+        },
+        "scan": {
+          "run_id": "2025120401",
+          "scan_date": "2025-12-04T19:22:49.792368",
+          "command": "semgrep --config p/security-audit --json --quiet --output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop",
+          "raw_results_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json",
+          "scan_time_seconds": 16.754586696624756,
+          "exit_code": 0,
+          "metadata_path": "metadata.json"
+        }
+      },
+      "finding_id": "semgrep:generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var:/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/frontend/src/app/navbar/navbar.component.html:17",
+      "cwe_id": "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
+      "rule_id": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "title": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+      "severity": "MEDIUM",
+      "file_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/frontend/src/app/navbar/navbar.component.html",
+      "line_number": 17,
+      "end_line_number": 17,
+      "line_content": "        <img [src]=\"logoSrc\" class=\"logo\" alt={{applicationName}}>",
+      "vendor": {
+        "raw_result": {
+          "check_id": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+          "path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/frontend/src/app/navbar/navbar.component.html",
+          "start": {
+            "line": 17,
+            "col": 47,
+            "offset": 665
+          },
+          "end": {
+            "line": 17,
+            "col": 66,
+            "offset": 684
+          },
+          "extra": {
+            "message": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+            "metadata": {
+              "cwe": [
+                "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+              ],
+              "owasp": [
+                "A07:2017 - Cross-Site Scripting (XSS)",
+                "A03:2021 - Injection"
+              ],
+              "references": [
+                "https://flask.palletsprojects.com/en/1.1.x/security/#cross-site-scripting-xss"
+              ],
+              "category": "security",
+              "technology": [
+                "html-templates"
+              ],
+              "confidence": "LOW",
+              "cwe2022-top25": true,
+              "cwe2021-top25": true,
+              "subcategory": [
+                "audit"
+              ],
+              "likelihood": "LOW",
+              "impact": "MEDIUM",
+              "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+              "vulnerability_class": [
+                "Cross-Site-Scripting (XSS)"
+              ],
+              "source": "https://semgrep.dev/r/generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+              "shortlink": "https://sg.run/weNX"
+            },
+            "severity": "WARNING",
+            "fingerprint": "requires login",
+            "lines": "requires login",
+            "validation_state": "NO_VALIDATOR",
+            "engine_kind": "OSS"
+          }
+        }
+      }
+    },
+    {
+      "metadata": {
+        "tool": "semgrep",
+        "tool_version": "1.144.0",
+        "target_repo": {
+          "name": "juice-shop",
+          "url": "https://github.com/juice-shop/juice-shop.git",
+          "commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+          "commit_author_name": "Bjoern Kimminich",
+          "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+          "commit_date": "2025-12-01T11:11:50+01:00"
+        },
+        "scan": {
+          "run_id": "2025120401",
+          "scan_date": "2025-12-04T19:22:49.792368",
+          "command": "semgrep --config p/security-audit --json --quiet --output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop",
+          "raw_results_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json",
+          "scan_time_seconds": 16.754586696624756,
+          "exit_code": 0,
+          "metadata_path": "metadata.json"
+        }
+      },
+      "finding_id": "semgrep:generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var:/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/frontend/src/app/purchase-basket/purchase-basket.component.html:15",
+      "cwe_id": "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
+      "rule_id": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "title": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+      "severity": "MEDIUM",
+      "file_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/frontend/src/app/purchase-basket/purchase-basket.component.html",
+      "line_number": 15,
+      "end_line_number": 15,
+      "line_content": "      <img [src]=\"'assets/public/images/products/'+element.image\" alt={{element.name}}",
+      "vendor": {
+        "raw_result": {
+          "check_id": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+          "path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/frontend/src/app/purchase-basket/purchase-basket.component.html",
+          "start": {
+            "line": 15,
+            "col": 71,
+            "offset": 491
+          },
+          "end": {
+            "line": 15,
+            "col": 87,
+            "offset": 507
+          },
+          "extra": {
+            "message": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+            "metadata": {
+              "cwe": [
+                "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+              ],
+              "owasp": [
+                "A07:2017 - Cross-Site Scripting (XSS)",
+                "A03:2021 - Injection"
+              ],
+              "references": [
+                "https://flask.palletsprojects.com/en/1.1.x/security/#cross-site-scripting-xss"
+              ],
+              "category": "security",
+              "technology": [
+                "html-templates"
+              ],
+              "confidence": "LOW",
+              "cwe2022-top25": true,
+              "cwe2021-top25": true,
+              "subcategory": [
+                "audit"
+              ],
+              "likelihood": "LOW",
+              "impact": "MEDIUM",
+              "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+              "vulnerability_class": [
+                "Cross-Site-Scripting (XSS)"
+              ],
+              "source": "https://semgrep.dev/r/generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+              "shortlink": "https://sg.run/weNX"
+            },
+            "severity": "WARNING",
+            "fingerprint": "requires login",
+            "lines": "requires login",
+            "validation_state": "NO_VALIDATOR",
+            "engine_kind": "OSS"
+          }
+        }
+      }
+    },
+    {
+      "metadata": {
+        "tool": "semgrep",
+        "tool_version": "1.144.0",
+        "target_repo": {
+          "name": "juice-shop",
+          "url": "https://github.com/juice-shop/juice-shop.git",
+          "commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+          "commit_author_name": "Bjoern Kimminich",
+          "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+          "commit_date": "2025-12-01T11:11:50+01:00"
+        },
+        "scan": {
+          "run_id": "2025120401",
+          "scan_date": "2025-12-04T19:22:49.792368",
+          "command": "semgrep --config p/security-audit --json --quiet --output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop",
+          "raw_results_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json",
+          "scan_time_seconds": 16.754586696624756,
+          "exit_code": 0,
+          "metadata_path": "metadata.json"
+        }
+      },
+      "finding_id": "semgrep:generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var:/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/frontend/src/app/search-result/search-result.component.html:40",
+      "cwe_id": "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
+      "rule_id": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "title": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+      "severity": "MEDIUM",
+      "file_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/frontend/src/app/search-result/search-result.component.html",
+      "line_number": 40,
+      "end_line_number": 40,
+      "line_content": "                    <img mat-card-image [src]=\"'assets/public/images/products/'+item.image\" alt={{item.name}}",
+      "vendor": {
+        "raw_result": {
+          "check_id": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+          "path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/frontend/src/app/search-result/search-result.component.html",
+          "start": {
+            "line": 40,
+            "col": 97,
+            "offset": 1765
+          },
+          "end": {
+            "line": 40,
+            "col": 110,
+            "offset": 1778
+          },
+          "extra": {
+            "message": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+            "metadata": {
+              "cwe": [
+                "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+              ],
+              "owasp": [
+                "A07:2017 - Cross-Site Scripting (XSS)",
+                "A03:2021 - Injection"
+              ],
+              "references": [
+                "https://flask.palletsprojects.com/en/1.1.x/security/#cross-site-scripting-xss"
+              ],
+              "category": "security",
+              "technology": [
+                "html-templates"
+              ],
+              "confidence": "LOW",
+              "cwe2022-top25": true,
+              "cwe2021-top25": true,
+              "subcategory": [
+                "audit"
+              ],
+              "likelihood": "LOW",
+              "impact": "MEDIUM",
+              "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+              "vulnerability_class": [
+                "Cross-Site-Scripting (XSS)"
+              ],
+              "source": "https://semgrep.dev/r/generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+              "shortlink": "https://sg.run/weNX"
+            },
+            "severity": "WARNING",
+            "fingerprint": "requires login",
+            "lines": "requires login",
+            "validation_state": "NO_VALIDATOR",
+            "engine_kind": "OSS"
+          }
+        }
+      }
+    },
+    {
+      "metadata": {
+        "tool": "semgrep",
+        "tool_version": "1.144.0",
+        "target_repo": {
+          "name": "juice-shop",
+          "url": "https://github.com/juice-shop/juice-shop.git",
+          "commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+          "commit_author_name": "Bjoern Kimminich",
+          "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+          "commit_date": "2025-12-01T11:11:50+01:00"
+        },
+        "scan": {
+          "run_id": "2025120401",
+          "scan_date": "2025-12-04T19:22:49.792368",
+          "command": "semgrep --config p/security-audit --json --quiet --output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop",
+          "raw_results_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json",
+          "scan_time_seconds": 16.754586696624756,
+          "exit_code": 0,
+          "metadata_path": "metadata.json"
+        }
+      },
+      "finding_id": "semgrep:javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret:/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/lib/insecurity.ts:56",
+      "cwe_id": "CWE-798: Use of Hard-coded Credentials",
+      "rule_id": "javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+      "title": "A hard-coded credential was detected. It is not recommended to store credentials in source-code, as this risks secrets being leaked and used by either an internal or external malicious adversary. It is recommended to use environment variables to securely provide credentials or retrieve credentials from a secure vault or HSM (Hardware Security Module).",
+      "severity": "MEDIUM",
+      "file_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/lib/insecurity.ts",
+      "line_number": 56,
+      "end_line_number": 56,
+      "line_content": "export const authorize = (user = {}) => jwt.sign(user, privateKey, { expiresIn: '6h', algorithm: 'RS256' })",
+      "vendor": {
+        "raw_result": {
+          "check_id": "javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+          "path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/lib/insecurity.ts",
+          "start": {
+            "line": 56,
+            "col": 56,
+            "offset": 2827
+          },
+          "end": {
+            "line": 56,
+            "col": 66,
+            "offset": 2837
+          },
+          "extra": {
+            "message": "A hard-coded credential was detected. It is not recommended to store credentials in source-code, as this risks secrets being leaked and used by either an internal or external malicious adversary. It is recommended to use environment variables to securely provide credentials or retrieve credentials from a secure vault or HSM (Hardware Security Module).",
+            "metadata": {
+              "cwe": [
+                "CWE-798: Use of Hard-coded Credentials"
+              ],
+              "references": [
+                "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+              ],
+              "owasp": [
+                "A07:2021 - Identification and Authentication Failures"
+              ],
+              "asvs": {
+                "control_id": "3.5.2 Static API keys or secret",
+                "control_url": "https://github.com/OWASP/ASVS/blob/master/4.0/en/0x12-V3-Session-management.md#v35-token-based-session-management",
+                "section": "V3: Session Management Verification Requirements",
+                "version": "4"
+              },
+              "category": "security",
+              "technology": [
+                "jwt",
+                "javascript",
+                "secrets"
+              ],
+              "cwe2022-top25": true,
+              "cwe2021-top25": true,
+              "subcategory": [
+                "vuln"
+              ],
+              "likelihood": "HIGH",
+              "impact": "MEDIUM",
+              "confidence": "HIGH",
+              "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+              "vulnerability_class": [
+                "Hard-coded Secrets"
+              ],
+              "source": "https://semgrep.dev/r/javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret",
+              "shortlink": "https://sg.run/4xN9"
+            },
+            "severity": "WARNING",
+            "fingerprint": "requires login",
+            "lines": "requires login",
+            "validation_state": "NO_VALIDATOR",
+            "engine_kind": "OSS"
+          }
+        }
+      }
+    },
+    {
+      "metadata": {
+        "tool": "semgrep",
+        "tool_version": "1.144.0",
+        "target_repo": {
+          "name": "juice-shop",
+          "url": "https://github.com/juice-shop/juice-shop.git",
+          "commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+          "commit_author_name": "Bjoern Kimminich",
+          "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+          "commit_date": "2025-12-01T11:11:50+01:00"
+        },
+        "scan": {
+          "run_id": "2025120401",
+          "scan_date": "2025-12-04T19:22:49.792368",
+          "command": "semgrep --config p/security-audit --json --quiet --output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop",
+          "raw_results_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json",
+          "scan_time_seconds": 16.754586696624756,
+          "exit_code": 0,
+          "metadata_path": "metadata.json"
+        }
+      },
+      "finding_id": "semgrep:javascript.express.security.audit.possible-user-input-redirect.unknown-value-in-redirect:/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/routes/redirect.ts:19",
+      "cwe_id": "CWE-601: URL Redirection to Untrusted Site ('Open Redirect')",
+      "rule_id": "javascript.express.security.audit.possible-user-input-redirect.unknown-value-in-redirect",
+      "title": "It looks like 'toUrl' is read from user input and it is used to as a redirect. Ensure 'toUrl' is not externally controlled, otherwise this is an open redirect.",
+      "severity": "MEDIUM",
+      "file_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/routes/redirect.ts",
+      "line_number": 19,
+      "end_line_number": 19,
+      "line_content": "      res.redirect(toUrl)",
+      "vendor": {
+        "raw_result": {
+          "check_id": "javascript.express.security.audit.possible-user-input-redirect.unknown-value-in-redirect",
+          "path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/routes/redirect.ts",
+          "start": {
+            "line": 19,
+            "col": 7,
+            "offset": 1032
+          },
+          "end": {
+            "line": 19,
+            "col": 26,
+            "offset": 1051
+          },
+          "extra": {
+            "message": "It looks like 'toUrl' is read from user input and it is used to as a redirect. Ensure 'toUrl' is not externally controlled, otherwise this is an open redirect.",
+            "metadata": {
+              "owasp": [
+                "A01:2021 - Broken Access Control"
+              ],
+              "cwe": [
+                "CWE-601: URL Redirection to Untrusted Site ('Open Redirect')"
+              ],
+              "asvs": {
+                "control_id": "5.5.1 Insecue Redirect",
+                "control_url": "https://github.com/OWASP/ASVS/blob/master/4.0/en/0x13-V5-Validation-Sanitization-Encoding.md#v51-input-validation",
+                "section": "V5 Validation, Sanitization and Encoding",
+                "version": "4"
+              },
+              "category": "security",
+              "technology": [
+                "express"
+              ],
+              "subcategory": [
+                "audit"
+              ],
+              "likelihood": "LOW",
+              "impact": "LOW",
+              "confidence": "LOW",
+              "references": [
+                "https://owasp.org/Top10/A01_2021-Broken_Access_Control"
+              ],
+              "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+              "vulnerability_class": [
+                "Open Redirect"
+              ],
+              "source": "https://semgrep.dev/r/javascript.express.security.audit.possible-user-input-redirect.unknown-value-in-redirect",
+              "shortlink": "https://sg.run/OPv2"
+            },
+            "severity": "WARNING",
+            "fingerprint": "requires login",
+            "lines": "requires login",
+            "validation_state": "NO_VALIDATOR",
+            "engine_kind": "OSS"
+          }
+        }
+      }
+    },
+    {
+      "metadata": {
+        "tool": "semgrep",
+        "tool_version": "1.144.0",
+        "target_repo": {
+          "name": "juice-shop",
+          "url": "https://github.com/juice-shop/juice-shop.git",
+          "commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+          "commit_author_name": "Bjoern Kimminich",
+          "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+          "commit_date": "2025-12-01T11:11:50+01:00"
+        },
+        "scan": {
+          "run_id": "2025120401",
+          "scan_date": "2025-12-04T19:22:49.792368",
+          "command": "semgrep --config p/security-audit --json --quiet --output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop",
+          "raw_results_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json",
+          "scan_time_seconds": 16.754586696624756,
+          "exit_code": 0,
+          "metadata_path": "metadata.json"
+        }
+      },
+      "finding_id": "semgrep:javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag:/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/routes/videoHandler.ts:58",
+      "cwe_id": "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
+      "rule_id": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+      "title": "Cannot determine what 'subs' is and it is used with a '<script>' tag. This could be susceptible to cross-site scripting (XSS). Ensure 'subs' is not externally controlled, or sanitize this data.",
+      "severity": "MEDIUM",
+      "file_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/routes/videoHandler.ts",
+      "line_number": 58,
+      "end_line_number": 58,
+      "line_content": "      challengeUtils.solveIf(challenges.videoXssChallenge, () => { return utils.contains(subs, '</script><script>alert(`xss`)</script>') })",
+      "vendor": {
+        "raw_result": {
+          "check_id": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+          "path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/routes/videoHandler.ts",
+          "start": {
+            "line": 58,
+            "col": 90,
+            "offset": 1893
+          },
+          "end": {
+            "line": 58,
+            "col": 94,
+            "offset": 1897
+          },
+          "extra": {
+            "message": "Cannot determine what 'subs' is and it is used with a '<script>' tag. This could be susceptible to cross-site scripting (XSS). Ensure 'subs' is not externally controlled, or sanitize this data.",
+            "metadata": {
+              "owasp": [
+                "A07:2017 - Cross-Site Scripting (XSS)",
+                "A03:2021 - Injection"
+              ],
+              "cwe": [
+                "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+              ],
+              "references": [
+                "https://www.developsec.com/2017/11/09/xss-in-a-script-tag/",
+                "https://github.com/juice-shop/juice-shop/blob/1ceb8751e986dacd3214a618c37e7411be6bc11a/routes/videoHandler.ts#L68"
+              ],
+              "category": "security",
+              "technology": [
+                "javascript"
+              ],
+              "cwe2022-top25": true,
+              "cwe2021-top25": true,
+              "subcategory": [
+                "audit"
+              ],
+              "likelihood": "LOW",
+              "impact": "LOW",
+              "confidence": "LOW",
+              "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+              "vulnerability_class": [
+                "Cross-Site-Scripting (XSS)"
+              ],
+              "source": "https://semgrep.dev/r/javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+              "shortlink": "https://sg.run/1Zy1"
+            },
+            "severity": "WARNING",
+            "fingerprint": "requires login",
+            "lines": "requires login",
+            "validation_state": "NO_VALIDATOR",
+            "engine_kind": "OSS"
+          }
+        }
+      }
+    },
+    {
+      "metadata": {
+        "tool": "semgrep",
+        "tool_version": "1.144.0",
+        "target_repo": {
+          "name": "juice-shop",
+          "url": "https://github.com/juice-shop/juice-shop.git",
+          "commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+          "commit_author_name": "Bjoern Kimminich",
+          "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+          "commit_date": "2025-12-01T11:11:50+01:00"
+        },
+        "scan": {
+          "run_id": "2025120401",
+          "scan_date": "2025-12-04T19:22:49.792368",
+          "command": "semgrep --config p/security-audit --json --quiet --output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop",
+          "raw_results_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json",
+          "scan_time_seconds": 16.754586696624756,
+          "exit_code": 0,
+          "metadata_path": "metadata.json"
+        }
+      },
+      "finding_id": "semgrep:javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag:/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/routes/videoHandler.ts:71",
+      "cwe_id": "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
+      "rule_id": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+      "title": "Cannot determine what 'subs' is and it is used with a '<script>' tag. This could be susceptible to cross-site scripting (XSS). Ensure 'subs' is not externally controlled, or sanitize this data.",
+      "severity": "MEDIUM",
+      "file_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/routes/videoHandler.ts",
+      "line_number": 71,
+      "end_line_number": 71,
+      "line_content": "      compiledTemplate = compiledTemplate.replace('<script id=\"subtitle\"></script>', '<script id=\"subtitle\" type=\"text/vtt\" data-label=\"English\" data-lang=\"en\">' + subs + '</script>')",
+      "vendor": {
+        "raw_result": {
+          "check_id": "javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+          "path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/routes/videoHandler.ts",
+          "start": {
+            "line": 71,
+            "col": 165,
+            "offset": 2827
+          },
+          "end": {
+            "line": 71,
+            "col": 169,
+            "offset": 2831
+          },
+          "extra": {
+            "message": "Cannot determine what 'subs' is and it is used with a '<script>' tag. This could be susceptible to cross-site scripting (XSS). Ensure 'subs' is not externally controlled, or sanitize this data.",
+            "metadata": {
+              "owasp": [
+                "A07:2017 - Cross-Site Scripting (XSS)",
+                "A03:2021 - Injection"
+              ],
+              "cwe": [
+                "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+              ],
+              "references": [
+                "https://www.developsec.com/2017/11/09/xss-in-a-script-tag/",
+                "https://github.com/juice-shop/juice-shop/blob/1ceb8751e986dacd3214a618c37e7411be6bc11a/routes/videoHandler.ts#L68"
+              ],
+              "category": "security",
+              "technology": [
+                "javascript"
+              ],
+              "cwe2022-top25": true,
+              "cwe2021-top25": true,
+              "subcategory": [
+                "audit"
+              ],
+              "likelihood": "LOW",
+              "impact": "LOW",
+              "confidence": "LOW",
+              "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+              "vulnerability_class": [
+                "Cross-Site-Scripting (XSS)"
+              ],
+              "source": "https://semgrep.dev/r/javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+              "shortlink": "https://sg.run/1Zy1"
+            },
+            "severity": "WARNING",
+            "fingerprint": "requires login",
+            "lines": "requires login",
+            "validation_state": "NO_VALIDATOR",
+            "engine_kind": "OSS"
+          }
+        }
+      }
+    },
+    {
+      "metadata": {
+        "tool": "semgrep",
+        "tool_version": "1.144.0",
+        "target_repo": {
+          "name": "juice-shop",
+          "url": "https://github.com/juice-shop/juice-shop.git",
+          "commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+          "commit_author_name": "Bjoern Kimminich",
+          "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+          "commit_date": "2025-12-01T11:11:50+01:00"
+        },
+        "scan": {
+          "run_id": "2025120401",
+          "scan_date": "2025-12-04T19:22:49.792368",
+          "command": "semgrep --config p/security-audit --json --quiet --output /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json /Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop",
+          "raw_results_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/runs/semgrep/juice-shop/2025120401/juice-shop.json",
+          "scan_time_seconds": 16.754586696624756,
+          "exit_code": 0,
+          "metadata_path": "metadata.json"
+        }
+      },
+      "finding_id": "semgrep:generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var:/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/views/dataErasureForm.hbs:21",
+      "cwe_id": "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')",
+      "rule_id": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+      "title": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+      "severity": "MEDIUM",
+      "file_path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/views/dataErasureForm.hbs",
+      "line_number": 21,
+      "end_line_number": 21,
+      "line_content": "                <input type=\"email\" required placeholder={{userEmail}} name=\"email\" id=\"email\">",
+      "vendor": {
+        "raw_result": {
+          "check_id": "generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+          "path": "/Users/wenchengchai/PycharmProjects/sast-benchmark-pipeline/repos/juice-shop/views/dataErasureForm.hbs",
+          "start": {
+            "line": 21,
+            "col": 58,
+            "offset": 1306
+          },
+          "end": {
+            "line": 21,
+            "col": 71,
+            "offset": 1319
+          },
+          "extra": {
+            "message": "Detected a unquoted template variable as an attribute. If unquoted, a malicious actor could inject custom JavaScript handlers. To fix this, add quotes around the template expression, like this: \"{{ expr }}\".",
+            "metadata": {
+              "cwe": [
+                "CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"
+              ],
+              "owasp": [
+                "A07:2017 - Cross-Site Scripting (XSS)",
+                "A03:2021 - Injection"
+              ],
+              "references": [
+                "https://flask.palletsprojects.com/en/1.1.x/security/#cross-site-scripting-xss"
+              ],
+              "category": "security",
+              "technology": [
+                "html-templates"
+              ],
+              "confidence": "LOW",
+              "cwe2022-top25": true,
+              "cwe2021-top25": true,
+              "subcategory": [
+                "audit"
+              ],
+              "likelihood": "LOW",
+              "impact": "MEDIUM",
+              "license": "Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license",
+              "vulnerability_class": [
+                "Cross-Site-Scripting (XSS)"
+              ],
+              "source": "https://semgrep.dev/r/generic.html-templates.security.unquoted-attribute-var.unquoted-attribute-var",
+              "shortlink": "https://sg.run/weNX"
+            },
+            "severity": "WARNING",
+            "fingerprint": "requires login",
+            "lines": "requires login",
+            "validation_state": "NO_VALIDATOR",
+            "engine_kind": "OSS"
+          }
+        }
+      }
+    }
+  ]
+}
