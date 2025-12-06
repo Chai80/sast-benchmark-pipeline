@@ -20,6 +20,7 @@ There is also a unified CLI, `sast_cli.py`, which can:
 - Run a **single scan** with any tool
 - Run a **runtime benchmark** across multiple tools
 
+###repo is designed to run through 'python sast_cli.py' while in the 'sast-benchmark-pipeline'
 ---
 
 ## 1. Requirements
