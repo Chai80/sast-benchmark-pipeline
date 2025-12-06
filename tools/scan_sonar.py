@@ -9,6 +9,8 @@ Given a Git repo URL, this script:
   * clones the repo into repos/<name> (reuses if already cloned)
   * runs sonar-scanner CLI on that repo (unless --skip-scan)
   * fetches issues for the project via SonarCloud REST API
+  * enriches each finding with CWE + OWASP Top 10 classification
+    using SonarCloud /api/rules/show
   * writes (grouped by repo name):
         runs/sonar/<repo_name>/<run_id>/<repo_name>.json
         runs/sonar/<repo_name>/<run_id>/<repo_name>.normalized.json
@@ -49,6 +51,35 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env")
 
 
+# OWASP Top 10 2021 mapping (A01..A10 → human name)
+OWASP_TOP_10_2021_NAMES: Dict[str, str] = {
+    "A01": "Broken Access Control",
+    "A02": "Cryptographic Failures",
+    "A03": "Injection",
+    "A04": "Insecure Design",
+    "A05": "Security Misconfiguration",
+    "A06": "Vulnerable and Outdated Components",
+    "A07": "Identification and Authentication Failures",
+    "A08": "Software and Data Integrity Failures",
+    "A09": "Security Logging and Monitoring Failures",
+    "A10": "Server-Side Request Forgery",
+}
+
+# OWASP Top 10 2017 mapping (A1..A10 → human name)
+OWASP_TOP_10_2017_NAMES: Dict[str, str] = {
+    "A1": "Injection",
+    "A2": "Broken Authentication",
+    "A3": "Sensitive Data Exposure",
+    "A4": "XML External Entities (XXE)",
+    "A5": "Broken Access Control",
+    "A6": "Security Misconfiguration",
+    "A7": "Cross-Site Scripting (XSS)",
+    "A8": "Insecure Deserialization",
+    "A9": "Using Components with Known Vulnerabilities",
+    "A10": "Insufficient Logging & Monitoring",
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run SonarCloud scan on a repo and save JSON + metadata + normalized output."
@@ -82,6 +113,18 @@ def parse_args() -> argparse.Namespace:
         help="Do not run sonar-scanner; just fetch issues for an existing projectKey.",
     )
     return parser.parse_args()
+
+
+def get_sonar_token() -> str:
+    token = os.getenv("SONAR_TOKEN")
+    if not token:
+        print(
+            "ERROR: SONAR_TOKEN environment variable is not set.\n"
+            "Add it to your .env or export it in your shell before running.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return token
 
 
 def validate_sonarcloud_credentials(host: str, org: str, token: str) -> None:
@@ -316,7 +359,6 @@ def fetch_all_issues_for_project(
     return all_issues
 
 
-
 def get_scanner_version() -> str:
     try:
         out = subprocess.check_output(
@@ -329,14 +371,204 @@ def get_scanner_version() -> str:
         return "unknown"
 
 
+def build_owasp_block(
+    codes: List[str],
+    names_map: Dict[str, str],
+    year_label: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Build a block like:
+
+      {
+        "codes": ["A03"],
+        "categories": ["A03:2021-Injection"]
+      }
+
+    or return None if codes is empty.
+    """
+    codes = codes or []
+    if not codes:
+        return None
+
+    categories: List[str] = []
+    for code in codes:
+        code_str = code.strip()
+        if not code_str:
+            continue
+        name = names_map.get(code_str, "Unknown")
+        categories.append(f"{code_str}:{year_label}-{name}")
+    if not categories:
+        return None
+    return {"codes": codes, "categories": categories}
+
+
+def fetch_rule_classification(
+    host: str,
+    organization: Optional[str],
+    token: str,
+    rule_key: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Query SonarCloud for a single rule's metadata and derive:
+      - cwe_ids
+      - owasp_top_10_2017
+      - owasp_top_10_2021
+      - vuln_class (rule name)
+
+    Returns None on failure (network, 404, etc.).
+    """
+    base_url = host.rstrip("/") + "/api/rules/show"
+    params: Dict[str, Any] = {"key": rule_key}
+    if organization:
+        params["organization"] = organization
+
+    headers = {"Authorization": f"Bearer {token}"}
+
+    try:
+        resp = requests.get(base_url, params=params, headers=headers, timeout=15)
+    except requests.RequestException as e:
+        print(
+            f"⚠️ Failed to fetch rule metadata for {rule_key}: {e}",
+            file=sys.stderr,
+        )
+        return None
+
+    if resp.status_code == 404:
+        print(f"⚠️ Rule {rule_key} not found in Sonar (404); skipping.", file=sys.stderr)
+        return None
+    if not resp.ok:
+        print(
+            f"⚠️ Rule metadata HTTP {resp.status_code} for {rule_key}: "
+            f"{resp.text[:200]!r}",
+            file=sys.stderr,
+        )
+        return None
+
+    try:
+        data = resp.json()
+    except ValueError:
+        print(
+            f"⚠️ Could not decode JSON rules/show response for {rule_key}",
+            file=sys.stderr,
+        )
+        return None
+
+    rule = data.get("rule") or {}
+    name = rule.get("name")  # descriptive rule name → vuln_class
+    tags = rule.get("tags") or []
+    security_standards = rule.get("securityStandards") or []
+
+    cwe_ids: List[str] = []
+    owasp2017_codes: List[str] = []
+    owasp2021_codes: List[str] = []
+
+    # --- 1) Parse securityStandards (can be dict OR list of strings) ---
+
+    if isinstance(security_standards, dict):
+        # Shape: {"CWE": ["79"], "OWASP Top 10 2021": ["A03"], ...}
+        for c in security_standards.get("CWE", []) or []:
+            c_str = str(c).strip()
+            if not c_str:
+                continue
+            cwe_ids.append(f"CWE-{c_str}")
+
+        owasp2017_codes = list(security_standards.get("OWASP Top 10 2017", []) or [])
+        owasp2021_codes = list(security_standards.get("OWASP Top 10 2021", []) or [])
+
+    elif isinstance(security_standards, list):
+        # Common SonarCloud shape: ["cwe:79", "owaspTop10:a1", "owaspTop10-2021:a03", ...]
+        for entry in security_standards:
+            if not isinstance(entry, str):
+                continue
+            lower = entry.lower()
+
+            # CWE entries: "cwe:79"
+            if lower.startswith("cwe:"):
+                num = entry.split(":", 1)[1].strip()
+                if num:
+                    cwe_ids.append(f"CWE-{num.upper()}")
+                continue
+
+            # OWASP 2021: "owasptop10-2021:a03"
+            if "owasptop10-2021" in lower:
+                code_part = entry.split(":", 1)[1].strip() if ":" in entry else ""
+                if code_part:
+                    code = code_part.upper()
+                    # normalize "03" → "A03"
+                    if not code.startswith("A"):
+                        code = "A" + code
+                    owasp2021_codes.append(code)
+                continue
+
+            # OWASP 2017: "owasptop10:a1" or "owasptop10-2017:a1"
+            if "owasptop10-2017" in lower or "owasptop10:" in lower:
+                code_part = entry.split(":", 1)[1].strip() if ":" in entry else ""
+                if code_part:
+                    code = code_part.upper()
+                    if not code.startswith("A"):
+                        code = "A" + code
+                    owasp2017_codes.append(code)
+                continue
+
+    # --- 2) Fallback CWE from tags (e.g. "cwe-89") ---
+
+    for t in tags:
+        if not isinstance(t, str):
+            continue
+        lower = t.lower()
+        if lower.startswith("cwe-"):
+            num = lower.split("cwe-", 1)[1]
+            if num:
+                cid = f"CWE-{num.upper()}"
+                cwe_ids.append(cid)
+
+    # De-duplicate CWE list while preserving order
+    seen_cwe: set[str] = set()
+    deduped_cwe_ids: List[str] = []
+    for cid in cwe_ids:
+        if cid not in seen_cwe:
+            seen_cwe.add(cid)
+            deduped_cwe_ids.append(cid)
+    cwe_ids = deduped_cwe_ids
+
+    # De-duplicate OWASP code lists
+    owasp2017_codes = list(dict.fromkeys(owasp2017_codes))
+    owasp2021_codes = list(dict.fromkeys(owasp2021_codes))
+
+    # --- 3) Build OWASP blocks with human-readable labels ---
+
+    owasp_2017_block = build_owasp_block(
+        owasp2017_codes,
+        OWASP_TOP_10_2017_NAMES,
+        "2017",
+    )
+    owasp_2021_block = build_owasp_block(
+        owasp2021_codes,
+        OWASP_TOP_10_2021_NAMES,
+        "2021",
+    )
+
+    return {
+        "rule_key": rule_key,
+        "vuln_class": name,
+        "cwe_ids": cwe_ids,
+        "owasp_top_10_2017": owasp_2017_block,
+        "owasp_top_10_2021": owasp_2021_block,
+    }
+
+
 def normalize_sonar_results(
     repo_path: Path,
     raw_results_path: Path,
     metadata: Dict[str, Any],
     normalized_path: Path,
+    sonar_host: str,
+    sonar_org: str,
+    sonar_token: str,
 ) -> None:
     """
-    Convert Sonar issues JSON into the common normalized schema (schema v1.1).
+    Convert Sonar issues JSON into the common normalized schema (schema v1.1),
+    enriched with CWE + OWASP Top 10 classification via SonarCloud rules API.
 
     raw_results_path is expected to contain a JSON object like:
       {
@@ -381,7 +613,6 @@ def normalize_sonar_results(
             "tool_version": metadata.get("scanner_version"),
             "target_repo": target_repo,
             "scan": scan_info,
-            # embed full metadata.json content
             "run_metadata": metadata,
             "findings": [],
         }
@@ -393,7 +624,31 @@ def normalize_sonar_results(
         data = json.load(f)
 
     issues = data.get("issues") or []
+
+    # --- Classification: collect unique rule_ids and query rules API ---
+    rule_ids: List[str] = []
+    for issue in issues:
+        rid = issue.get("rule")
+        if isinstance(rid, str) and rid not in rule_ids:
+            rule_ids.append(rid)
+
+    print(
+        f"🔍 Normalization: {len(issues)} issues, {len(rule_ids)} unique rule_id values."
+    )
+    print(f"   Enriching with Sonar rules API at {sonar_host} (org={sonar_org})")
+
+    rule_cache: Dict[str, Dict[str, Any]] = {}
+    for rid in rule_ids:
+        classification = fetch_rule_classification(sonar_host, sonar_org, sonar_token, rid)
+        if classification:
+            rule_cache[rid] = classification
+
+    print(
+        f"✅ Retrieved classification for {len(rule_cache)} / {len(rule_ids)} rules."
+    )
+
     findings: List[Dict[str, Any]] = []
+    enriched_count = 0
 
     for issue in issues:
         rule_id = issue.get("rule")
@@ -415,20 +670,7 @@ def normalize_sonar_results(
             else:
                 file_path = component
 
-        # Try to infer CWE from tags (e.g. "cwe", "cwe-89")
-        tags = issue.get("tags") or []
-        cwe_id = None
-        for t in tags:
-            if not isinstance(t, str):
-                continue
-            lower = t.lower()
-            if lower.startswith("cwe-"):
-                num = lower.split("cwe-", 1)[1]
-                if num:
-                    cwe_id = f"CWE-{num.upper()}"
-                    break
-
-        # Map Sonar severity to HIGH/MEDIUM/LOW
+        # Base severity mapping from Sonar to HIGH/MEDIUM/LOW
         if severity_raw in ("BLOCKER", "CRITICAL", "MAJOR"):
             severity = "HIGH"
         elif severity_raw == "MINOR":
@@ -451,7 +693,24 @@ def normalize_sonar_results(
             except OSError:
                 pass
 
-        finding = {
+        # Classification from rules API (if available)
+        cwe_id: Optional[str] = None
+        cwe_ids: Optional[List[str]] = None
+        vuln_class: Optional[str] = None
+        owasp_2017 = None
+        owasp_2021 = None
+
+        cls = rule_cache.get(rule_id)
+        if cls:
+            cwe_ids = cls.get("cwe_ids") or []
+            if cwe_ids:
+                cwe_id = cwe_ids[0]
+            vuln_class = cls.get("vuln_class")
+            owasp_2017 = cls.get("owasp_top_10_2017")
+            owasp_2021 = cls.get("owasp_top_10_2021")
+            enriched_count += 1
+
+        finding: Dict[str, Any] = {
             "metadata": per_finding_metadata,
             "finding_id": f"sonar:{rule_id}:{file_path}:{line}",
             "cwe_id": cwe_id,
@@ -466,6 +725,17 @@ def normalize_sonar_results(
                 "raw_result": issue,
             },
         }
+
+        # Only add these keys when we actually have something
+        if cwe_ids:
+            finding["cwe_ids"] = cwe_ids
+        if vuln_class:
+            finding["vuln_class"] = vuln_class
+        if owasp_2017:
+            finding["owasp_top_10_2017"] = owasp_2017
+        if owasp_2021:
+            finding["owasp_top_10_2021"] = owasp_2021
+
         findings.append(finding)
 
     normalized = {
@@ -474,8 +744,14 @@ def normalize_sonar_results(
         "tool_version": metadata.get("scanner_version"),
         "target_repo": target_repo,
         "scan": scan_info,
-        # full copy of metadata.json for convenience
         "run_metadata": metadata,
+        "sonar_rules_enrichment": {
+            "source": "api/rules/show",
+            "host": sonar_host,
+            "organization": sonar_org,
+            "rules_with_classification": len(rule_cache),
+            "findings_enriched": enriched_count,
+        },
         "findings": findings,
     }
 
@@ -488,13 +764,10 @@ def main() -> None:
 
     sonar_host = os.environ.get("SONAR_HOST", SONAR_HOST_DEFAULT)
     sonar_org = os.environ.get("SONAR_ORG")
-    sonar_token = os.environ.get("SONAR_TOKEN")
+    sonar_token = get_sonar_token()
 
     if not sonar_org:
         print("ERROR: SONAR_ORG environment variable is not set.", file=sys.stderr)
-        sys.exit(1)
-    if not sonar_token:
-        print("ERROR: SONAR_TOKEN environment variable is not set.", file=sys.stderr)
         sys.exit(1)
 
     print(f"Using Sonar host: {sonar_host}")
@@ -600,8 +873,16 @@ def main() -> None:
     print("📄 Issues JSON saved to:", results_path)
     print("📄 Metadata saved to:", metadata_path)
 
-    # 6. Normalized JSON (schema v1.1)
-    normalize_sonar_results(repo_path, results_path, metadata, normalized_path)
+    # 6. Normalized JSON (schema v1.1 + CWE/OWASP enrichment)
+    normalize_sonar_results(
+        repo_path,
+        results_path,
+        metadata,
+        normalized_path,
+        sonar_host,
+        sonar_org,
+        sonar_token,
+    )
     print("📄 Normalized JSON saved to:", normalized_path)
 
 
