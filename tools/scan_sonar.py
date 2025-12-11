@@ -22,15 +22,18 @@ Requirements (outside this script):
   * optional: SONAR_HOST (default: https://sonarcloud.io)
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -50,6 +53,30 @@ SONAR_HOST_DEFAULT = "https://sonarcloud.io"
 ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env")
 
+
+# ---------------------------------------------------------------------------
+# Simple data "structs" for config and paths
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SonarConfig:
+    host: str
+    org: str
+    token: str
+
+
+@dataclass
+class RunPaths:
+    run_dir: Path
+    log: Path
+    raw_results: Path
+    normalized: Path
+    metadata: Path
+
+
+# ---------------------------------------------------------------------------
+# OWASP Top 10 mappings (used when enriching rules)
+# ---------------------------------------------------------------------------
 
 # OWASP Top 10 2021 mapping (A01..A10 → human name)
 OWASP_TOP_10_2021_NAMES: Dict[str, str] = {
@@ -79,6 +106,10 @@ OWASP_TOP_10_2017_NAMES: Dict[str, str] = {
     "A10": "Insufficient Logging & Monitoring",
 }
 
+
+# ---------------------------------------------------------------------------
+# CLI + config helpers
+# ---------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -127,6 +158,19 @@ def get_sonar_token() -> str:
     return token
 
 
+def get_sonar_config() -> SonarConfig:
+    """Read SONAR_* env vars and fail early if something important is missing."""
+    host = os.environ.get("SONAR_HOST", SONAR_HOST_DEFAULT)
+    org = os.environ.get("SONAR_ORG")
+    token = get_sonar_token()
+
+    if not org:
+        print("ERROR: SONAR_ORG environment variable is not set.", file=sys.stderr)
+        sys.exit(1)
+
+    return SonarConfig(host=host, org=org, token=token)
+
+
 def validate_sonarcloud_credentials(host: str, org: str, token: str) -> None:
     """Validate token and organization with simple SonarCloud API calls."""
     headers = {"Authorization": f"Bearer {token}"}
@@ -158,6 +202,53 @@ def validate_sonarcloud_credentials(host: str, org: str, token: str) -> None:
 
     print(f"✅ SonarCloud credentials OK. Organization '{org}' is accessible.")
 
+
+def prepare_repo(repo_url: str, repos_root: Path = Path("repos")) -> Tuple[Path, str]:
+    """Clone (or reuse) the repo and return (repo_path, repo_name)."""
+    repo_path = clone_repo(repo_url, repos_root)
+    repo_name = get_repo_name(repo_url)
+    return repo_path, repo_name
+
+
+def prepare_run_paths(output_root: str, repo_name: str) -> Tuple[str, RunPaths]:
+    """
+    Create a new run directory for this repo and return (run_id, paths).
+
+    Layout:
+
+      runs/sonar/<repo_name>/<run_id>/
+        - <repo_name>_sonar_scan.log
+        - <repo_name>.json
+        - <repo_name>.normalized.json
+        - metadata.json
+    """
+    base = Path(output_root) / repo_name
+    run_id, run_dir = create_run_dir(base)
+
+    log_path = run_dir / f"{repo_name}_sonar_scan.log"
+    raw_path = run_dir / f"{repo_name}.json"
+    normalized_path = run_dir / f"{repo_name}.normalized.json"
+    metadata_path = run_dir / "metadata.json"
+
+    paths = RunPaths(
+        run_dir=run_dir,
+        log=log_path,
+        raw_results=raw_path,
+        normalized=normalized_path,
+        metadata=metadata_path,
+    )
+    return run_id, paths
+
+
+def write_json(path: Path, data: Dict[str, Any]) -> None:
+    """Small helper for pretty-printing JSON files."""
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Running sonar-scanner + CE wait + issues fetch
+# ---------------------------------------------------------------------------
 
 def run_sonar_scan(
     repo_path: Path,
@@ -371,6 +462,10 @@ def get_scanner_version() -> str:
         return "unknown"
 
 
+# ---------------------------------------------------------------------------
+# Rules classification helpers (CWE + OWASP)
+# ---------------------------------------------------------------------------
+
 def build_owasp_block(
     codes: List[str],
     names_map: Dict[str, str],
@@ -523,7 +618,7 @@ def fetch_rule_classification(
                 cwe_ids.append(cid)
 
     # De-duplicate CWE list while preserving order
-    seen_cwe: set[str] = set()
+    seen_cwe: Set[str] = set()
     deduped_cwe_ids: List[str] = []
     for cid in cwe_ids:
         if cid not in seen_cwe:
@@ -556,6 +651,77 @@ def fetch_rule_classification(
         "owasp_top_10_2021": owasp_2021_block,
     }
 
+
+# ---------------------------------------------------------------------------
+# Building raw issues payload + metadata
+# ---------------------------------------------------------------------------
+
+def build_issues_payload(
+    project_key: str,
+    cfg: SonarConfig,
+    repo_name: str,
+    issues: List[Dict[str, Any]],
+    run_id: str,
+    scan_time: Optional[float],
+) -> Dict[str, Any]:
+    """Build the JSON object we store in <repo_name>.json."""
+    return {
+        "projectKey": project_key,
+        "organization": cfg.org,
+        "repo_name": repo_name,
+        "scan_time_seconds": scan_time,
+        "issue_count": len(issues),
+        "issues": issues,
+        "run_id": run_id,
+        "generated_at": datetime.now().isoformat(),
+    }
+
+
+def build_run_metadata(
+    cfg: SonarConfig,
+    repo_path: Path,
+    repo_name: str,
+    repo_url: str,
+    project_key: str,
+    run_id: str,
+    issues: List[Dict[str, Any]],
+    scan_time: Optional[float],
+    status: str,
+    paths: RunPaths,
+    command_str: Optional[str],
+    exit_code: Optional[int],
+) -> Dict[str, Any]:
+    """Collect commit + scanner + run info into metadata.json."""
+    scanner_version = get_scanner_version()
+    commit = get_git_commit(repo_path)
+    author_info = get_commit_author_info(repo_path, commit)
+
+    return {
+        "scanner": "sonar",
+        "scanner_kind": "sonar-scanner-cli",
+        "scanner_version": scanner_version,
+        "host": cfg.host,
+        "organization": cfg.org,
+        "project_key": project_key,
+        "repo_name": repo_name,
+        "repo_url": repo_url,
+        "repo_local_path": str(repo_path),
+        "repo_commit": commit,
+        "run_id": run_id,
+        "timestamp": datetime.now().isoformat(),
+        "scan_time_seconds": scan_time,
+        "issues_count": len(issues),
+        "status": status,
+        "log_path": str(paths.log),
+        "command": command_str,
+        "exit_code": exit_code,
+        **author_info,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Normalization (Sonar issues JSON → schema v1.1)
+# ---------------------------------------------------------------------------
 
 def normalize_sonar_results(
     repo_path: Path,
@@ -616,8 +782,7 @@ def normalize_sonar_results(
             "run_metadata": metadata,
             "findings": [],
         }
-        with normalized_path.open("w", encoding="utf-8") as f:
-            json.dump(normalized, f, indent=2)
+        write_json(normalized_path, normalized)
         return
 
     with raw_results_path.open(encoding="utf-8") as f:
@@ -755,135 +920,106 @@ def normalize_sonar_results(
         "findings": findings,
     }
 
-    with normalized_path.open("w", encoding="utf-8") as f:
-        json.dump(normalized, f, indent=2)
+    write_json(normalized_path, normalized)
 
+
+# ---------------------------------------------------------------------------
+# Top-level pipeline
+# ---------------------------------------------------------------------------
 
 def main() -> None:
     args = parse_args()
 
-    sonar_host = os.environ.get("SONAR_HOST", SONAR_HOST_DEFAULT)
-    sonar_org = os.environ.get("SONAR_ORG")
-    sonar_token = get_sonar_token()
+    # 0. Config & credentials
+    cfg = get_sonar_config()
+    print(f"Using Sonar host: {cfg.host}")
+    print(f"Using organization: {cfg.org}")
 
-    if not sonar_org:
-        print("ERROR: SONAR_ORG environment variable is not set.", file=sys.stderr)
-        sys.exit(1)
+    validate_sonarcloud_credentials(cfg.host, cfg.org, cfg.token)
 
-    print(f"Using Sonar host: {sonar_host}")
-    print(f"Using organization: {sonar_org}")
-
-    validate_sonarcloud_credentials(sonar_host, sonar_org, sonar_token)
-
-    # 1. Clone repo (shared helpers)
-    repo_base = Path("repos")
-    repo_path = clone_repo(args.repo_url, repo_base)
-    repo_name = get_repo_name(args.repo_url)
-
-    project_key = args.project_key or f"{sonar_org}_{repo_name}"
+    # 1. Repo preparation
+    repo_path, repo_name = prepare_repo(args.repo_url)
+    project_key = args.project_key or f"{cfg.org}_{repo_name}"
     print(f"Sonar project key: {project_key}")
 
-    # 2. Prepare output paths (grouped by repo name)
-    #    This creates: runs/sonar/<repo_name>/<run_id>/
-    output_root = Path(args.output_root) / repo_name
-    run_id, run_dir = create_run_dir(output_root)
-
-    log_path = run_dir / f"{repo_name}_sonar_scan.log"
-    results_path = run_dir / f"{repo_name}.json"
-    normalized_path = run_dir / f"{repo_name}.normalized.json"
+    # 2. Run directory / file paths
+    run_id, paths = prepare_run_paths(args.output_root, repo_name)
 
     scan_time: Optional[float] = None
     status = "skipped" if args.skip_scan else "success"
     command_str: Optional[str] = None
     exit_code: Optional[int] = None
 
-    # 3. Run sonar-scanner (unless skipped)
+    # 3. sonar-scanner (optional)
     if not args.skip_scan:
         returncode, elapsed, cmd = run_sonar_scan(
-            repo_path,
-            project_key,
-            sonar_host,
-            sonar_org,
-            sonar_token,
-            args.java_binaries,
-            log_path,
+            repo_path=repo_path,
+            project_key=project_key,
+            sonar_host=cfg.host,
+            sonar_org=cfg.org,
+            sonar_token=cfg.token,
+            java_binaries=args.java_binaries,
+            log_path=paths.log,
         )
         scan_time = elapsed
         command_str = " ".join(cmd)
         exit_code = returncode
 
         if returncode != 0:
-            print(f"⚠️ sonar-scanner failed with code {returncode}. See log: {log_path}")
+            print(f"⚠️ sonar-scanner failed with code {returncode}. See log: {paths.log}")
             status = "scan_failed"
         else:
-            print(f"✅ sonar-scanner finished in {elapsed:.2f}s. Log: {log_path}")
+            print(f"✅ sonar-scanner finished in {elapsed:.2f}s. Log: {paths.log}")
     else:
         print("⏭️ Skipping sonar-scanner run (per --skip-scan).")
 
     if status == "success":
-        wait_for_ce_success(sonar_host, sonar_org, project_key, sonar_token)
+        wait_for_ce_success(cfg.host, cfg.org, project_key, cfg.token)
 
     # 4. Fetch issues from SonarCloud
-    issues = fetch_all_issues_for_project(sonar_host, project_key, sonar_org, sonar_token)
+    issues = fetch_all_issues_for_project(cfg.host, project_key, cfg.org, cfg.token)
     print(f"📥 Retrieved {len(issues)} issues from SonarCloud")
 
-    payload = {
-        "projectKey": project_key,
-        "organization": sonar_org,
-        "repo_name": repo_name,
-        "scan_time_seconds": scan_time,
-        "issue_count": len(issues),
-        "issues": issues,
-        "run_id": run_id,
-        "generated_at": datetime.now().isoformat(),
-    }
-    with results_path.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+    raw_payload = build_issues_payload(
+        project_key=project_key,
+        cfg=cfg,
+        repo_name=repo_name,
+        issues=issues,
+        run_id=run_id,
+        scan_time=scan_time,
+    )
+    write_json(paths.raw_results, raw_payload)
+    print("📄 Issues JSON saved to:", paths.raw_results)
 
     # 5. Metadata JSON (per run)
-    scanner_version = get_scanner_version()
-    commit = get_git_commit(repo_path)
-    author_info = get_commit_author_info(repo_path, commit)
-
-    metadata = {
-        "scanner": "sonar",
-        "scanner_kind": "sonar-scanner-cli",
-        "scanner_version": scanner_version,
-        "host": sonar_host,
-        "organization": sonar_org,
-        "project_key": project_key,
-        "repo_name": repo_name,
-        "repo_url": args.repo_url,
-        "repo_local_path": str(repo_path),
-        "repo_commit": commit,
-        "run_id": run_id,
-        "timestamp": datetime.now().isoformat(),
-        "scan_time_seconds": scan_time,
-        "issues_count": len(issues),
-        "status": status,
-        "log_path": str(log_path),
-        "command": command_str,
-        "exit_code": exit_code,
-        **author_info,
-    }
-    metadata_path = run_dir / "metadata.json"
-    with metadata_path.open("w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
-
-    print("📄 Issues JSON saved to:", results_path)
-    print("📄 Metadata saved to:", metadata_path)
+    metadata = build_run_metadata(
+        cfg=cfg,
+        repo_path=repo_path,
+        repo_name=repo_name,
+        repo_url=args.repo_url,
+        project_key=project_key,
+        run_id=run_id,
+        issues=issues,
+        scan_time=scan_time,
+        status=status,
+        paths=paths,
+        command_str=command_str,
+        exit_code=exit_code,
+    )
+    write_json(paths.metadata, metadata)
+    print("📄 Metadata saved to:", paths.metadata)
 
     # 6. Normalized JSON (schema v1.1 + CWE/OWASP enrichment)
     normalize_sonar_results(
-        repo_path,
-        results_path,
-        metadata,
-        normalized_path,
-        sonar_host,
-        sonar_org,
-        sonar_token,
+        repo_path=repo_path,
+        raw_results_path=paths.raw_results,
+        metadata=metadata,
+        normalized_path=paths.normalized,
+        sonar_host=cfg.host,
+        sonar_org=cfg.org,
+        sonar_token=cfg.token,
     )
-    print("📄 Normalized JSON saved to:", normalized_path)
+    print("📄 Normalized JSON saved to:", paths.normalized)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -58,6 +59,18 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def ensure_snyk_token() -> None:
+    """Exit with an error message if SNYK_TOKEN is not set."""
+    snyk_token = os.getenv("SNYK_TOKEN")
+    if not snyk_token:
+        print(
+            "ERROR: SNYK_TOKEN is not set.\n"
+            "Add it to your .env or export it in your shell before running.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def get_snyk_version() -> str:
     """Return the installed Snyk CLI version, or 'unknown' if it fails."""
     try:
@@ -65,6 +78,90 @@ def get_snyk_version() -> str:
         return out.strip()
     except Exception:
         return "unknown"
+
+
+def run_snyk_scan(
+    repo_path: Path,
+    repo_name: str,
+    raw_results_path: Path,
+    org: Optional[str],
+    severity_threshold: Optional[str],
+) -> Tuple[int, float, str]:
+    """
+    Run 'snyk code test' and return (exit_code, elapsed_seconds, command_string).
+    """
+    cmd = ["snyk", "code", "test", "--json-file-output", str(raw_results_path)]
+    if org:
+        cmd.extend(["--org", org])
+    if severity_threshold:
+        cmd.extend(["--severity-threshold", severity_threshold])
+
+    print(f"\n🔍 Running Snyk Code on {repo_name} ...")
+    print("Command:", " ".join(cmd))
+
+    t0 = time.time()
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=repo_path,
+            text=True,
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        print(
+            "ERROR: 'snyk' CLI not found on PATH. "
+            "Install it with 'npm install -g snyk' and make sure 'snyk --version' works.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    elapsed = time.time() - t0
+
+    # Exit codes: 0 = no vulns, 1 = vulns found, 2/3 = failure
+    if proc.returncode in (0, 1):
+        print(
+            f"✅ Snyk Code finished in {elapsed:.2f}s "
+            f"(exit code {proc.returncode})"
+        )
+    else:
+        print(f"⚠️ Snyk Code failed with exit code {proc.returncode}")
+        print(proc.stderr[:2000])
+
+    return proc.returncode, elapsed, " ".join(cmd)
+
+
+def build_run_metadata(
+    repo_path: Path,
+    repo_name: str,
+    repo_url: str,
+    run_id: str,
+    exit_code: int,
+    elapsed: float,
+    command_str: str,
+) -> dict:
+    """Collect commit + scanner info into a single metadata dict."""
+    commit = get_git_commit(repo_path)
+    author_info = get_commit_author_info(repo_path, commit)
+    scanner_version = get_snyk_version()
+
+    return {
+        "scanner": "snyk",
+        "scanner_version": scanner_version,
+        "repo_name": repo_name,
+        "repo_url": repo_url,
+        "repo_commit": commit,
+        "run_id": run_id,
+        "timestamp": datetime.now().isoformat(),
+        "command": command_str,
+        "scan_time_seconds": elapsed,
+        "exit_code": exit_code,
+        **author_info,
+    }
+
+
+def write_json(path: Path, data: dict) -> None:
+    """Write a JSON file with pretty-printing."""
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
 
 
 def normalize_snyk_results(
@@ -214,16 +311,7 @@ def normalize_snyk_results(
 
 def main() -> None:
     args = parse_args()
-
-    # 0. Make sure SNYK_TOKEN is set (from .env or environment)
-    snyk_token = os.getenv("SNYK_TOKEN")
-    if not snyk_token:
-        print(
-            "ERROR: SNYK_TOKEN is not set.\n"
-            "Add it to your .env or export it in your shell before running.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    ensure_snyk_token()
 
     # 1. Clone repo (shared helpers)
     repo_base = Path("repos")
@@ -242,69 +330,36 @@ def main() -> None:
     normalized_path = run_dir / f"{repo_name}.normalized.json"
     metadata_path = run_dir / "metadata.json"
 
-    # 3. Build Snyk command (SAST via Snyk Code)
-    cmd = ["snyk", "code", "test", "--json-file-output", str(raw_results_path)]
-    if args.org:
-        cmd.extend(["--org", args.org])
-    if args.severity_threshold:
-        cmd.extend(["--severity-threshold", args.severity_threshold])
-
-    print(f"\n🔍 Running Snyk Code on {repo_name} ...")
-    print("Command:", " ".join(cmd))
-
-    t0 = time.time()
-    try:
-        proc = subprocess.run(
-            cmd,
-            cwd=repo_path,
-            text=True,
-            capture_output=True,
-        )
-    except FileNotFoundError:
-        print(
-            "ERROR: 'snyk' CLI not found on PATH. "
-            "Install it with 'npm install -g snyk' and make sure 'snyk --version' works.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    elapsed = time.time() - t0
-
-    # Exit codes: 0 = no vulns, 1 = vulns found, 2/3 = failure
-    if proc.returncode in (0, 1):
-        print(
-            f"✅ Snyk Code finished in {elapsed:.2f}s "
-            f"(exit code {proc.returncode})"
-        )
-    else:
-        print(f"⚠️ Snyk Code failed with exit code {proc.returncode}")
-        print(proc.stderr[:2000])
+    # 3. Run Snyk scan
+    exit_code, elapsed, command_str = run_snyk_scan(
+        repo_path=repo_path,
+        repo_name=repo_name,
+        raw_results_path=raw_results_path,
+        org=args.org,
+        severity_threshold=args.severity_threshold,
+    )
     print("Raw JSON path (expected):", raw_results_path)
 
-    # 4. Build metadata
-    commit = get_git_commit(repo_path)
-    author_info = get_commit_author_info(repo_path, commit)
-    scanner_version = get_snyk_version()
-
-    metadata = {
-        "scanner": "snyk",
-        "scanner_version": scanner_version,
-        "repo_name": repo_name,
-        "repo_url": args.repo_url,
-        "repo_commit": commit,
-        "run_id": run_id,
-        "timestamp": datetime.now().isoformat(),
-        "command": " ".join(cmd),
-        "scan_time_seconds": elapsed,
-        "exit_code": proc.returncode,
-        **author_info,
-    }
-    with metadata_path.open("w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
-
+    # 4. Build and save metadata
+    metadata = build_run_metadata(
+        repo_path=repo_path,
+        repo_name=repo_name,
+        repo_url=args.repo_url,
+        run_id=run_id,
+        exit_code=exit_code,
+        elapsed=elapsed,
+        command_str=command_str,
+    )
+    write_json(metadata_path, metadata)
     print("📄 Metadata saved to:", metadata_path)
 
     # 5. Normalized JSON
-    normalize_snyk_results(repo_path, raw_results_path, metadata, normalized_path)
+    normalize_snyk_results(
+        repo_path=repo_path,
+        raw_results_path=raw_results_path,
+        metadata=metadata,
+        normalized_path=normalized_path,
+    )
     print("📄 Normalized JSON saved to:", normalized_path)
 
 

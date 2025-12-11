@@ -10,9 +10,9 @@ Given an Aikido-connected code repository, this script:
   * optionally triggers a scan for the chosen code repo
   * exports all issues via /issues/export and filters for that repo
   * writes:
-        runs/aikido/YYYYMMDDXX/<repo_name>.json             (raw issues list)
-        runs/aikido/YYYYMMDDXX/<repo_name>.normalized.json  (normalized findings)
-        runs/aikido/YYYYMMDDXX/metadata.json                (run metadata)
+        runs/aikido/<run_id>/<repo_name>.json             (raw issues list)
+        runs/aikido/<run_id>/<repo_name>.normalized.json  (normalized findings)
+        runs/aikido/<run_id>/metadata.json                (run metadata)
 
 Notes on timings:
   * For Aikido, we do not see internal engine time.
@@ -25,14 +25,18 @@ Requirements:
     or in the environment.
 """
 
+from __future__ import annotations
+
 import argparse
 import base64
 import json
 import os
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from dotenv import load_dotenv
@@ -48,6 +52,101 @@ AIKIDO_TOOL_VERSION = "public-api-v1"
 ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env")
 
+
+# ---------------------------------------------------------------------------
+# Small data "structs" for config + paths
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AikidoConfig:
+    client_id: str
+    client_secret: str
+    token: str
+
+
+@dataclass
+class RunPaths:
+    run_dir: Path
+    raw_results: Path
+    normalized: Path
+    metadata: Path
+
+
+# ---------------------------------------------------------------------------
+# CLI + config helpers
+# ---------------------------------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run Aikido scan and export issues for a connected GitHub repo."
+    )
+    parser.add_argument(
+        "--git-ref",
+        required=False,
+        help=(
+            "Repo name or GitHub URL fragment "
+            "(e.g. 'juice-shop' or 'Chai80/juice-shop')"
+        ),
+    )
+    parser.add_argument(
+        "--output-root",
+        default="runs/aikido",
+        help="Root folder for JSON outputs (default: runs/aikido)",
+    )
+    return parser.parse_args()
+
+
+def get_aikido_config() -> AikidoConfig:
+    """Read Aikido credentials from env and obtain an access token."""
+    client_id = os.getenv("AIKIDO_CLIENT_ID")
+    client_secret = os.getenv("AIKIDO_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        print(
+            "ERROR: set AIKIDO_CLIENT_ID and AIKIDO_CLIENT_SECRET env vars "
+            "(or in .env at project root).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    token = get_access_token(client_id, client_secret)
+    return AikidoConfig(client_id=client_id, client_secret=client_secret, token=token)
+
+
+def prepare_run_paths(output_root: str, repo_name: str) -> Tuple[str, RunPaths]:
+    """
+    Create a new run directory.
+
+    Layout:
+      runs/aikido/<run_id>/
+        - <repo_name>.json
+        - <repo_name>.normalized.json
+        - metadata.json
+    """
+    base = Path(output_root)
+    run_id, run_dir = create_run_dir(base)
+
+    raw_path = run_dir / f"{repo_name}.json"
+    normalized_path = run_dir / f"{repo_name}.normalized.json"
+    metadata_path = run_dir / "metadata.json"
+
+    paths = RunPaths(
+        run_dir=run_dir,
+        raw_results=raw_path,
+        normalized=normalized_path,
+        metadata=metadata_path,
+    )
+    return run_id, paths
+
+
+def write_json(path: Path, data: Any) -> None:
+    """Small helper for pretty-printing JSON files."""
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Aikido API helpers
+# ---------------------------------------------------------------------------
 
 def get_access_token(client_id: str, client_secret: str) -> str:
     basic = f"{client_id}:{client_secret}".encode("utf-8")
@@ -121,6 +220,38 @@ def filter_issues_for_repo(issues: list[dict], code_repo_id: str) -> list[dict]:
     return [issue for issue in issues if str(issue.get("code_repo_id")) == str(code_repo_id)]
 
 
+def trigger_aikido_scan(token: str, code_repo_id: str) -> Optional[float]:
+    """
+    Trigger an Aikido scan for the given repo.
+
+    Returns:
+      trigger_http_seconds (float) or None on failure / no permission.
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+    scan_url = f"{API_ROOT}/repositories/code/{code_repo_id}/scan"
+
+    trigger_http_seconds: Optional[float] = None
+    try:
+        t0 = time.time()
+        resp = requests.post(scan_url, headers=headers, timeout=30)
+        if resp.status_code == 403:
+            print(
+                "No permission to trigger scan; using latest existing results.",
+                file=sys.stderr,
+            )
+        else:
+            resp.raise_for_status()
+            trigger_http_seconds = time.time() - t0
+    except Exception as e:
+        print(f"Warning: scan trigger failed: {e}", file=sys.stderr)
+
+    return trigger_http_seconds
+
+
+# ---------------------------------------------------------------------------
+# Normalization: Aikido issues → schema v1.1
+# ---------------------------------------------------------------------------
+
 def normalize_aikido_results(
     raw_results_path: Path,
     metadata: dict,
@@ -168,8 +299,7 @@ def normalize_aikido_results(
             "run_metadata": metadata,
             "findings": [],
         }
-        with normalized_path.open("w", encoding="utf-8") as f:
-            json.dump(normalized, f, indent=2)
+        write_json(normalized_path, normalized)
         return
 
     with raw_results_path.open("r", encoding="utf-8") as f:
@@ -262,86 +392,25 @@ def normalize_aikido_results(
         "findings": findings,
     }
 
-    with normalized_path.open("w", encoding="utf-8") as f:
-        json.dump(normalized, f, indent=2)
+    write_json(normalized_path, normalized)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Run Aikido scan and export issues for a connected GitHub repo."
-    )
-    parser.add_argument(
-        "--git-ref",
-        required=False,
-        help="Repo name or GitHub URL fragment (e.g. 'juice-shop' or 'Chai80/juice-shop')",
-    )
-    parser.add_argument(
-        "--output-root",
-        default="runs/aikido",
-        help="Root folder for JSON outputs (default: runs/aikido)",
-    )
-    args = parser.parse_args()
+# ---------------------------------------------------------------------------
+# Metadata builder
+# ---------------------------------------------------------------------------
 
-    client_id = os.getenv("AIKIDO_CLIENT_ID")
-    client_secret = os.getenv("AIKIDO_CLIENT_SECRET")
-    if not client_id or not client_secret:
-        print(
-            "ERROR: set AIKIDO_CLIENT_ID and AIKIDO_CLIENT_SECRET env vars "
-            "(or in .env at project root).",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    token = get_access_token(client_id, client_secret)
-
-    # Get all repos from Aikido
-    repos = list_code_repos(token)
-
-    # Decide which repo to scan: CLI flag or interactive menu
-    if args.git_ref:
-        git_ref = args.git_ref
-    else:
-        git_ref = choose_git_ref_interactively(repos)
-
-    code_repo_id, repo_obj = find_repo_by_git_ref(repos, git_ref)
-    repo_name = repo_obj.get("name") or "unknown_repo"
-    repo_url = repo_obj.get("url")
-
-    # Run directory (shared helper)
-    # Layout: runs/aikido/<run_id>/...
-    output_root = Path(args.output_root)
-    run_id, run_dir = create_run_dir(output_root)
-
-    headers = {"Authorization": f"Bearer {token}"}
-    scan_url = f"{API_ROOT}/repositories/code/{code_repo_id}/scan"
-    trigger_http_seconds: float | None = None
-
-    try:
-        t0 = time.time()
-        resp = requests.post(scan_url, headers=headers, timeout=30)
-        if resp.status_code == 403:
-            print(
-                "No permission to trigger scan; using latest existing results.",
-                file=sys.stderr,
-            )
-        else:
-            resp.raise_for_status()
-            trigger_http_seconds = time.time() - t0
-    except Exception as e:
-        print(f"Warning: scan trigger failed: {e}", file=sys.stderr)
-
-    all_issues = export_all_issues(token)
-    repo_issues = filter_issues_for_repo(all_issues, code_repo_id)
-
-    results_path = run_dir / f"{repo_name}.json"
-    with results_path.open("w", encoding="utf-8") as f:
-        json.dump(repo_issues, f, indent=2)
-
-    # Command string for normalized schema: describe the API call we used
-    command_str = f"GET {API_ROOT}/issues/export (code_repo_id={code_repo_id})"
-
-    # Note: for Aikido, scan_time_seconds is the HTTP trigger time for /scan.
-    metadata = {
+def build_run_metadata(
+    repo_name: str,
+    repo_url: Optional[str],
+    code_repo_id: str,
+    repo_obj: dict,
+    run_id: str,
+    issues_count: int,
+    trigger_http_seconds: Optional[float],
+    command_str: str,
+) -> dict:
+    """Build the metadata.json structure for an Aikido run."""
+    return {
         "scanner": "aikido",
         "scanner_version": AIKIDO_TOOL_VERSION,
         "repo_name": repo_name,
@@ -350,7 +419,7 @@ def main() -> None:
         "branch": repo_obj.get("branch"),
         "run_id": run_id,
         "timestamp": datetime.now().isoformat(),
-        "issues_count": len(repo_issues),
+        "issues_count": issues_count,
         # Tool-specific timing: HTTP latency when triggering /scan
         "trigger_http_seconds": float(trigger_http_seconds)
         if trigger_http_seconds is not None
@@ -368,18 +437,64 @@ def main() -> None:
         "commit_author_email": None,
         "commit_date": None,
     }
-    metadata_path = run_dir / "metadata.json"
-    with metadata_path.open("w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Top-level pipeline
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    args = parse_args()
+    cfg = get_aikido_config()
+
+    # 1. Discover repos from Aikido
+    repos = list_code_repos(cfg.token)
+
+    # 2. Choose which repo to use (CLI arg or interactive)
+    if args.git_ref:
+        git_ref = args.git_ref
+    else:
+        git_ref = choose_git_ref_interactively(repos)
+
+    code_repo_id, repo_obj = find_repo_by_git_ref(repos, git_ref)
+    repo_name = repo_obj.get("name") or "unknown_repo"
+    repo_url = repo_obj.get("url")
+
+    # 3. Prepare run directory / paths
+    run_id, paths = prepare_run_paths(args.output_root, repo_name)
+
+    # 4. Trigger scan (best effort)
+    trigger_http_seconds = trigger_aikido_scan(cfg.token, code_repo_id)
+
+    # 5. Export issues and filter for chosen repo
+    all_issues = export_all_issues(cfg.token)
+    repo_issues = filter_issues_for_repo(all_issues, code_repo_id)
+
+    write_json(paths.raw_results, repo_issues)
+
+    # Command string for normalized schema: describe the API call we used
+    command_str = f"GET {API_ROOT}/issues/export (code_repo_id={code_repo_id})"
+
+    # 6. Build and save metadata
+    metadata = build_run_metadata(
+        repo_name=repo_name,
+        repo_url=repo_url,
+        code_repo_id=code_repo_id,
+        repo_obj=repo_obj,
+        run_id=run_id,
+        issues_count=len(repo_issues),
+        trigger_http_seconds=trigger_http_seconds,
+        command_str=command_str,
+    )
+    write_json(paths.metadata, metadata)
 
     print(f"Run {run_id} complete.")
-    print(f"  Issues JSON      : {results_path}")
-    print(f"  Metadata         : {metadata_path}")
+    print(f"  Issues JSON      : {paths.raw_results}")
+    print(f"  Metadata         : {paths.metadata}")
 
-    # Normalized JSON
-    normalized_path = run_dir / f"{repo_name}.normalized.json"
-    normalize_aikido_results(results_path, metadata, normalized_path)
-    print(f"  Normalized JSON  : {normalized_path}")
+    # 7. Normalized JSON
+    normalize_aikido_results(paths.raw_results, metadata, paths.normalized)
+    print(f"  Normalized JSON  : {paths.normalized}")
 
 
 if __name__ == "__main__":
