@@ -1,3 +1,4 @@
+# benchmarks/runtime.py
 import argparse
 import json
 import subprocess
@@ -7,27 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-# --- Make sure we can import `sast_cli` even when this file is run as a script ---
-#
-# When you run:
-#   python benchmarks/runtime.py ...
-# Python sets sys.path[0] to "benchmarks/", so it cannot see "sast_cli.py"
-# in the project root by default.
-#
-# We detect the project root (one level above benchmarks/) and prepend it
-# to sys.path so that:
-#   import sast_cli
-# works reliably.
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+from benchmarks.targets import BENCHMARKS
+from pipeline.core import build_command
 
-# One-way dependency: this module imports from sast_cli.
-# sast_cli SHOULD NOT import benchmarks.runtime at module import time.
-from sast_cli import BENCHMARKS, build_command  # type: ignore[attr-defined]
-
-
-# Anchor all paths under the project root (one level up from benchmarks/)
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
 
@@ -47,8 +30,7 @@ def _repo_name_for_target(target_key: str) -> str:
     """
     Derive the repo folder name for a given benchmark target.
 
-    This mirrors what the scan_* scripts use for <repo_name>, i.e. the last
-    part of the repo_url, with an optional '.git' suffix stripped.
+    Mirrors tools/run_utils.py get_repo_name behavior.
     """
     entry = BENCHMARKS.get(target_key)
     if not entry:
@@ -56,8 +38,6 @@ def _repo_name_for_target(target_key: str) -> str:
 
     repo_url = entry.get("repo_url")
     if not repo_url:
-        # In theory you could have an Aikido-only target with no repo_url;
-        # for now we require repo_url for runtime benchmarks.
         raise ValueError(f"No repo_url configured for target '{target_key}'")
 
     last = repo_url.rstrip("/").split("/")[-1]
@@ -70,25 +50,22 @@ def get_latest_run_dir(scanner: str, target_key: str) -> Path | None:
 
     Preferred layout (new):
         runs/<scanner>/<repo_name>/<run_id>/
-        e.g. runs/semgrep/juice-shop/2025120201
 
     Backward-compatible fallback (old):
         runs/<scanner>/<run_id>/
-        e.g. runs/semgrep/2025120201
 
     We assume run_id folders are YYYYMMDDNN and lexicographically sortable.
     """
     roots_to_try: List[Path] = []
 
-    # Try the new structured layout first: runs/<scanner>/<repo_name>/
+    # Try structured layout first
     try:
         repo_name = _repo_name_for_target(target_key)
         roots_to_try.append(ROOT_DIR / "runs" / scanner / repo_name)
     except Exception:
-        # If we can't derive repo_name, we'll just skip this and rely on flat layout.
         pass
 
-    # Then fall back to the old flat layout: runs/<scanner>/
+    # Fallback to flat layout
     roots_to_try.append(ROOT_DIR / "runs" / scanner)
 
     for root in roots_to_try:
@@ -99,7 +76,6 @@ def get_latest_run_dir(scanner: str, target_key: str) -> Path | None:
         if not candidates:
             continue
 
-        # Lexicographically largest YYYYMMDDNN is "latest"
         latest = max(candidates, key=lambda p: p.name)
         return latest
 
@@ -122,11 +98,9 @@ def read_metadata_from_run(scanner: str, target_key: str) -> Dict[str, Any]:
 
     try:
         with meta_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+            return json.load(f)
     except Exception:
         return {}
-
-    return data
 
 
 def run_sast_runtime_benchmark(
@@ -136,39 +110,9 @@ def run_sast_runtime_benchmark(
     """
     Run each scanner for the given target and collect runtime metrics.
 
-    Parameters
-    ----------
-    target_key: str
-        Logical benchmark name (key in BENCHMARKS, e.g. "juice_shop").
-    scanners: list[str]
-        List of scanner names (e.g. ["semgrep", "snyk", "sonar", "aikido"]).
-
-    Returns
-    -------
-    dict
-        JSON-serializable summary of the benchmark run, e.g.:
-
-        {
-          "benchmark_target": "juice_shop",
-          "timestamp": "...",
-          "results": [
-            {
-              "scanner": "semgrep",
-              "exit_code": 0,
-              "wall_clock_seconds": 12.34,
-              "run_id": "2025120101",
-              "scan_time_seconds": 12.10,
-            },
-            ...
-          ]
-        }
-
-    Notes
-    -----
+    Notes:
     - wall_clock_seconds is measured here around the full scanner command.
-    - scan_time_seconds is taken from each tool's metadata.json:
-        * Semgrep/Snyk/Sonar: usually the tool-reported scan duration.
-        * Aikido: HTTP trigger latency for the /scan API call, not full engine time.
+    - scan_time_seconds is read from each tool's metadata.json.
     """
     if target_key not in BENCHMARKS:
         raise ValueError(
@@ -181,7 +125,7 @@ def run_sast_runtime_benchmark(
     for scanner in scanners:
         print(f"\n▶️  Benchmarking scanner: {scanner} on target: {target_key}")
 
-        # Build the same command sast_cli.py would use
+        # Build the command using core logic (NOT the CLI)
         try:
             cmd = build_command(scanner, target_key)
         except Exception as e:
@@ -203,9 +147,6 @@ def run_sast_runtime_benchmark(
         print(f"  Finished with exit_code={exit_code}, wall_clock={wall_seconds:.2f}s")
 
         meta = read_metadata_from_run(scanner, target_key)
-
-        # For most tools this is the scanner's own timing; for Aikido this is
-        # the HTTP trigger time we store in scan_aikido.py (see its metadata block).
         run_id = meta.get("run_id")
         scan_time_seconds = meta.get("scan_time_seconds")
 
@@ -222,12 +163,11 @@ def run_sast_runtime_benchmark(
             }
         )
 
-    benchmark_summary: Dict[str, Any] = {
+    return {
         "benchmark_target": target_key,
         "timestamp": datetime.now().isoformat(),
         "results": summary_results,
     }
-    return benchmark_summary
 
 
 def print_summary_table(summary: Dict[str, Any]) -> None:

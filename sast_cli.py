@@ -14,10 +14,10 @@ Usage (non-interactive examples):
     python sast_cli.py --mode scan --scanner snyk --target juice_shop
 
     # Runtime benchmark (all tools)
-    python sast_cli.py --mode benchmark --target juice_shop
+    python sast_cli.py --mode benchmark --target juice_shop --suite runtime
 
     # Runtime benchmark (subset of tools)
-    python sast_cli.py --mode benchmark --target juice_shop --scanners semgrep,snyk
+    python sast_cli.py --mode benchmark --target juice_shop --suite runtime --scanners semgrep,snyk
 """
 
 import argparse
@@ -30,6 +30,9 @@ PYTHON = sys.executable or "python"
 
 # Central benchmark config (repos + suites)
 from benchmarks.targets import BENCHMARKS, BENCHMARK_SUITES
+
+# Core command builder (neutral layer, not the CLI)
+from pipeline.core import build_command
 
 
 # -------------------------------------------------------------------
@@ -48,11 +51,8 @@ def choose_from_menu(title: str, options: dict) -> str:
     keys = list(options.keys())
     print(title)
     for idx, key in enumerate(keys, start=1):
-        label = (
-            options[key].get("label", key)
-            if isinstance(options[key], dict)
-            else options[key]
-        )
+        val = options[key]
+        label = val.get("label", key) if isinstance(val, dict) else str(val)
         print(f"[{idx}] {label} ({key})")
 
     while True:
@@ -61,12 +61,10 @@ def choose_from_menu(title: str, options: dict) -> str:
             print("Please enter a number or Z to exit.")
             continue
 
-        # Allow Z/z to exit the whole CLI
         if choice.upper() == "Z":
             print("Exiting (Z selected).")
             sys.exit(0)
 
-        # Only accept valid numeric options
         if choice.isdigit():
             n = int(choice)
             if 1 <= n <= len(keys):
@@ -76,64 +74,6 @@ def choose_from_menu(title: str, options: dict) -> str:
             f"Invalid choice. Please enter a number between 1 and {len(keys)} "
             "or Z to exit."
         )
-
-
-# -------------------------------------------------------------------
-#  Build commands for each scanner (scan mode)
-# -------------------------------------------------------------------
-
-
-def build_command(scanner: str, target_key: str) -> list[str]:
-    """
-    Given a scanner name and a benchmark key, return the command list
-    we should run, e.g.:
-        ['python', 'tools/scan_snyk.py', '--repo-url', 'https://...']
-    """
-    if target_key not in BENCHMARKS:
-        raise ValueError(f"Unknown target '{target_key}'")
-
-    target = BENCHMARKS[target_key]
-    project_root = Path(__file__).resolve().parent
-    tools_dir = project_root / "tools"
-
-    if scanner == "semgrep":
-        return [
-            PYTHON,
-            str(tools_dir / "scan_semgrep.py"),
-            "--repo-url",
-            target["repo_url"],
-        ]
-
-    if scanner == "snyk":
-        return [
-            PYTHON,
-            str(tools_dir / "scan_snyk.py"),
-            "--repo-url",
-            target["repo_url"],
-        ]
-
-    if scanner == "sonar":
-        cmd = [
-            PYTHON,
-            str(tools_dir / "scan_sonar.py"),
-            "--repo-url",
-            target["repo_url"],
-        ]
-        # If we have a known project key, pass it
-        if target.get("sonar_project_key"):
-            cmd.extend(["--project-key", target["sonar_project_key"]])
-        return cmd
-
-    if scanner == "aikido":
-        # Aikido uses --git-ref instead of --repo-url
-        return [
-            PYTHON,
-            str(tools_dir / "scan_aikido.py"),
-            "--git-ref",
-            target["aikido_ref"],
-        ]
-
-    raise ValueError(f"Unknown scanner '{scanner}'")
 
 
 # -------------------------------------------------------------------
@@ -172,10 +112,15 @@ def parse_args() -> argparse.Namespace:
 
     # Benchmark-mode arguments
     parser.add_argument(
+        "--suite",
+        choices=list(BENCHMARK_SUITES.keys()),
+        help="(benchmark mode) Which benchmark suite to run (e.g. runtime).",
+    )
+    parser.add_argument(
         "--scanners",
         help=(
             "(benchmark mode) Comma-separated list of scanners to benchmark "
-            "(default inside runtime.py is: semgrep,snyk,sonar,aikido)"
+            "(default: semgrep,snyk,sonar,aikido)"
         ),
     )
     parser.add_argument(
@@ -207,9 +152,6 @@ def main() -> None:
                 },
             )
 
-    project_root = Path(__file__).resolve().parent
-    benchmarks_dir = project_root / "benchmarks"
-
     # --------------------- SCAN MODE ---------------------
     if mode == "scan":
         scanner = args.scanner
@@ -230,18 +172,20 @@ def main() -> None:
         if target is None:
             target = choose_from_menu("Choose a benchmark target:", BENCHMARKS)
 
+        # Command comes from pipeline core (not from CLI)
         cmd = build_command(scanner, target)
+
+        label = BENCHMARKS[target].get("label", target)
 
         print("\n🚀 Running scan")
         print(f"  Scanner : {scanner}")
-        print(f"  Target  : {BENCHMARKS[target]['label']} ({target})")
+        print(f"  Target  : {label} ({target})")
         print("  Command :", " ".join(cmd))
 
         if args.dry_run:
             print("\n(dry-run: not executing)")
             return
 
-        # Actually run the underlying scan script
         result = subprocess.run(cmd)
         if result.returncode == 0:
             print("\n✅ Scan completed.")
@@ -256,16 +200,22 @@ def main() -> None:
         if target is None:
             target = choose_from_menu("Choose a benchmark target:", BENCHMARKS)
 
-        # 2) Choose which benchmark suite to run (in future, there can be more)
-        suite = choose_from_menu("Choose a benchmark to run:", BENCHMARK_SUITES)
+        # 2) Choose which benchmark suite (menu unless passed as flag)
+        suite = args.suite
+        if suite is None:
+            suite = choose_from_menu("Choose a benchmark to run:", BENCHMARK_SUITES)
+
+        label = BENCHMARKS[target].get("label", target)
 
         # For now we only have 'runtime'
         if suite == "runtime":
             scanners_arg = args.scanners or "semgrep,snyk,sonar,aikido"
 
+            # Run as a module so imports work cleanly (no sys.path hacks)
             benchmark_cmd = [
                 PYTHON,
-                str(benchmarks_dir / "runtime.py"),
+                "-m",
+                "benchmarks.runtime",
                 "--target",
                 target,
                 "--scanners",
@@ -275,7 +225,7 @@ def main() -> None:
                 benchmark_cmd.append("--no-save")
 
             print("\n🚀 Running runtime benchmark")
-            print(f"  Target   : {BENCHMARKS[target]['label']} ({target})")
+            print(f"  Target   : {label} ({target})")
             print(f"  Scanners : {scanners_arg}")
             print("  Command  :", " ".join(benchmark_cmd))
 
@@ -286,7 +236,6 @@ def main() -> None:
                 print(f"\n⚠️ Benchmark finished with exit code {result.returncode}")
             return
 
-        # Defensive: unknown suite (shouldn't happen with the menu)
         print(f"⚠️ Unknown benchmark suite '{suite}'. Nothing to do.")
         return
 
