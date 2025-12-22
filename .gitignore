@@ -1,17 +1,27 @@
-# local repos cloned by tools
+# --- Runtime outputs ---
+runs/
 repos/
 
-# environment files
+# --- Secrets / local env ---
 .env
 .env.*
+!.env.example
 
-# local scan runs / results
-runs/
+# --- Python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
-# Python virtualenv (optional but recommended)
+# --- Virtual env ---
 venv/
 .venv/
 
-# IDE settings
+# --- IDE ---
 .idea/
-runs/
+.vscode/
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
