@@ -1,0 +1,3314 @@
+{
+  "_meta": {
+    "generated_at": "2025-12-23T23:53:38+00:00",
+    "source": {
+      "description": "Snyk Code security rules tables (vendor documentation)",
+      "base": "https://docs.snyk.io/scan-with-snyk/snyk-code/snyk-code-security-rules",
+      "raw_github_base": "https://raw.githubusercontent.com/snyk/user-docs/main/docs/scan-with-snyk/snyk-code/snyk-code-security-rules/"
+    },
+    "schema": {
+      "version": 1,
+      "notes": [
+        "Keys under languages[<lang>] are Snyk rule names as shown in the Snyk User Docs tables.",
+        "owasp_top_10_2021 uses OWASP Top 10 2021 IDs (A01..A10) parsed from 'OWASP:Axx' values in the docs tables.",
+        "Some rules legitimately have no OWASP category (Security Categories = 'None' in docs)."
+      ]
+    }
+  },
+  "aliases": {
+    "typescript": "javascript",
+    "js": "javascript",
+    "ts": "javascript"
+  },
+  "languages": {
+    "python": {
+      "Authentication over HTTP": {
+        "cwe_ids": [
+          "CWE-319"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Binding to all network interfaces may open service to unintended traffic": {
+        "cwe_ids": [
+          "CWE-284"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Broken User Authentication": {
+        "cwe_ids": [
+          "CWE-287"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Code Injection": {
+        "cwe_ids": [
+          "CWE-94"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Command Injection": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Deserialization of Untrusted Data": {
+        "cwe_ids": [
+          "CWE-502"
+        ],
+        "owasp_top_10_2021": [
+          "A08"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A08"
+      },
+      "Cross-Site Request Forgery (CSRF)": {
+        "cwe_ids": [
+          "CWE-352"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A01"
+      },
+      "Password Requirements Not Enforced in Django Application": {
+        "cwe_ids": [
+          "CWE-521"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Use of Hardcoded Cryptographic Initialization Value": {
+        "cwe_ids": [
+          "CWE-329"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Hardcoded Cryptographic Key": {
+        "cwe_ids": [
+          "CWE-321"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Hardcoded Secret": {
+        "cwe_ids": [
+          "CWE-547"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Use of a Broken or Risky Cryptographic Algorithm": {
+        "cwe_ids": [
+          "CWE-327"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Insecure default value": {
+        "cwe_ids": [
+          "CWE-453"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Insecure File Permissions": {
+        "cwe_ids": [
+          "CWE-732"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "None"
+      },
+      "Use of Password Hash With Insufficient Computational Effort": {
+        "cwe_ids": [
+          "CWE-916"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Insecure Temporary File": {
+        "cwe_ids": [
+          "CWE-377"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Insecure Xml Parser": {
+        "cwe_ids": [
+          "CWE-611"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Jinja auto-escape is set to false.": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "LDAP Injection": {
+        "cwe_ids": [
+          "CWE-90"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Improper Handling of Insufficient Permissions or Privileges": {
+        "cwe_ids": [
+          "CWE-280"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Use of Hardcoded Credentials": {
+        "cwe_ids": [
+          "CWE-798"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Use of Hardcoded Passwords": {
+        "cwe_ids": [
+          "CWE-798",
+          "CWE-259"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "NoSQL Injection": {
+        "cwe_ids": [
+          "CWE-943"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Open Redirect": {
+        "cwe_ids": [
+          "CWE-601"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Path Traversal": {
+        "cwe_ids": [
+          "CWE-23"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Debug Mode Enabled": {
+        "cwe_ids": [
+          "CWE-489"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "None"
+      },
+      "Improper Certificate Validation": {
+        "cwe_ids": [
+          "CWE-295"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Server Information Exposure": {
+        "cwe_ids": [
+          "CWE-209"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "SQL Injection": {
+        "cwe_ids": [
+          "CWE-89"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Server-Side Request Forgery (SSRF)": {
+        "cwe_ids": [
+          "CWE-918"
+        ],
+        "owasp_top_10_2021": [
+          "A10"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A10"
+      },
+      "Improper Neutralization of Directives in Statically Saved Code": {
+        "cwe_ids": [
+          "CWE-96"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Inadequate Encryption Strength": {
+        "cwe_ids": [
+          "CWE-326"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Arbitrary File Write via Archive Extraction (Tar Slip)": {
+        "cwe_ids": [
+          "CWE-22"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A01"
+      },
+      "Origin Validation Error": {
+        "cwe_ids": [
+          "CWE-942",
+          "CWE-346"
+        ],
+        "owasp_top_10_2021": [
+          "A05",
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05, OWASP:A07"
+      },
+      "Cryptographic Issues": {
+        "cwe_ids": [
+          "CWE-310"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Insufficiently Random Values": {
+        "cwe_ids": [
+          "CWE-330"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Python 2 source code": {
+        "cwe_ids": [
+          "CWE-1104"
+        ],
+        "owasp_top_10_2021": [
+          "A06"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A06"
+      },
+      "Selection of Less-Secure Algorithm During Negotiation (SSL instead of TLS)": {
+        "cwe_ids": [
+          "CWE-757"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Sensitive Cookie Without 'HttpOnly' Flag": {
+        "cwe_ids": [
+          "CWE-1004"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Sensitive Cookie in HTTPS Session Without 'Secure' Attribute": {
+        "cwe_ids": [
+          "CWE-614"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Cross-site Scripting (XSS)": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "XPath Injection": {
+        "cwe_ids": [
+          "CWE-643"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Regular Expression Denial of Service (ReDoS)": {
+        "cwe_ids": [
+          "CWE-400"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      }
+    },
+    "javascript": {
+      "Disabling Strict Contextual escaping (SCE) could provide additional attack surface for Cross-site Scripting (XSS)": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Use of a Broken or Risky Cryptographic Algorithm": {
+        "cwe_ids": [
+          "CWE-327"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Clear Text Sensitive Storage": {
+        "cwe_ids": [
+          "CWE-200",
+          "CWE-312"
+        ],
+        "owasp_top_10_2021": [
+          "A01",
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01, OWASP:A04"
+      },
+      "Code Injection": {
+        "cwe_ids": [
+          "CWE-94"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Command Injection": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Cross-site Scripting (XSS)": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Deserialization of Untrusted Data": {
+        "cwe_ids": [
+          "CWE-502"
+        ],
+        "owasp_top_10_2021": [
+          "A08"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A08"
+      },
+      "Information Exposure": {
+        "cwe_ids": [
+          "CWE-200"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Electron Disable Security Warnings": {
+        "cwe_ids": [
+          "CWE-16"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Electron Insecure Web Preferences": {
+        "cwe_ids": [
+          "CWE-16"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Electron Load Insecure Content": {
+        "cwe_ids": [
+          "CWE-16"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Use of Externally-Controlled Format String": {
+        "cwe_ids": [
+          "CWE-134"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "None"
+      },
+      "GraphQL Injection": {
+        "cwe_ids": [
+          "CWE-89"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Improper Type Validation": {
+        "cwe_ids": [
+          "CWE-1287"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "None"
+      },
+      "Hardcoded Secret": {
+        "cwe_ids": [
+          "CWE-547"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Cleartext Transmission of Sensitive Information": {
+        "cwe_ids": [
+          "CWE-319"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Improper Code Sanitization": {
+        "cwe_ids": [
+          "CWE-94",
+          "CWE-79",
+          "CWE-116"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Use of Password Hash With Insufficient Computational Effort": {
+        "cwe_ids": [
+          "CWE-916"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Insufficiently Random Values": {
+        "cwe_ids": [
+          "CWE-330"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Insecure TLS Configuration": {
+        "cwe_ids": [
+          "CWE-327"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Insufficient postMessage Validation": {
+        "cwe_ids": [
+          "CWE-20"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Introspection Enabled": {
+        "cwe_ids": [
+          "CWE-200"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Insecure JWT Verification Method": {
+        "cwe_ids": [
+          "CWE-347"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "JWT Signature Verification Method Disabled": {
+        "cwe_ids": [
+          "CWE-347"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "JWT 'none' Algorithm Supported": {
+        "cwe_ids": [
+          "CWE-347"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Denial of Service (DoS) through Nested GraphQL Queries": {
+        "cwe_ids": [
+          "CWE-400"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "None"
+      },
+      "Unchecked Input for Loop Condition": {
+        "cwe_ids": [
+          "CWE-400",
+          "CWE-606"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Observable Timing Discrepancy (Timing Attack)": {
+        "cwe_ids": [
+          "CWE-208"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Use of Hardcoded Credentials": {
+        "cwe_ids": [
+          "CWE-798"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Use of Hardcoded Passwords": {
+        "cwe_ids": [
+          "CWE-798",
+          "CWE-259"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Allocation of Resources Without Limits or Throttling": {
+        "cwe_ids": [
+          "CWE-770"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "None"
+      },
+      "NoSQL Injection": {
+        "cwe_ids": [
+          "CWE-943"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Buffer Over-read": {
+        "cwe_ids": [
+          "CWE-126"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Open Redirect": {
+        "cwe_ids": [
+          "CWE-601"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Path Traversal": {
+        "cwe_ids": [
+          "CWE-23"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Prototype Pollution": {
+        "cwe_ids": [
+          "CWE-1321"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Use dangerouslySetInnerHTML to Explicitly Handle XSS Risks": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Weak Password Recovery Mechanism for Forgotten Password": {
+        "cwe_ids": [
+          "CWE-640"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "SQL Injection": {
+        "cwe_ids": [
+          "CWE-89"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Server-Side Request Forgery (SSRF)": {
+        "cwe_ids": [
+          "CWE-918"
+        ],
+        "owasp_top_10_2021": [
+          "A10"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A10"
+      },
+      "Improper Neutralization of Directives in Statically Saved Code": {
+        "cwe_ids": [
+          "CWE-96"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Origin Validation Error": {
+        "cwe_ids": [
+          "CWE-942",
+          "CWE-346"
+        ],
+        "owasp_top_10_2021": [
+          "A05",
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05, OWASP:A07"
+      },
+      "Permissive Cross-domain Policy": {
+        "cwe_ids": [
+          "CWE-942"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Improper Restriction of Rendered UI Layers or Frames": {
+        "cwe_ids": [
+          "CWE-1021"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Cryptographic Issues": {
+        "cwe_ids": [
+          "CWE-310"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Unsafe JQuery Plugin": {
+        "cwe_ids": [
+          "CWE-79",
+          "CWE-116"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Cross-Site Request Forgery (CSRF)": {
+        "cwe_ids": [
+          "CWE-352"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A01"
+      },
+      "Sensitive Cookie Without 'HttpOnly' Flag": {
+        "cwe_ids": [
+          "CWE-1004"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Sensitive Cookie in HTTPS Session Without 'Secure' Attribute": {
+        "cwe_ids": [
+          "CWE-614"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "XML External Entity (XXE) Injection": {
+        "cwe_ids": [
+          "CWE-611"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "XPath Injection": {
+        "cwe_ids": [
+          "CWE-643"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Arbitrary File Write via Archive Extraction (Zip Slip)": {
+        "cwe_ids": [
+          "CWE-22"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A01"
+      },
+      "Regular Expression Denial of Service (ReDoS)": {
+        "cwe_ids": [
+          "CWE-400"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "None"
+      }
+    },
+    "java": {
+      "Android World Writeable/Readable File Permission Found": {
+        "cwe_ids": [
+          "CWE-732"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "None"
+      },
+      "Use of Potentially Dangerous Function": {
+        "cwe_ids": [
+          "CWE-676"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Cleartext Storage of Sensitive Information in a Cookie": {
+        "cwe_ids": [
+          "CWE-315"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Code Injection": {
+        "cwe_ids": [
+          "CWE-94"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Command Injection": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Deserialization of Untrusted Data": {
+        "cwe_ids": [
+          "CWE-502"
+        ],
+        "owasp_top_10_2021": [
+          "A08"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A08"
+      },
+      "Cross-Site Request Forgery (CSRF)": {
+        "cwe_ids": [
+          "CWE-352"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A01"
+      },
+      "Information Exposure": {
+        "cwe_ids": [
+          "CWE-200"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Cleartext Transmission of Sensitive Information": {
+        "cwe_ids": [
+          "CWE-319"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Indirect Command Injection via User Controlled Environment": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "External Control of System or Configuration Setting": {
+        "cwe_ids": [
+          "CWE-15"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Process Control": {
+        "cwe_ids": [
+          "CWE-114"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "File Access Enabled": {
+        "cwe_ids": [
+          "CWE-200"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Android Fragment Injection": {
+        "cwe_ids": [
+          "CWE-470"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Use of Hardcoded Passwords": {
+        "cwe_ids": [
+          "CWE-798",
+          "CWE-259"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Hardcoded Secret": {
+        "cwe_ids": [
+          "CWE-547"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Improper Neutralization of CRLF Sequences in HTTP Headers": {
+        "cwe_ids": [
+          "CWE-113"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Disabled Neutralization of CRLF Sequences in HTTP Headers": {
+        "cwe_ids": [
+          "CWE-113"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Inadequate Padding for AES encryption": {
+        "cwe_ids": [
+          "CWE-326"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of a Broken or Risky Cryptographic Algorithm": {
+        "cwe_ids": [
+          "CWE-327"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Password Hash With Insufficient Computational Effort": {
+        "cwe_ids": [
+          "CWE-916"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Insufficiently Random Values": {
+        "cwe_ids": [
+          "CWE-330"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Android Intent Forwarding": {
+        "cwe_ids": [
+          "CWE-940"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Improper Validation of Certificate with Host Mismatch": {
+        "cwe_ids": [
+          "CWE-297"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "JavaScript Enabled": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Java Naming and Directory Interface (JNDI) Injection": {
+        "cwe_ids": [
+          "CWE-074"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "JWT Signature Verification Bypass": {
+        "cwe_ids": [
+          "CWE-347"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Improper Authentication": {
+        "cwe_ids": [
+          "CWE-287"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "LDAP Injection": {
+        "cwe_ids": [
+          "CWE-90"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Use of Hardcoded Credentials": {
+        "cwe_ids": [
+          "CWE-798"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "The cipher text is equal to the provided input plain text": {
+        "cwe_ids": [
+          "CWE-311"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "NoSQL Injection": {
+        "cwe_ids": [
+          "CWE-943"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Use of Sticky broadcasts": {
+        "cwe_ids": [
+          "CWE-265"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Use of Hardcoded, Security-relevant Constants": {
+        "cwe_ids": [
+          "CWE-547"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Open Redirect": {
+        "cwe_ids": [
+          "CWE-601"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Path Traversal": {
+        "cwe_ids": [
+          "CWE-23"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Privacy Leak": {
+        "cwe_ids": [
+          "CWE-532"
+        ],
+        "owasp_top_10_2021": [
+          "A09"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A09"
+      },
+      "Unsafe Reflection": {
+        "cwe_ids": [
+          "CWE-470"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Regular expression injection": {
+        "cwe_ids": [
+          "CWE-400",
+          "CWE-730"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Unprotected Storage of Credentials": {
+        "cwe_ids": [
+          "CWE-256"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Incorrect Permission Assignment": {
+        "cwe_ids": [
+          "CWE-732"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Server Information Exposure": {
+        "cwe_ids": [
+          "CWE-209"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Improper Handling of Insufficient Permissions or Privileges": {
+        "cwe_ids": [
+          "CWE-280"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Cross-site Scripting (XSS)": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Unrestricted Android Broadcast": {
+        "cwe_ids": [
+          "CWE-862"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A01"
+      },
+      "Spring Cross-Site Request Forgery (CSRF)": {
+        "cwe_ids": [
+          "CWE-352"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A01"
+      },
+      "SQL Injection": {
+        "cwe_ids": [
+          "CWE-89"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Server-Side Request Forgery (SSRF)": {
+        "cwe_ids": [
+          "CWE-918"
+        ],
+        "owasp_top_10_2021": [
+          "A10"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A10"
+      },
+      "Inadequate Encryption Strength": {
+        "cwe_ids": [
+          "CWE-326"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Code Execution via Third Party Package Context": {
+        "cwe_ids": [
+          "CWE-94"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Code Execution via Third Party Package Installation": {
+        "cwe_ids": [
+          "CWE-940"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Observable Timing Discrepancy (Timing Attack)": {
+        "cwe_ids": [
+          "CWE-208"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "None"
+      },
+      "Origin Validation Error": {
+        "cwe_ids": [
+          "CWE-942",
+          "CWE-346"
+        ],
+        "owasp_top_10_2021": [
+          "A05",
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05, OWASP:A07"
+      },
+      "Improper Certificate Validation": {
+        "cwe_ids": [
+          "CWE-295"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Cryptographic Issues": {
+        "cwe_ids": [
+          "CWE-310"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Trust Boundary Violation": {
+        "cwe_ids": [
+          "CWE-501"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Unauthorized File Access": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Android Uri Permission Manipulation": {
+        "cwe_ids": [
+          "CWE-266"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Use of Externally-Controlled Format String": {
+        "cwe_ids": [
+          "CWE-134"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "None"
+      },
+      "Sensitive Cookie Without 'HttpOnly' Flag": {
+        "cwe_ids": [
+          "CWE-1004"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Sensitive Cookie in HTTPS Session Without 'Secure' Attribute": {
+        "cwe_ids": [
+          "CWE-614"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Insufficient Session Expiration": {
+        "cwe_ids": [
+          "CWE-613"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "XML External Entity (XXE) Injection": {
+        "cwe_ids": [
+          "CWE-611"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "XPath Injection": {
+        "cwe_ids": [
+          "CWE-643"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      }
+    },
+    "php": {
+      "Code Injection": {
+        "cwe_ids": [
+          "CWE-94"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Command Injection": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Deserialization of Untrusted Data": {
+        "cwe_ids": [
+          "CWE-502"
+        ],
+        "owasp_top_10_2021": [
+          "A08"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A08"
+      },
+      "Improper Access Control: Email Content Injection": {
+        "cwe_ids": [
+          "CWE-284"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "File Inclusion": {
+        "cwe_ids": [
+          "CWE-98"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Use of Hardcoded Credentials": {
+        "cwe_ids": [
+          "CWE-798",
+          "CWE-259"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Hardcoded Secret": {
+        "cwe_ids": [
+          "CWE-547"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Use of Hardcoded Passwords": {
+        "cwe_ids": [
+          "CWE-798",
+          "CWE-259"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Inadequate Padding for Public Key Encryption": {
+        "cwe_ids": [
+          "CWE-326"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of a Broken or Risky Cryptographic Algorithm": {
+        "cwe_ids": [
+          "CWE-327"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Password Hash With Insufficient Computational Effort": {
+        "cwe_ids": [
+          "CWE-916"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Insufficiently Random Values": {
+        "cwe_ids": [
+          "CWE-330"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Cross-site Scripting (XSS)": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Allocation of Resources Without Limits or Throttling": {
+        "cwe_ids": [
+          "CWE-770"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Open Redirect": {
+        "cwe_ids": [
+          "CWE-601"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Path Traversal": {
+        "cwe_ids": [
+          "CWE-23"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Information Exposure": {
+        "cwe_ids": [
+          "CWE-200"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "SQL Injection": {
+        "cwe_ids": [
+          "CWE-89"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Server-Side Request Forgery (SSRF)": {
+        "cwe_ids": [
+          "CWE-918"
+        ],
+        "owasp_top_10_2021": [
+          "A10"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A10"
+      },
+      "Origin Validation Error": {
+        "cwe_ids": [
+          "CWE-942",
+          "CWE-346"
+        ],
+        "owasp_top_10_2021": [
+          "A05",
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05, OWASP:A07"
+      },
+      "Improper Restriction of Rendered UI Layers or Frames": {
+        "cwe_ids": [
+          "CWE-1021"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Inadequate Encryption Strength": {
+        "cwe_ids": [
+          "CWE-326"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Sensitive Cookie Without 'HttpOnly' Flag": {
+        "cwe_ids": [
+          "CWE-1004"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Sensitive Cookie in HTTPS Session Without 'Secure' Attribute": {
+        "cwe_ids": [
+          "CWE-614"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "XPath Injection": {
+        "cwe_ids": [
+          "CWE-643"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "XML External Entity (XXE) Injection": {
+        "cwe_ids": [
+          "CWE-611"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Arbitrary File Write via Archive Extraction (Zip Slip)": {
+        "cwe_ids": [
+          "CWE-22"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A01"
+      },
+      "Regular Expression Denial of Service (ReDoS)": {
+        "cwe_ids": [
+          "CWE-400"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      }
+    },
+    "go": {
+      "Clear Text Logging": {
+        "cwe_ids": [
+          "CWE-200",
+          "CWE-312"
+        ],
+        "owasp_top_10_2021": [
+          "A01",
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A01, OWASP:A04"
+      },
+      "Command Injection": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Improper Access Control: Email Content Injection": {
+        "cwe_ids": [
+          "CWE-284"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Generation of Error Message Containing Sensitive Information": {
+        "cwe_ids": [
+          "CWE-209"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Hardcoded Secret": {
+        "cwe_ids": [
+          "CWE-547"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Use of Hardcoded Passwords": {
+        "cwe_ids": [
+          "CWE-798",
+          "CWE-259"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Use of a Broken or Risky Cryptographic Algorithm": {
+        "cwe_ids": [
+          "CWE-327"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Password Hash With Insufficient Computational Effort": {
+        "cwe_ids": [
+          "CWE-916"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Insecure TLS Configuration": {
+        "cwe_ids": [
+          "CWE-327"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Insufficiently Random Values": {
+        "cwe_ids": [
+          "CWE-330"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Hardcoded Credentials": {
+        "cwe_ids": [
+          "CWE-798"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Open Redirect": {
+        "cwe_ids": [
+          "CWE-601"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Path Traversal": {
+        "cwe_ids": [
+          "CWE-23"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "SQL Injection": {
+        "cwe_ids": [
+          "CWE-89"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Server-Side Request Forgery (SSRF)": {
+        "cwe_ids": [
+          "CWE-918"
+        ],
+        "owasp_top_10_2021": [
+          "A10"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A10"
+      },
+      "Improper Neutralization of Directives in Statically Saved Code": {
+        "cwe_ids": [
+          "CWE-96"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Improper Certificate Validation": {
+        "cwe_ids": [
+          "CWE-295"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Inadequate Encryption Strength": {
+        "cwe_ids": [
+          "CWE-326"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Sensitive Cookie Without 'HttpOnly' Flag": {
+        "cwe_ids": [
+          "CWE-1004"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Sensitive Cookie in HTTPS Session Without 'Secure' Attribute": {
+        "cwe_ids": [
+          "CWE-614"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": true,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Cross-site Scripting (XSS)": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": true,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "XPath Injection": {
+        "cwe_ids": [
+          "CWE-643"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      }
+    },
+    "kotlin": {
+      "Android World Writeable/Readable File Permission Found": {
+        "cwe_ids": [
+          "CWE-732"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Use of Potentially Dangerous Function": {
+        "cwe_ids": [
+          "CWE-676"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Cleartext Storage of Sensitive Information in a Cookie": {
+        "cwe_ids": [
+          "CWE-315"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Code Injection": {
+        "cwe_ids": [
+          "CWE-94"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Command Injection": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Deserialization of Untrusted Data": {
+        "cwe_ids": [
+          "CWE-502"
+        ],
+        "owasp_top_10_2021": [
+          "A08"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A08"
+      },
+      "Cross-Site Request Forgery (CSRF)": {
+        "cwe_ids": [
+          "CWE-352"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A01"
+      },
+      "Information Exposure": {
+        "cwe_ids": [
+          "CWE-200"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Cleartext Transmission of Sensitive Information": {
+        "cwe_ids": [
+          "CWE-319"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Indirect Command Injection via User Controlled Environment": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "External Control of System or Configuration Setting": {
+        "cwe_ids": [
+          "CWE-15"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Process Control": {
+        "cwe_ids": [
+          "CWE-114"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "File Access Enabled": {
+        "cwe_ids": [
+          "CWE-200"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Android Fragment Injection": {
+        "cwe_ids": [
+          "CWE-470"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Use of Hardcoded Passwords": {
+        "cwe_ids": [
+          "CWE-798",
+          "CWE-259"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Hardcoded Secret": {
+        "cwe_ids": [
+          "CWE-547"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Improper Neutralization of CRLF Sequences in HTTP Headers": {
+        "cwe_ids": [
+          "CWE-113"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Disabled Neutralization of CRLF Sequences in HTTP Headers": {
+        "cwe_ids": [
+          "CWE-113"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Inadequate Padding for AES encryption": {
+        "cwe_ids": [
+          "CWE-326"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of a Broken or Risky Cryptographic Algorithm": {
+        "cwe_ids": [
+          "CWE-327"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Password Hash With Insufficient Computational Effort": {
+        "cwe_ids": [
+          "CWE-916"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Insufficiently Random Values": {
+        "cwe_ids": [
+          "CWE-330"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Android Intent Forwarding": {
+        "cwe_ids": [
+          "CWE-940"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Improper Validation of Certificate with Host Mismatch": {
+        "cwe_ids": [
+          "CWE-297"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "JavaScript Enabled": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Java Naming and Directory Interface (JNDI) Injection": {
+        "cwe_ids": [
+          "CWE-074"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Improper Authentication": {
+        "cwe_ids": [
+          "CWE-287"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "LDAP Injection": {
+        "cwe_ids": [
+          "CWE-90"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Use of Hardcoded Credentials": {
+        "cwe_ids": [
+          "CWE-798"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "The cipher text is equal to the provided input plain text": {
+        "cwe_ids": [
+          "CWE-311"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Use of Sticky broadcasts": {
+        "cwe_ids": [
+          "CWE-265"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Use of Hardcoded, Security-relevant Constants": {
+        "cwe_ids": [
+          "CWE-547"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Open Redirect": {
+        "cwe_ids": [
+          "CWE-601"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Path Traversal": {
+        "cwe_ids": [
+          "CWE-23"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Regular expression injection": {
+        "cwe_ids": [
+          "CWE-400",
+          "CWE-730"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Unprotected Storage of Credentials": {
+        "cwe_ids": [
+          "CWE-256"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Incorrect Permission Assignment": {
+        "cwe_ids": [
+          "CWE-732"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Improper Certificate Validation": {
+        "cwe_ids": [
+          "CWE-295"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Server Information Exposure": {
+        "cwe_ids": [
+          "CWE-209"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Improper Handling of Insufficient Permissions or Privileges": {
+        "cwe_ids": [
+          "CWE-280"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Cross-site Scripting (XSS)": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Unrestricted Android Broadcast": {
+        "cwe_ids": [
+          "CWE-862"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A01"
+      },
+      "SQL Injection": {
+        "cwe_ids": [
+          "CWE-89"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Server-Side Request Forgery (SSRF)": {
+        "cwe_ids": [
+          "CWE-918"
+        ],
+        "owasp_top_10_2021": [
+          "A10"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A10"
+      },
+      "Inadequate Encryption Strength": {
+        "cwe_ids": [
+          "CWE-326"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Code Execution via Third Party Package Context": {
+        "cwe_ids": [
+          "CWE-94"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Code Execution via Third Party Package Installation": {
+        "cwe_ids": [
+          "CWE-940"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Observable Timing Discrepancy (Timing Attack)": {
+        "cwe_ids": [
+          "CWE-208"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Origin Validation Error": {
+        "cwe_ids": [
+          "CWE-942",
+          "CWE-346"
+        ],
+        "owasp_top_10_2021": [
+          "A05",
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05, OWASP:A07"
+      },
+      "Cryptographic Issues": {
+        "cwe_ids": [
+          "CWE-310"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Trust Boundary Violation": {
+        "cwe_ids": [
+          "CWE-501"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Unauthorized File Access": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Android Uri Permission Manipulation": {
+        "cwe_ids": [
+          "CWE-266"
+        ],
+        "owasp_top_10_2021": [
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A04"
+      },
+      "Use of Externally-Controlled Format String": {
+        "cwe_ids": [
+          "CWE-134"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Sensitive Cookie Without 'HttpOnly' Flag": {
+        "cwe_ids": [
+          "CWE-1004"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Sensitive Cookie in HTTPS Session Without 'Secure' Attribute": {
+        "cwe_ids": [
+          "CWE-614"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Insufficient Session Expiration": {
+        "cwe_ids": [
+          "CWE-613"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "XML External Entity (XXE) Injection": {
+        "cwe_ids": [
+          "CWE-611"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "XPath Injection": {
+        "cwe_ids": [
+          "CWE-643"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      }
+    },
+    "ruby": {
+      "Code Injection": {
+        "cwe_ids": [
+          "CWE-94"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Command Injection": {
+        "cwe_ids": [
+          "CWE-78"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Remote Code Execution via Endpoint": {
+        "cwe_ids": [
+          "CWE-94"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Deserialization of Untrusted Data": {
+        "cwe_ids": [
+          "CWE-502"
+        ],
+        "owasp_top_10_2021": [
+          "A08"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A08"
+      },
+      "Use of Hardcoded Credentials": {
+        "cwe_ids": [
+          "CWE-798",
+          "CWE-259"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Use of Hardcoded Cryptographic Key": {
+        "cwe_ids": [
+          "CWE-321"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Hardcoded Secret": {
+        "cwe_ids": [
+          "CWE-547"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Use of Hardcoded Passwords": {
+        "cwe_ids": [
+          "CWE-798",
+          "CWE-259"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A07"
+      },
+      "Use of a Broken or Risky Cryptographic Algorithm": {
+        "cwe_ids": [
+          "CWE-327"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Password Hash With Insufficient Computational Effort": {
+        "cwe_ids": [
+          "CWE-916"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Use of Insufficiently Random Values": {
+        "cwe_ids": [
+          "CWE-330"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Sinatra Protection Layers Disabled": {
+        "cwe_ids": [
+          "CWE-16",
+          "CWE-352",
+          "CWE-79",
+          "CWE-693",
+          "CWE-1021",
+          "CWE-35",
+          "CWE-348"
+        ],
+        "owasp_top_10_2021": [
+          "A05",
+          "A03",
+          "A01",
+          "A04"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A05, OWASP:A03, OWASP:A01, OWASP:A04"
+      },
+      "Insecure Data Transmission": {
+        "cwe_ids": [
+          "CWE-319"
+        ],
+        "owasp_top_10_2021": [
+          "A02"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02"
+      },
+      "Improper Input Validation": {
+        "cwe_ids": [
+          "CWE-20"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Improperly Controlled Modification of Dynamically-Determined Object Attributes": {
+        "cwe_ids": [
+          "CWE-915"
+        ],
+        "owasp_top_10_2021": [
+          "A08"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A08"
+      },
+      "Selection of Less-Secure Algorithm During Negotiation (Force SSL)": {
+        "cwe_ids": [
+          "CWE-311",
+          "CWE-757"
+        ],
+        "owasp_top_10_2021": [
+          "A02",
+          "A04"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A02, OWASP:A04"
+      },
+      "Open Redirect": {
+        "cwe_ids": [
+          "CWE-601"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Path Traversal": {
+        "cwe_ids": [
+          "CWE-23"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Unsafe Reflection": {
+        "cwe_ids": [
+          "CWE-470"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Improper Certificate Validation": {
+        "cwe_ids": [
+          "CWE-295"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Information Exposure": {
+        "cwe_ids": [
+          "CWE-200"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "Session Manipulation": {
+        "cwe_ids": [
+          "CWE-285"
+        ],
+        "owasp_top_10_2021": [
+          "A01"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A01"
+      },
+      "SQL Injection": {
+        "cwe_ids": [
+          "CWE-89"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "Improper Neutralization of Directives in Statically Saved Code": {
+        "cwe_ids": [
+          "CWE-96"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "No Weak Password Requirements": {
+        "cwe_ids": [
+          "CWE-521"
+        ],
+        "owasp_top_10_2021": [
+          "A07"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A07"
+      },
+      "Sensitive Cookie Without 'HttpOnly' Flag": {
+        "cwe_ids": [
+          "CWE-1004"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Sensitive Cookie in HTTPS Session Without 'Secure' Attribute": {
+        "cwe_ids": [
+          "CWE-614"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "Incorrect regular expression for validating values": {
+        "cwe_ids": [
+          "CWE-1286"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      },
+      "Cross-site Scripting (XSS)": {
+        "cwe_ids": [
+          "CWE-79"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": true,
+        "autofixable": false,
+        "raw_security_categories": "Sans Top 25, OWASP:A03"
+      },
+      "XML External Entity (XXE) Injection": {
+        "cwe_ids": [
+          "CWE-611"
+        ],
+        "owasp_top_10_2021": [
+          "A05"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A05"
+      },
+      "XPath Injection": {
+        "cwe_ids": [
+          "CWE-643"
+        ],
+        "owasp_top_10_2021": [
+          "A03"
+        ],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "OWASP:A03"
+      },
+      "Regular Expression Denial of Service (ReDoS)": {
+        "cwe_ids": [
+          "CWE-400"
+        ],
+        "owasp_top_10_2021": [],
+        "sans_top_25": false,
+        "autofixable": false,
+        "raw_security_categories": "None"
+      }
+    }
+  }
+}

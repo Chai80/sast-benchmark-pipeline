@@ -1,0 +1,2344 @@
+{
+  "_meta": {
+    "generated_at": "2025-12-23T00:38:53.000944+00:00",
+    "sources": {
+      "cwe_view_2021": "https://cwe.mitre.org/data/definitions/1344.html",
+      "cwe_view_2017": "https://cwe.mitre.org/data/definitions/1026.html",
+      "cwe_downloads": "https://cwe.mitre.org/data/downloads.html"
+    },
+    "notes": [
+      "This mapping is derived from the MITRE CWE 'Weaknesses in OWASP Top Ten' views (2017 and 2021).",
+      "A CWE may map to multiple OWASP categories (many-to-many), so codes/categories are arrays.",
+      "If a CWE is not present in a given view, that year's mapping is null."
+    ]
+  },
+  "cwe_to_owasp": {
+    "CWE-11": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-13": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-15": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-20": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-22": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A5"
+        ],
+        "categories": [
+          "A5:2017-Broken Access Control"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-23": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-35": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-59": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-73": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-74": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-75": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-77": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A1"
+        ],
+        "categories": [
+          "A1:2017-Injection"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-78": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A1"
+        ],
+        "categories": [
+          "A1:2017-Injection"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-79": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A7"
+        ],
+        "categories": [
+          "A7:2017-Cross-Site Scripting (XSS)"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-80": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-83": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-87": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-88": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A1"
+        ],
+        "categories": [
+          "A1:2017-Injection"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-89": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A1"
+        ],
+        "categories": [
+          "A1:2017-Injection"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-90": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A1"
+        ],
+        "categories": [
+          "A1:2017-Injection"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-91": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A1"
+        ],
+        "categories": [
+          "A1:2017-Injection"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-93": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-94": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-95": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-96": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-97": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-98": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-99": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+      "CWE-113": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-116": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-117": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A09"
+        ],
+        "categories": [
+          "A09:2021-Security Logging and Monitoring Failures"
+        ]
+      }
+    },
+    "CWE-138": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-183": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-184": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-200": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-201": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-209": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A6"
+        ],
+        "categories": [
+          "A6:2017-Security Misconfiguration"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04",
+          "A05"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design",
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-213": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-219": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-220": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A3"
+        ],
+        "categories": [
+          "A3:2017-Sensitive Data Exposure"
+        ]
+      },
+      "owasp_top_10_2021": null
+    },
+    "CWE-223": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A10"
+        ],
+        "categories": [
+          "A10:2017-Insufficient Logging & Monitoring"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A09"
+        ],
+        "categories": [
+          "A09:2021-Security Logging and Monitoring Failures"
+        ]
+      }
+    },
+    "CWE-235": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-256": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A2"
+        ],
+        "categories": [
+          "A2:2017-Broken Authentication"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04",
+          "A07"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design",
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-257": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04",
+          "A07"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design",
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-259": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-260": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05",
+          "A07"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration",
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-261": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02",
+          "A07"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures",
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-266": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-269": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-276": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-280": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01",
+          "A04"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control",
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-284": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A5"
+        ],
+        "categories": [
+          "A5:2017-Broken Access Control"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-285": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A5"
+        ],
+        "categories": [
+          "A5:2017-Broken Access Control"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-287": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A2"
+        ],
+        "categories": [
+          "A2:2017-Broken Authentication"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-288": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-290": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-294": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-295": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A3"
+        ],
+        "categories": [
+          "A3:2017-Sensitive Data Exposure"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-296": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-297": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-300": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-302": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-304": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-306": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-307": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-308": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A2"
+        ],
+        "categories": [
+          "A2:2017-Broken Authentication"
+        ]
+      },
+      "owasp_top_10_2021": null
+    },
+    "CWE-311": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A3"
+        ],
+        "categories": [
+          "A3:2017-Sensitive Data Exposure"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02",
+          "A04"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures",
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-312": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A3"
+        ],
+        "categories": [
+          "A3:2017-Sensitive Data Exposure"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-313": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-315": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-316": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-319": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A3"
+        ],
+        "categories": [
+          "A3:2017-Sensitive Data Exposure"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-321": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-322": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-323": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-324": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02",
+          "A07"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures",
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-325": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A3"
+        ],
+        "categories": [
+          "A3:2017-Sensitive Data Exposure"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-326": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A3"
+        ],
+        "categories": [
+          "A3:2017-Sensitive Data Exposure"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-327": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A3"
+        ],
+        "categories": [
+          "A3:2017-Sensitive Data Exposure"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-328": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A3"
+        ],
+        "categories": [
+          "A3:2017-Sensitive Data Exposure"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-329": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-330": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-331": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-335": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-336": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-337": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-338": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-340": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-345": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A08"
+        ],
+        "categories": [
+          "A08:2021-Software and Data Integrity Failures"
+        ]
+      }
+    },
+    "CWE-346": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-347": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-352": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-353": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A08"
+        ],
+        "categories": [
+          "A08:2021-Software and Data Integrity Failures"
+        ]
+      }
+    },
+    "CWE-359": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A3"
+        ],
+        "categories": [
+          "A3:2017-Sensitive Data Exposure"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-377": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-384": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A2"
+        ],
+        "categories": [
+          "A2:2017-Broken Authentication"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-402": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-419": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-425": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A5"
+        ],
+        "categories": [
+          "A5:2017-Broken Access Control"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-426": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A08"
+        ],
+        "categories": [
+          "A08:2021-Software and Data Integrity Failures"
+        ]
+      }
+    },
+    "CWE-430": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-434": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-441": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-444": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-451": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-470": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-471": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-472": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-494": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A08"
+        ],
+        "categories": [
+          "A08:2021-Software and Data Integrity Failures"
+        ]
+      }
+    },
+    "CWE-497": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-501": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-502": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A8"
+        ],
+        "categories": [
+          "A8:2017-Insecure Deserialization"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A08"
+        ],
+        "categories": [
+          "A08:2021-Software and Data Integrity Failures"
+        ]
+      }
+    },
+    "CWE-520": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-521": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-522": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A2"
+        ],
+        "categories": [
+          "A2:2017-Broken Authentication"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-523": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A2"
+        ],
+        "categories": [
+          "A2:2017-Broken Authentication"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02",
+          "A07"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures",
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-525": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-526": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-532": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A09"
+        ],
+        "categories": [
+          "A09:2021-Security Logging and Monitoring Failures"
+        ]
+      }
+    },
+    "CWE-537": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-538": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-539": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-540": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-541": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-547": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-548": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A6"
+        ],
+        "categories": [
+          "A6:2017-Security Misconfiguration"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01",
+          "A05"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control",
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-552": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-564": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A1"
+        ],
+        "categories": [
+          "A1:2017-Injection"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-565": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A08"
+        ],
+        "categories": [
+          "A08:2021-Software and Data Integrity Failures"
+        ]
+      }
+    },
+    "CWE-566": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-579": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-598": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-601": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-602": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-610": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-611": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A4"
+        ],
+        "categories": [
+          "A4:2017-XML External Entities (XXE)"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-613": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A2"
+        ],
+        "categories": [
+          "A2:2017-Broken Authentication"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-614": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-620": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A2"
+        ],
+        "categories": [
+          "A2:2017-Broken Authentication"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-639": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A5"
+        ],
+        "categories": [
+          "A5:2017-Broken Access Control"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01",
+          "A04"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control",
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-640": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A2"
+        ],
+        "categories": [
+          "A2:2017-Broken Authentication"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04",
+          "A07"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design",
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-642": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-643": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-644": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-646": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-650": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-651": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-652": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-653": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-656": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-657": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-668": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-706": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-756": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-757": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-759": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-760": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-776": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A4"
+        ],
+        "categories": [
+          "A4:2017-XML External Entities (XXE)"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-778": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A10"
+        ],
+        "categories": [
+          "A10:2017-Insufficient Logging & Monitoring"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A09"
+        ],
+        "categories": [
+          "A09:2021-Security Logging and Monitoring Failures"
+        ]
+      }
+    },
+    "CWE-780": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures"
+        ]
+      }
+    },
+    "CWE-784": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A08"
+        ],
+        "categories": [
+          "A08:2021-Software and Data Integrity Failures"
+        ]
+      }
+    },
+    "CWE-798": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-799": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-807": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-829": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A08"
+        ],
+        "categories": [
+          "A08:2021-Software and Data Integrity Failures"
+        ]
+      }
+    },
+    "CWE-830": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A08"
+        ],
+        "categories": [
+          "A08:2021-Software and Data Integrity Failures"
+        ]
+      }
+    },
+    "CWE-841": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-862": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-863": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-913": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-915": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A08"
+        ],
+        "categories": [
+          "A08:2021-Software and Data Integrity Failures"
+        ]
+      }
+    },
+    "CWE-916": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A02",
+          "A07"
+        ],
+        "categories": [
+          "A02:2021-Cryptographic Failures",
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-917": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A1"
+        ],
+        "categories": [
+          "A1:2017-Injection"
+        ]
+      },
+      "owasp_top_10_2021": {
+        "codes": [
+          "A03"
+        ],
+        "categories": [
+          "A03:2021-Injection"
+        ]
+      }
+    },
+    "CWE-918": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A10"
+        ],
+        "categories": [
+          "A10:2021-Server-Side Request Forgery (SSRF)"
+        ]
+      }
+    },
+    "CWE-922": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    },
+    "CWE-927": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-940": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A07"
+        ],
+        "categories": [
+          "A07:2021-Identification and Authentication Failures"
+        ]
+      }
+    },
+    "CWE-942": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-943": {
+      "owasp_top_10_2017": {
+        "codes": [
+          "A1"
+        ],
+        "categories": [
+          "A1:2017-Injection"
+        ]
+      },
+      "owasp_top_10_2021": null
+    },
+    "CWE-1004": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-1021": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-1104": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A06"
+        ],
+        "categories": [
+          "A06:2021-Vulnerable and Outdated Components"
+        ]
+      }
+    },
+    "CWE-1173": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A04"
+        ],
+        "categories": [
+          "A04:2021-Insecure Design"
+        ]
+      }
+    },
+    "CWE-1174": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A05"
+        ],
+        "categories": [
+          "A05:2021-Security Misconfiguration"
+        ]
+      }
+    },
+    "CWE-1275": {
+      "owasp_top_10_2017": null,
+      "owasp_top_10_2021": {
+        "codes": [
+          "A01"
+        ],
+        "categories": [
+          "A01:2021-Broken Access Control"
+        ]
+      }
+    }
+  }
+}
