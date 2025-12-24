@@ -1,201 +1,250 @@
-## Normalized JSON schema
+# Normalized findings schema
 
-Each tool has its own native format (SARIF, REST API JSON, etc).  
-We normalize them into a **common structure** so we can compare tools directly.
+This pipeline normalizes scanner-specific outputs (Semgrep, SonarCloud/SonarScanner, Snyk Code, Aikido) into a **single JSON format** so you can compare tools on the same target repo.
 
----
-
-> **Schema v1.1 note**  
-> In v1.0, metadata about the run (tool, repo, commit, run ID, etc.) only existed once at the top of the file.  
-> In v1.1, **each finding also carries a `metadata` object** so every finding can stand on its own as a “row”. 
-
----
-### Understanding the Schema
-
-Each normalized JSON file is **one scan** of **one repo** by **one tool**.
-
-Inside the file there are 3 main parts:
-
-1. **Scan header** (top level: `schema_version`, `tool`, `tool_version`, `target_repo`, `scan`)  
-2. **Findings list** (`findings[]`)  
-   - one object per issue  
-   - now includes a `metadata` object copied from the scan header  
-3. **Vendor details** (`vendor.raw_result`)  
-   - the original tool‑specific JSON for that finding
-
-If you imagine this as tables:
-
-- Table **Findings** → one row per finding, with metadata columns repeated  
-- Top‑level **Scan header** → one row summary for the file (convenience only)
----
-
-### 1. Conceptual model
-
-At a high level, each JSON file represents **one tool run** on **one repo**:
-
-```text
-+---------------------------+
-|      Scan header          |   (summary)
-+---------------------------+
-| schema_version            |
-| tool, tool_version        |
-| target_repo { ... }       |
-| scan { ... }              |
-+---------------------------+
-
-+---------------------------+
-|   Finding (per row)       |
-+---------------------------+
-| metadata { ... }          |  <-- per‑finding copy of scan + repo info
-| finding_id                |
-| cwe_id, rule_id           |
-| severity                  |
-| file_path, line_number    |
-| line_content              |
-| vendor.raw_result { ... } |
-+---------------------------+
-```
-
-For analytics, we  will treat findings[] as a flat table:
-
-One row per finding
-Columns = finding fields + metadata fields
+This document describes the **current on-disk shape** produced by the pipeline, plus a few **backwards-compatible adjustments** to make the schema easier to reason about and extend.
 
 ---
 
-### 2. Top‑level fields
+## Versioning
 
-Every normalized JSON file has this top-level structure:
+- `schema_version` is a string.
+- **Current**: `1.1` (as emitted by the scripts today).
+- **Documented here**: `1.2` (a documentation + compatibility update):
+  - Does **not** break existing outputs.
+  - Clarifies optional fields and tool-specific enrichment blocks.
+  - Treats `run_metadata` as first-class (it already exists in outputs).
+  - Clarifies that per-finding `metadata` is **optional/denormalized** (it exists today, but consumers shouldn’t *require* it).
+
+---
+
+## File-level model
+
+**One normalized JSON file == one tool run on one target repo.**
+
+Top-level shape:
 
 ```json
 {
-  "schema_version": "1.0",
-  "tool": "snyk",
-  "tool_version": "1.1301.0",
+  "schema_version": "1.2",
+  "tool": "sonar",
+  "tool_version": "SonarScanner CLI 7.3.0.5189",
+
   "target_repo": { ... },
   "scan": { ... },
+
+  "run_metadata": { ... },
+
+  "sonar_rules_enrichment": { ... },
+
   "findings": [ ... ]
 }
 ```
 
-| Field            | Type          | Description                                                               |
-| ---------------- | ------------- | ------------------------------------------------------------------------- |
-| `schema_version` | string        | Version of this normalized schema (`"1.0"` for now).                      |
-| `tool`           | string        | Short name of the scanner (`"semgrep"`, `"sonar"`, `"snyk"`, `"aikido"`). |
-| `tool_version`   | string        | Version string reported by the scanner.                                   |
-| `target_repo`    | object        | Metadata about the repo that was scanned (see below).                     |
-| `scan`           | object        | Metadata about this particular run/command.                               |
-| `findings`       | array<object> | List of normalized findings (one element per issue).                      |
+### Top-level fields
+
+| Field | Type | Required | Notes |
+|---|---:|:---:|---|
+| `schema_version` | string | ✅ | Schema version string (e.g. `"1.1"`, `"1.2"`). |
+| `tool` | string | ✅ | Scanner short name: `semgrep`, `sonar`, `snyk`, `aikido`. |
+| `tool_version` | string | ✅ | Version string reported by the scanner wrapper/script. |
+| `target_repo` | object | ✅ | Repo identity + commit info (see below). |
+| `scan` | object | ✅ | Run identity + timings + file paths (see below). |
+| `run_metadata` | object | ⭕️ | Full contents of `metadata.json` embedded for convenience. Shape is tool-specific but usually includes commit + timing + command. |
+| `sonar_rules_enrichment` | object | ⭕️ | Sonar-only summary block when rule enrichment was performed. |
+| `findings` | array<object> | ✅ | List of normalized findings. |
 
 ---
-The contents of tool, tool_version, target_repo, and scan are duplicated inside each finding.metadata so each finding is self‑contained.
 
-### 3. `target_repo`: what did we scan?
+## `target_repo`
 
-These fields describe **which repository** and **which commit** this scan ran on.
+Describes **what you scanned**:
 
 ```json
 "target_repo": {
   "name": "juice-shop",
   "url": "https://github.com/juice-shop/juice-shop.git",
-  "commit": "ded6fc5f7ed4...",
-  "commit_author_name": "Björn Kimminich",
-  "commit_author_email": "github.com@kimminich.de",
-  "commit_date": "2025-11-26T11:38:38+01:00"
+  "commit": "ff5ba3300a331e9712eabe073409e00a4b1e8aa1",
+  "commit_author_name": "Bjoern Kimminich",
+  "commit_author_email": "bjoern.kimminich@kuehne-nagel.com",
+  "commit_date": "2025-12-01T11:11:50+01:00"
 }
 ```
-| Field                 | Type   | Description                      |
-| --------------------- | ------ | -------------------------------- |
-| `name`                | string | Repo name (derived from URL).    |
-| `url`                 | string | Git remote URL used in the scan. |
-| `commit`              | string | Git SHA that was scanned.        |
-| `commit_author_name`  | string | Author of that commit.           |
-| `commit_author_email` | string | Author email.                    |
-| `commit_date`         | string | ISO 8601 author date.            |
 
-### 4. `scan`: how did we run the tool?
+| Field | Type | Required | Notes |
+|---|---:|:---:|---|
+| `name` | string | ✅ | Derived repo name (usually from URL). |
+| `url` | string | ✅ | Git remote URL used. |
+| `commit` | string | ⭕️ | Git SHA scanned (may be `"unknown"` if git info failed). |
+| `commit_author_name` | string\|null | ⭕️ | From `git show -s`. |
+| `commit_author_email` | string\|null | ⭕️ | From `git show -s`. |
+| `commit_date` | string\|null | ⭕️ | ISO 8601 author date. |
 
-These fields describe **how and when** the scan was run, and where to find raw outputs.
+---
+
+## `scan`
+
+Describes **how and when you scanned**:
 
 ```json
 "scan": {
-  "run_id": "2025113004",
-  "scan_date": "2025-11-30T21:03:34.518761",
-  "command": "snyk code test --json-file-output runs/snyk/2025113004/juice-shop.json",
-  "raw_results_path": "runs/snyk/2025113004/juice-shop.json",
+  "run_id": "2025122201",
+  "scan_date": "2025-12-22T17:13:29.903427",
+  "command": "sonar-scanner ...",
+  "raw_results_path": "runs/sonar/juice-shop/2025122201/juice-shop.json",
+
+  "scan_time_seconds": 342.2597,
+  "exit_code": 3,
+
   "metadata_path": "metadata.json"
 }
 ```
-| Field              | Type   | Description                                                     |
-| ------------------ | ------ | --------------------------------------------------------------- |
-| `run_id`           | string | Run directory ID (`YYYYMMDDNN`).                                |
-| `scan_date`        | string | Timestamp when this JSON was generated.                         |
-| `command`          | string | Full CLI command used to run the scanner (for reproducibility). |
-| `raw_results_path` | string | Where the original vendor JSON is stored on disk.               |
-| `metadata_path`    | string | Path to the per-run `metadata.json`.                            |
 
-### 5. `findings[]`: the actual issues
+| Field | Type | Required | Notes |
+|---|---:|:---:|---|
+| `run_id` | string | ✅ | Run directory ID (`YYYYMMDDNN`). |
+| `scan_date` | string | ✅ | Timestamp when the run was executed / recorded. |
+| `command` | string\|null | ⭕️ | Command used to invoke the scanner (reproducibility). |
+| `raw_results_path` | string | ✅ | Where the raw vendor JSON is stored for this run. |
+| `scan_time_seconds` | number\|null | ⭕️ | Runtime of scan command (if measured). |
+| `exit_code` | integer\|null | ⭕️ | Exit code from the scan command (0/1 success-ish; tool-specific). |
+| `metadata_path` | string | ✅ | Relative path to `metadata.json` inside the run directory. |
+| `log_path` | string\|null | ⭕️ | Some tools (notably Sonar) may include a log path in run metadata; you *may* surface it here later for consistency. |
 
-Each element of findings is one normalized issue with its own metadata:
+**Why both `scan` and `run_metadata`?**  
+- `scan` is the *stable, minimal contract* needed to identify the run.  
+- `run_metadata` is a convenient embedded copy of the full per-run `metadata.json` (which may vary per tool).
+
+---
+
+## Findings
+
+`findings[]` is the main payload: **one element per issue/finding**.
+
+### Finding object (core fields)
+
 ```json
 {
-  "metadata": {
-    "tool": "snyk",
-    "tool_version": "1.1301.0",
-    "target_repo": {
-      "name": "juice-shop",
-      "url": "https://github.com/juice-shop/juice-shop.git",
-      "commit": "ded6fc5f7ed4...",
-      "commit_author_name": "Björn Kimminich",
-      "commit_author_email": "github.com@kimminich.de",
-      "commit_date": "2025-11-26T11:38:38+01:00"
-    },
-    "scan": {
-      "run_id": "2025113004",
-      "scan_date": "2025-11-30T21:03:34.518761",
-      "command": "snyk code test --json-file-output runs/snyk/2025113004/juice-shop.json",
-      "raw_results_path": "runs/snyk/2025113004/juice-shop.json",
-      "metadata_path": "metadata.json"
-    }
-  },
-  "finding_id": "snyk:javascript/Sqli:routes/search.ts:23",
-  "cwe_id": "CWE-89",
-  "rule_id": "javascript/Sqli",
-  "title": "Unsanitized SQL query built from user input.",
+  "finding_id": "sonar:tssecurity:S5334:routes/b2bOrder.ts:23",
+  "rule_id": "tssecurity:S5334",
+  "title": "Change this code to not dynamically execute code influenced by user-controlled data.",
   "severity": "HIGH",
-  "file_path": "routes/search.ts",
+
+  "file_path": "routes/b2bOrder.ts",
   "line_number": 23,
   "end_line_number": 23,
-  "line_content": "db.query(`SELECT * ... ${req.query.id}`)",
-  "vendor": {
-    "raw_result": { "... full Snyk object ..." }
-  }
+  "line_content": "vm.runInContext('safeEval(orderLinesData)', sandbox, { timeout: 2000 })",
+
+  "vendor": { "raw_result": { "... tool-specific ..." } }
 }
 ```
-5.1 metadata (per‑finding)
-| Field          | Type   | Description                                           |
-| -------------- | ------ | ----------------------------------------------------- |
-| `tool`         | string | Scanner name (copied from top level).                 |
-| `tool_version` | string | Scanner version (copied from top level).              |
-| `target_repo`  | object | Same structure as the top‑level `target_repo` object. |
-| `scan`         | object | Same structure as the top‑level `scan` object.        |
 
+| Field | Type | Required | Notes |
+|---|---:|:---:|---|
+| `finding_id` | string | ✅ | Stable-ish identifier. Convention: `<tool>:<rule_id>:<file_path>:<line>`. |
+| `rule_id` | string\|null | ✅ | Vendor rule identifier (Semgrep check_id, Sonar rule key, Snyk ruleId, etc.). |
+| `title` | string\|null | ✅ | Human-readable message/title. |
+| `severity` | string\|null | ⭕️ | **Normalized** severity. Current pipeline uses: `HIGH`, `MEDIUM`, `LOW` (or `null` if unknown). |
+| `file_path` | string\|null | ⭕️ | Path within repo. |
+| `line_number` | integer\|null | ⭕️ | Start line (1-indexed). |
+| `end_line_number` | integer\|null | ⭕️ | End line (1-indexed). |
+| `line_content` | string\|null | ⭕️ | Best-effort source snippet (usually the start line). |
+| `vendor` | object\|null | ⭕️ | Tool-specific details (see below). |
 
-This object is identical across all findings from the same file.
-It exists so each finding JSON object is self‑contained and can be treated as a single “row”.
+### Classification fields (optional)
 
-5.2 Finding fields
-| Field             | Type         | Description                                                        |
-| ----------------- | ------------ | ------------------------------------------------------------------ |
-| `finding_id`      | string       | Stable identifier (`<tool>:<rule_id>:<file_path>:<line>`).         |
-| `cwe_id`          | string|null  | CWE identifier if known (`"CWE-89"`, etc.).                        |
-| `rule_id`         | string       | Vendor’s rule identifier (e.g. `javascript/Sqli`).                 |
-| `title`           | string       | Human‑friendly description of the issue.                           |
-| `severity`        | string|null  | Normalized severity (`HIGH`, `MEDIUM`, `LOW`).                     |
-| `file_path`       | string|null  | File path within the repo.                                         |
-| `line_number`     | integer|null | First line of the issue.                                           |
-| `end_line_number` | integer|null | Last line (or same as start).                                      |
-| `line_content`    | string|null  | Source code line at `line_number` (for context).                   |
-| `vendor`          | object       | Tool‑specific data; we store the original JSON under `raw_result`. |
+These fields exist to make analysis easier *without* having to parse vendor raw objects.
 
-The vendor.raw_result object contains whatever the original scanner produced (e.g. full Snyk SARIF result).
+| Field | Type | Required | Notes |
+|---|---:|:---:|--|
+| `cwe_id` | string\|null | Single CWE (e.g. `"CWE-89"`). Present when the tool supplies exactly one or we pick a primary. |
+| `cwe_ids` | array<string> |Multiple CWEs (primarily from Sonar rule enrichment). If present, `cwe_id` is typically the first entry. |
+| `vuln_class` | string\|null | A human rule/category name (Sonar: rule `name` from `/api/rules/show`). |
+| `owasp_top_10_2017` | object\|null | OWASP Top 10 2017 mapping (see structure below). |
+| `owasp_top_10_2021` | object\|null | OWASP Top 10 2021 mapping (see structure below). |
+| `issue_type` | string\|null | Optional normalized “kind” (e.g. Sonar `VULNERABILITY`/`BUG`/`CODE_SMELL`). Recommended addition for readability, not required. |
+
+#### OWASP block structure
+
+When present, the OWASP fields follow this structure:
+
+```json
+"owasp_top_10_2021": {
+  "codes": ["A03"],
+  "categories": ["A03:2021-Injection"]
+}
+```
+
+- `codes` is the short OWASP code list (e.g. `["A03"]`).
+- `categories` is the same list but with human-readable labels.
+
+**Important:** most findings will **not** have OWASP mapping. For Sonar, OWASP mappings come from rule metadata (`securityStandards`) and are typically present only for security rules.
+
+---
+
+## `vendor`
+
+`vendor.raw_result` contains the original tool finding object (Semgrep result entry, Sonar issue object, Snyk SARIF result object, etc.).
+
+```json
+"vendor": {
+  "raw_result": { "... the original tool JSON object ..." }
+}
+```
+
+This is useful for debugging and future enrichments, but it can make files large. If size becomes a problem, a compatible future adjustment is to store:
+
+- `vendor.raw_result` (optional, omitted by default), and
+- `vendor.raw_pointer` (required), e.g. `{ "path": "<raw_results_path>", "index": 123 }`.
+
+---
+
+## Per-finding `metadata` (denormalized / optional)
+
+Some existing outputs include a `metadata` object inside every finding:
+
+```json
+"metadata": {
+  "tool": "sonar",
+  "tool_version": "...",
+  "target_repo": { ...same as top-level... },
+  "scan": { ...same as top-level... }
+}
+```
+
+This is **pure duplication** of top-level fields, useful only if you want each finding to stand alone as a “row”.
+
+**In schema v1.2:**
+- Consumers should treat `finding.metadata` as **optional**.
+- Producers may keep it for convenience, but it is not required for correct parsing.
+
+---
+
+## Sonar-only enrichment summary
+
+When Sonar rule classification enrichment runs, you’ll see:
+
+```json
+"sonar_rules_enrichment": {
+  "source": "api/rules/show",
+  "host": "https://sonarcloud.io",
+  "organization": "chai80",
+  "rules_with_classification": 91,
+  "findings_enriched": 757
+}
+```
+
+This block is informational and helps you debug enrichment coverage.
+
+---
+
+## Summary of schema adjustments vs the older doc
+
+Compared to the older `normalized-schema.md` in the repo, this document updates/clarifies:
+
+1. **`run_metadata` is documented** as a first-class top-level field (it already exists in current outputs).
+2. **`scan` documents runtime + exit code** (`scan_time_seconds`, `exit_code`) which were missing in the old doc but are in the scripts.
+3. **Optional classification keys** are documented (`cwe_ids`, `vuln_class`, OWASP blocks), matching the Sonar enrichment behavior.
+4. **Per-finding `metadata` is treated as optional** (recommended to avoid requiring duplicated data downstream).
+5. Calls out a future-compatible way to shrink files: store a vendor pointer instead of embedding full `raw_result`.
+

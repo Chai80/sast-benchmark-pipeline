@@ -1,3 +1,4 @@
-requests>=2.31.0,<3
-python-dotenv>=1.0.0,<2
+# Core Python deps for the SAST benchmark pipeline (scan_* scripts)
+python-dotenv>=1.0.0
+requests>=2.31.0
 semgrep>=1.0.0
