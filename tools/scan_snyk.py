@@ -12,6 +12,15 @@ from typing import Optional, Tuple
 
 from dotenv import load_dotenv
 
+# Shared normalization helpers
+from normalize_common import (
+    write_json as write_json_common,
+    build_target_repo,
+    build_scan_info,
+    build_per_finding_metadata,
+    read_line_content,
+)
+
 # Load .env from project root (one level up from tools/)
 ROOT_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT_DIR / ".env")
@@ -493,225 +502,255 @@ def write_json(path: Path, data: dict) -> None:
         json.dump(data, f, indent=2)
 
 
+
 def normalize_snyk_results(
+    *,
     repo_path: Path,
     raw_results_path: Path,
     metadata: dict,
     normalized_path: Path,
+    cwe_to_owasp: dict[str, dict],
+    snyk_rule_to_owasp: dict[str, dict],
+    snyk_rule_to_owasp_index: dict[tuple[str, str], dict],
 ) -> None:
+    """Normalize Snyk Code SARIF-ish JSON into our schema v1.1.
+
+    Key goals:
+      - Keep output schema consistent with other tools (reuse normalize_common).
+      - Populate CWE/OWASP when possible using:
+          1) tags in SARIF output
+          2) offline vendor rule mapping (Snyk docs snapshot)
+          3) offline CWE→OWASP mapping (MITRE snapshot), with guardrails
+      - Avoid spaghetti by caching rule-level enrichment (vendor lookups) once per rule.
     """
-    Convert Snyk Code JSON (SARIF-like) into the common normalized schema (schema v1.1).
+    # Stable header blocks for normalized schema
+    target_repo = build_target_repo(metadata)
+    scan_info = build_scan_info(metadata, raw_results_path)
 
-    Assumes `snyk code test` JSON looks like:
-      { "runs": [ { "results": [ ... ] } ] }
-
-    In schema v1.1 every finding includes its own `metadata` block so that each
-    finding can stand on its own when exported to a table.
-    """
-    # Build common metadata once so we can reuse it at the top level and
-    # inside every finding.
-    target_repo = {
-        "name": metadata.get("repo_name"),
-        "url": metadata.get("repo_url"),
-        "commit": metadata.get("repo_commit"),
-        "commit_author_name": metadata.get("commit_author_name"),
-        "commit_author_email": metadata.get("commit_author_email"),
-        "commit_date": metadata.get("commit_date"),
-    }
-    scan_info = {
-        "run_id": metadata.get("run_id"),
-        "scan_date": metadata.get("timestamp"),
-        "command": metadata.get("command"),
-        "raw_results_path": str(raw_results_path),
-        # enriched from metadata.json
-        "scan_time_seconds": metadata.get("scan_time_seconds"),
-        "exit_code": metadata.get("exit_code"),
-        "metadata_path": "metadata.json",
-    }
-    per_finding_metadata = {
-        "tool": "snyk",
-        "tool_version": metadata.get("scanner_version"),
-        "target_repo": target_repo,
-        "scan": scan_info,
-    }
-
-    # Optional: local mapping to derive OWASP Top 10 categories from CWE(s)
-    # (works offline; keeps cross-tool classification consistent)
-    cwe_to_owasp = _load_cwe_to_owasp_mapping(ROOT_DIR)
-    # Primary: vendor rule catalog mapping (Snyk docs table).
-    snyk_rule_to_owasp = _load_snyk_rule_to_owasp_mapping(ROOT_DIR)
-    snyk_rule_to_owasp_index = _build_snyk_rule_index(snyk_rule_to_owasp)
-
-
+    # If raw JSON is missing, still emit a valid normalized doc
     if not raw_results_path.exists():
-        # Snyk didn't create a JSON file (or we pointed to the wrong location)
         normalized = {
             "schema_version": "1.1",
             "tool": "snyk",
             "tool_version": metadata.get("scanner_version"),
             "target_repo": target_repo,
             "scan": scan_info,
-            # embed full metadata.json content
             "run_metadata": metadata,
             "findings": [],
         }
-        with normalized_path.open("w", encoding="utf-8") as f:
-            json.dump(normalized, f, indent=2)
+        write_json_common(normalized_path, normalized)
         return
 
-    with raw_results_path.open(encoding="utf-8") as f:
-        data = json.load(f)
+    with raw_results_path.open("r", encoding="utf-8") as f:
+        raw = json.load(f)
 
-    runs = data.get("runs", [])
-    findings: list[dict] = []
+    runs = raw.get("runs") or []
+    if not runs:
+        normalized = {
+            "schema_version": "1.1",
+            "tool": "snyk",
+            "tool_version": metadata.get("scanner_version"),
+            "target_repo": target_repo,
+            "scan": scan_info,
+            "run_metadata": metadata,
+            "findings": [],
+        }
+        write_json_common(normalized_path, normalized)
+        return
 
-    for run in runs:
-        # SARIF-style metadata: many useful classification fields live in
-        # runs[0].tool.driver.rules[*] rather than in each result.
-        driver = ((run.get("tool") or {}).get("driver") or {})
-        rules = driver.get("rules") or []
-        rules_by_id: dict[str, dict] = {}
+    # The CLI typically returns a single SARIF run
+    run0 = runs[0] if isinstance(runs[0], dict) else {}
+    driver = (((run0.get("tool") or {}).get("driver")) or {}) if isinstance(run0, dict) else {}
+    rules = driver.get("rules") or []
+    results = run0.get("results") or []
+
+    # Build a rule lookup by ID for quick access
+    rules_by_id: dict[str, dict] = {}
+    if isinstance(rules, list):
         for r in rules:
+            if not isinstance(r, dict):
+                continue
             rid = r.get("id")
-            if isinstance(rid, str) and rid.strip():
+            if isinstance(rid, str) and rid:
                 rules_by_id[rid] = r
 
-        for res in run.get("results", []):
-            rule_id = res.get("ruleId")
-            level = res.get("level")  # error|warning|note
-            message = (res.get("message") or {}).get("text")
+    # Cache rule-level context so we don't redo vendor mapping work per finding
+    rule_ctx_cache: dict[str, dict] = {}
 
-            rule_def = rules_by_id.get(rule_id, {}) if isinstance(rule_id, str) else {}
-            rule_props = rule_def.get("properties") or {}
-            res_props = res.get("properties") or {}
+    def _get_rule_ctx(rule_id: Optional[str], rule_def: Optional[dict]) -> dict:
+        cache_key = rule_id or ""
+        if cache_key in rule_ctx_cache:
+            return rule_ctx_cache[cache_key]
 
-            # Tags (if present) are the most consistent place to find CWE / OWASP
-            tags = _extract_tags(rule_props.get("tags"), res_props.get("tags"))
+        # Prefer the Snyk docs "Rule Name" (usually rule.shortDescription.text in SARIF).
+        rule_name = None
+        if isinstance(rule_def, dict):
+            rule_name = (rule_def.get("shortDescription") or {}).get("text") or rule_def.get("name")
 
-            locations = res.get("locations") or []
-            if locations:
-                physical = (locations[0].get("physicalLocation") or {})
-                artifact = physical.get("artifactLocation") or {}
-                region = physical.get("region") or {}
-                file_path = artifact.get("uri")
-                line = region.get("startLine")
-                end_line = region.get("endLine", line)
-            else:
-                file_path = None
-                line = None
-                end_line = None
+        # Heuristic: Snyk rule_id often looks like "<language>/<rule>".
+        language = None
+        if isinstance(rule_id, str) and "/" in rule_id:
+            language = rule_id.split("/", 1)[0]
+        elif isinstance(rule_id, str):
+            language = rule_id
 
-            # Try to read the line of code for context
-            line_content = None
-            if file_path and line:
-                file_abs = repo_path / file_path
-                try:
-                    lines = file_abs.read_text(
-                        encoding="utf-8", errors="replace"
-                    ).splitlines()
-                    if 1 <= line <= len(lines):
-                        line_content = lines[line - 1].rstrip("\n")
-                except OSError:
-                    pass
+        vendor_codes, _vendor_entry = _lookup_snyk_vendor_owasp_2021(
+            snyk_rule_to_owasp,
+            snyk_rule_to_owasp_index,
+            language,
+            rule_name,
+        )
 
-            # --- Classification enrichment (best-effort) ---
-            # Note: Snyk Code SARIF outputs don't always include CWE/OWASP.
-            # We only populate these fields when we can confidently derive them.
-            combined_props = {}
-            if isinstance(rule_props, dict):
-                combined_props.update(rule_props)
-            if isinstance(res_props, dict):
-                combined_props.update(res_props)
+        ctx = {
+            "rule_id": rule_id,
+            "rule_name": rule_name,
+            "language": language,
+            "vendor_owasp2021_codes": vendor_codes,
+            "vendor_present": bool(vendor_codes),
+        }
+        rule_ctx_cache[cache_key] = ctx
+        return ctx
 
-            cwe_ids = _extract_cwe_ids_from_props_and_tags(combined_props, tags)
-            cwe_id = cwe_ids[0] if cwe_ids else None
-            # Prefer the Snyk docs "Rule Name" (usually rule.shortDescription.text in SARIF).
-            rule_name = None
-            if isinstance(rule_def, dict):
-                rule_name = (rule_def.get("shortDescription") or {}).get("text") or rule_def.get("name")
+    def _resolve_classification(*, combined_props: dict, tags: list[str], rule_ctx: dict) -> dict:
+        """Resolve CWE + OWASP (2017/2021) blocks with the same precedence policy used today."""
+        cwe_ids = _extract_cwe_ids_from_props_and_tags(combined_props, tags)
+        cwe_id = cwe_ids[0] if cwe_ids else None
 
-            language = None
-            if isinstance(rule_id, str) and "/" in rule_id:
-                language = rule_id.split("/", 1)[0]
-            elif isinstance(rule_id, str):
-                language = rule_id
+        # 1) From tags (best if explicitly present)
+        owasp2017_codes = _extract_owasp_codes_from_tags(tags, year="2017")
+        owasp2021_codes = _extract_owasp_codes_from_tags(tags, year="2021")
 
-            vendor_owasp2021_codes, _vendor_entry = _lookup_snyk_vendor_owasp_2021(
-                snyk_rule_to_owasp,
-                snyk_rule_to_owasp_index,
-                language,
-                rule_name,
-            )
-            vendor_owasp2021_present = vendor_owasp2021_codes is not None
+        owasp_2017_block = _build_owasp_block(owasp2017_codes, OWASP_TOP_10_2017_NAMES, year="2017")
+        owasp_2021_block = _build_owasp_block(owasp2021_codes, OWASP_TOP_10_2021_NAMES, year="2021")
 
-
-            owasp2017_codes = _extract_owasp_codes_from_tags(tags, year="2017")
-            owasp2021_codes = _extract_owasp_codes_from_tags(tags, year="2021")
-
-            owasp_2017_block = _build_owasp_block(
-                owasp2017_codes,
-                OWASP_TOP_10_2017_NAMES,
-                year="2017",
-            )
+        # 2) Vendor offline mapping (Snyk docs) for OWASP 2021
+        if owasp_2021_block is None and rule_ctx.get("vendor_present"):
             owasp_2021_block = _build_owasp_block(
-                owasp2021_codes,
+                rule_ctx.get("vendor_owasp2021_codes") or [],
                 OWASP_TOP_10_2021_NAMES,
                 year="2021",
             )
 
-            # If Snyk didn't directly tag OWASP in the scan output, try vendor mapping
-            # (Snyk docs table) before falling back to a generic CWE→OWASP mapping.
-            if not owasp2021_codes and vendor_owasp2021_present:
-                owasp_2021_block = _build_owasp_block(
-                    vendor_owasp2021_codes,
-                    OWASP_TOP_10_2021_NAMES,
-                    year="2021",
-                )
+        # 3) CWE→OWASP fallback mapping (offline)
+        if cwe_to_owasp:
+            derived_2017, derived_2021 = _derive_owasp_blocks_from_cwe_ids(cwe_ids, cwe_to_owasp)
 
-            # Fallback (cross-tool): derive OWASP from CWE(s) using local mapping.
-            # IMPORTANT: only use this fallback for 2021 if the vendor mapping had no entry.
-            if cwe_to_owasp:
-                derived_2017, derived_2021 = _derive_owasp_blocks_from_cwe_ids(
-                    cwe_ids, cwe_to_owasp
-                )
-                if owasp_2017_block is None:
-                    owasp_2017_block = derived_2017
-                if owasp_2021_block is None and (not owasp2021_codes) and (not vendor_owasp2021_present):
-                    owasp_2021_block = derived_2021
+            if owasp_2017_block is None:
+                owasp_2017_block = derived_2017
 
-            # Human-friendly Snyk rule name (matches Snyk docs table).
-            vuln_class = rule_name
+            # Guardrail: only derive 2021 from CWE when:
+            # - tags did not give us a 2021 code, AND
+            # - there is no vendor mapping for the rule (avoid overriding vendor truth)
+            if owasp_2021_block is None and (not owasp2021_codes) and (not rule_ctx.get("vendor_present")):
+                owasp_2021_block = derived_2021
 
-            # Map SARIF level to normalized severity
+        # This repo currently uses "vuln_class" as a best-effort category string.
+        vuln_class = rule_ctx.get("rule_name") or None
+
+        return {
+            "cwe_id": cwe_id,
+            "cwe_ids": cwe_ids,
+            "vuln_class": vuln_class,
+            "owasp_top_10_2017": owasp_2017_block,
+            "owasp_top_10_2021": owasp_2021_block,
+        }
+
+    findings: list[dict] = []
+
+    if not isinstance(results, list):
+        results = []
+
+    for res in results:
+        if not isinstance(res, dict):
+            continue
+
+        # --- Basic fields ---
+        rule_id = res.get("ruleId")
+        rule_id = rule_id if isinstance(rule_id, str) else None
+        rule_def = rules_by_id.get(rule_id) if rule_id else None
+
+        # Severity: prefer SARIF level (error/warning/note), then fallback to "warning"
+        severity = "medium"
+        level = res.get("level")
+        if isinstance(level, str):
             if level == "error":
-                severity = "HIGH"
+                severity = "high"
             elif level == "warning":
-                severity = "MEDIUM"
-            elif level in ("note", "info"):
-                severity = "LOW"
-            else:
-                severity = None
+                severity = "medium"
+            elif level == "note":
+                severity = "low"
 
-            finding = {
-                "metadata": per_finding_metadata,
-                "finding_id": f"snyk:{rule_id}:{file_path}:{line}",
-                "cwe_id": cwe_id,
-                "cwe_ids": cwe_ids,
-                "vuln_class": vuln_class,
-                "owasp_top_10_2017": owasp_2017_block,
-                "owasp_top_10_2021": owasp_2021_block,
-                "rule_id": rule_id,
-                "title": message,
-                "severity": severity,
-                "file_path": file_path,
-                "line_number": line,
-                "end_line_number": end_line,
-                "line_content": line_content,
-                "vendor": {
-                    "raw_result": res,
-                },
-            }
-            findings.append(finding)
+        message = None
+        msg_obj = res.get("message")
+        if isinstance(msg_obj, dict):
+            message = msg_obj.get("text")
+        if not message and isinstance(rule_def, dict):
+            message = ((rule_def.get("shortDescription") or {}).get("text")) or ((rule_def.get("fullDescription") or {}).get("text"))
+        if not message:
+            message = "Snyk finding"
+
+        # --- Location ---
+        file_path = None
+        line = None
+        end_line = None
+
+        locations = res.get("locations")
+        if isinstance(locations, list) and locations:
+            loc0 = locations[0] if isinstance(locations[0], dict) else {}
+            phys = (loc0.get("physicalLocation") or {}) if isinstance(loc0, dict) else {}
+            artifact = (phys.get("artifactLocation") or {}) if isinstance(phys, dict) else {}
+            file_path = artifact.get("uri") if isinstance(artifact, dict) else None
+
+            region = (phys.get("region") or {}) if isinstance(phys, dict) else {}
+            if isinstance(region, dict):
+                line = region.get("startLine")
+                end_line = region.get("endLine")
+
+        line = int(line) if isinstance(line, int) else (int(line) if isinstance(line, str) and line.isdigit() else None)
+        end_line = int(end_line) if isinstance(end_line, int) else (int(end_line) if isinstance(end_line, str) and end_line.isdigit() else None)
+
+        line_content = read_line_content(repo_path, file_path, line)
+
+        # --- Props & tags (for classification) ---
+        res_props = res.get("properties") if isinstance(res.get("properties"), dict) else {}
+        rule_props = rule_def.get("properties") if isinstance(rule_def, dict) and isinstance(rule_def.get("properties"), dict) else {}
+
+        combined_props: dict = {}
+        combined_props.update(rule_props)
+        combined_props.update(res_props)
+
+        tags = _extract_tags(combined_props)
+
+        # --- Rule-level cached context ---
+        rule_ctx = _get_rule_ctx(rule_id, rule_def)
+        cls = _resolve_classification(combined_props=combined_props, tags=tags, rule_ctx=rule_ctx)
+
+        # Consistent per-finding metadata
+        per_finding_metadata = build_per_finding_metadata(
+            tool="snyk",
+            tool_version=metadata.get("scanner_version"),
+            target_repo=target_repo,
+            scan_info=scan_info,
+        )
+
+        finding = {
+            "metadata": per_finding_metadata,
+            "finding_id": f"snyk:{rule_id}:{file_path}:{line}",
+            "cwe_id": cls["cwe_id"],
+            "cwe_ids": cls["cwe_ids"],
+            "vuln_class": cls["vuln_class"],
+            "owasp_top_10_2017": cls["owasp_top_10_2017"],
+            "owasp_top_10_2021": cls["owasp_top_10_2021"],
+            "rule_id": rule_id,
+            "title": message,
+            "severity": severity,
+            "file_path": file_path,
+            "line_number": line,
+            "end_line_number": end_line,
+            "line_content": line_content,
+            "vendor": {"raw_result": res},
+        }
+        findings.append(finding)
 
     normalized = {
         "schema_version": "1.1",
@@ -719,15 +758,10 @@ def normalize_snyk_results(
         "tool_version": metadata.get("scanner_version"),
         "target_repo": target_repo,
         "scan": scan_info,
-        # full copy of metadata.json for convenience
         "run_metadata": metadata,
         "findings": findings,
     }
-
-    with normalized_path.open("w", encoding="utf-8") as f:
-        json.dump(normalized, f, indent=2)
-
-
+    write_json_common(normalized_path, normalized)
 def main() -> None:
     args = parse_args()
     ensure_snyk_token()
@@ -740,11 +774,26 @@ def main() -> None:
     # 2. Prepare output paths (group by repo name)
     #    This creates: ROOT/runs/snyk/<repo_name>/<run_id>/
     output_root = Path(args.output_root) / repo_name
-    run_id, run_dir = create_run_dir(output_root)
+    created = create_run_dir(output_root)
+
+    # create_run_dir contract differs across versions:
+    # - may return Path
+    # - may return (run_id, Path)
+    # - may return (Path, run_id)
+    if isinstance(created, tuple):
+        # Prefer the Path-like element as run_dir
+        path_elem = next((x for x in created if isinstance(x, Path)), None)
+        run_dir = path_elem if path_elem is not None else Path(created[0])
+        # Prefer a string run_id if present; otherwise fall back to directory name
+        run_id_elem = next((x for x in created if isinstance(x, str)), None)
+        run_id = run_id_elem if run_id_elem is not None else run_dir.name
+    else:
+        run_dir = created
+        run_id = run_dir.name
 
     # Important: use absolute path so Snyk writes to the pipeline folder,
     # not inside repos/<repo_name> when cwd=repo_path
-    run_dir = run_dir.resolve()
+    run_dir = Path(run_dir).resolve()
     raw_results_path = run_dir / f"{repo_name}.json"
     normalized_path = run_dir / f"{repo_name}.normalized.json"
     metadata_path = run_dir / "metadata.json"
@@ -772,12 +821,26 @@ def main() -> None:
     write_json(metadata_path, metadata)
     print("📄 Metadata saved to:", metadata_path)
 
+    # 5. Load offline mappings (optional)
+    cwe_to_owasp = _load_cwe_to_owasp_mapping(ROOT_DIR)
+    snyk_rule_to_owasp = _load_snyk_rule_to_owasp_mapping(ROOT_DIR)
+    snyk_rule_to_owasp_index = _build_snyk_rule_index(snyk_rule_to_owasp)
+
+    metadata.setdefault("mappings", {})
+    metadata["mappings"].update({
+        "cwe_to_owasp_loaded": bool(cwe_to_owasp),
+        "snyk_rule_to_owasp_loaded": bool(snyk_rule_to_owasp),
+    })
+
     # 5. Normalized JSON
     normalize_snyk_results(
         repo_path=repo_path,
         raw_results_path=raw_results_path,
         metadata=metadata,
         normalized_path=normalized_path,
+        cwe_to_owasp=cwe_to_owasp,
+        snyk_rule_to_owasp=snyk_rule_to_owasp,
+        snyk_rule_to_owasp_index=snyk_rule_to_owasp_index,
     )
     print("📄 Normalized JSON saved to:", normalized_path)
 
