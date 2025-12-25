@@ -2,432 +2,353 @@
 """
 tools/scan_snyk.py
 
-Snyk Code pipeline script for the sast-benchmark-pipeline.
+Runs Snyk Code (SARIF) for a repo and writes:
+  runs/snyk/<repo_name>/<run_id>/
+    - <repo_name>.sarif
+    - metadata.json
+    - <repo_name>.normalized.json
 
-Design goals
-- Keep this file readable and mostly orchestration + SARIF parsing.
-- Reuse normalize_common.py for consistent normalized JSON headers/writing.
-- Centralize OWASP/CWE resolution policy in tools/classification_resolver.py so:
-    * Snyk stays small
-    * Semgrep/Aikido can reuse the exact same OWASP/CWE logic
-
-Classification sources for Snyk
-- OWASP 2021: tags -> Snyk rule-doc mapping (offline) -> MITRE CWE->OWASP fallback
-- OWASP 2017: MITRE CWE->OWASP (Snyk vendor mapping usually doesn't include 2017)
+This file stays small by pushing shared plumbing into tools/core.py.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import subprocess
-import sys
-import time
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from dotenv import load_dotenv
 
-from normalize_common import (
-    build_per_finding_metadata,
-    build_scan_info,
-    build_target_repo,
-    read_line_content,
-    write_json,
-)
-from run_utils import ROOT_DIR, clone_repo, create_run_dir, get_commit_author_info, get_git_commit
+# ---- Robust imports (script execution) ----
+try:
+    from core import (
+        acquire_repo,
+        build_run_metadata,
+        create_run_dir_compat,
+        load_cwe_to_owasp_map,
+        normalize_repo_relative_path,
+        read_json,
+        read_line_content,
+        run_cmd,
+        which_or_raise,
+        write_json,
+    )
+except ImportError:
+    from tools.core import (  # type: ignore
+        acquire_repo,
+        build_run_metadata,
+        create_run_dir_compat,
+        load_cwe_to_owasp_map,
+        normalize_repo_relative_path,
+        read_json,
+        read_line_content,
+        run_cmd,
+        which_or_raise,
+        write_json,
+    )
 
-from classification_resolver import resolve_owasp_and_cwe
+try:
+    from classification_resolver import resolve_owasp_and_cwe
+except ImportError:
+    from tools.classification_resolver import resolve_owasp_and_cwe  # type: ignore
 
 
-# -----------------------------
-# CLI + env
-# -----------------------------
+ROOT_DIR = Path(__file__).resolve().parents[1]
+
+
+# ----------------------------
+# CLI
+# ----------------------------
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Run Snyk Code and emit normalized JSON.")
-    p.add_argument("--repo-url", help="Git URL of repo to scan.")
-    p.add_argument("--output-root", default="runs/snyk", help="Root folder to store outputs (default: runs/snyk).")
-    p.add_argument("--org", default=None, help="Optional Snyk org id/slug to use with --org.")
-    p.add_argument(
-        "--severity-threshold",
-        default=None,
-        choices=["low", "medium", "high"],
-        help="Optional Snyk severity threshold (low|medium|high).",
-    )
-    p.add_argument(
-        "--mappings-dir",
-        default="mappings",
-        help="Directory containing mapping JSONs (default: mappings). Relative paths are anchored under repo root.",
-    )
-    args = p.parse_args()
-    if not args.repo_url:
-        args.repo_url = input("Enter Git repo URL to scan: ").strip()
-    return args
+    p = argparse.ArgumentParser(description="Run Snyk Code scan and normalize results.")
+    p.add_argument("--repo-url", help="Git repo URL to scan.")
+    p.add_argument("--repo-path", help="Local repo path to scan (skip clone).")
+    p.add_argument("--repos-dir", default="repos", help="Repos base dir (default: repos).")
+    p.add_argument("--output-root", default="runs/snyk", help="Output root (default: runs/snyk).")
+    return p.parse_args()
 
 
-def ensure_snyk_token() -> None:
-    if not os.getenv("SNYK_TOKEN"):
-        print(
-            "ERROR: SNYK_TOKEN is not set.\n"
-            "Add it to your .env or export it in your shell before running.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
-
-
-def get_snyk_version() -> str:
-    try:
-        out = subprocess.check_output(["snyk", "--version"], text=True)
-        return out.strip()
-    except Exception:
-        return "unknown"
-
-
-# -----------------------------
-# Mapping loaders (optional)
-# -----------------------------
-
-def _load_json(path: Path) -> dict:
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f) or {}
-    except Exception:
-        return {}
-
-
-def load_cwe_to_owasp_map(mappings_dir: Path) -> dict:
-    """
-    Load the CWE -> OWASP Top 10 mapping.
-
-    We *prefer* a conventional file name (cwe_to_owasp_top10_mitre.json), but we also
-    support "whatever name" JSON files in the mappings directory as long as they contain
-    a mapping payload.
-
-    Accepted shapes:
-      - {"_meta": ..., "cwe_to_owasp": {...}}
-      - {"cwe_to_owasp": {...}}
-      - {...} (already the mapping dict keyed by "CWE-xxx")
-    """
-    candidates = [
-        mappings_dir / "cwe_to_owasp_top10_mitre.json",
-        ROOT_DIR / "mappings" / "cwe_to_owasp_top10_mitre.json",
-    ]
-
-    # 1) Try conventional candidates first
-    for p in candidates:
-        if p.exists():
-            data = _load_json(p)
-            if isinstance(data, dict) and data:
-                return data
-
-    # 2) Fallback: scan mappings_dir for a file that *contains* cwe_to_owasp payload
-    scan_dirs = [mappings_dir, ROOT_DIR / "mappings"]
-    for d in scan_dirs:
-        try:
-            if not d.exists():
-                continue
-            for p in sorted(d.glob("*.json")):
-                data = _load_json(p)
-                if not isinstance(data, dict) or not data:
-                    continue
-                if "cwe_to_owasp" in data and isinstance(data.get("cwe_to_owasp"), dict):
-                    return data
-                # Some mapping files are *just* the dict keyed by CWE IDs
-                if any(k.startswith("CWE-") for k in data.keys()):
-                    # Heuristic: treat as mapping dict only if at least one value has owasp_top_10_* keys
-                    sample_val = next(iter(data.values()), None)
-                    if isinstance(sample_val, dict) and ("owasp_top_10_2017" in sample_val or "owasp_top_10_2021" in sample_val):
-                        return data
-        except Exception:
-            continue
-
-    return {}
-
-
-
-def load_snyk_rule_to_owasp_2021_map(mappings_dir: Path) -> dict:
-    """
-    Load the Snyk rule -> OWASP 2021 mapping.
-
-    Preferred file name: snyk_rule_to_owasp_2021.json
-    Expected shape (generated by our project):
-      {"_meta": ..., "aliases": {...}, "languages": {...}}
-
-    Fallback behavior:
-      - scan all *.json in mappings directories and pick the first dict that contains
-        an "aliases" or "languages" section with OWASP codes.
-    """
-    candidates = [
-        mappings_dir / "snyk_rule_to_owasp_2021.json",
-        ROOT_DIR / "mappings" / "snyk_rule_to_owasp_2021.json",
-    ]
-    for p in candidates:
-        if p.exists():
-            data = _load_json(p)
-            if isinstance(data, dict) and data:
-                return data
-
-    scan_dirs = [mappings_dir, ROOT_DIR / "mappings"]
-    for d in scan_dirs:
-        try:
-            if not d.exists():
-                continue
-            for p in sorted(d.glob("*.json")):
-                data = _load_json(p)
-                if not isinstance(data, dict) or not data:
-                    continue
-                if isinstance(data.get("aliases"), dict) or isinstance(data.get("languages"), dict):
-                    return data
-        except Exception:
-            continue
-
-    return {}
-
-
-
-def _norm_rule_name(s: Optional[str]) -> str:
-    if not s:
-        return ""
-    return " ".join(s.strip().lower().split())
-
-
-def build_snyk_rule_index(vendor_map: dict) -> Dict[str, Dict[str, dict]]:
-    """
-    Build index: {lang: {normalized_rule_name: entry}}
-    Where entry is the mapping row from vendor_map["languages"][lang][rule_name].
-    """
-    index: Dict[str, Dict[str, dict]] = {}
-    languages = vendor_map.get("languages") if isinstance(vendor_map, dict) else None
-    if not isinstance(languages, dict):
-        return index
-
-    for lang, rules in languages.items():
-        if not isinstance(rules, dict):
-            continue
-        bucket: Dict[str, dict] = {}
-        for rule_name, entry in rules.items():
-            if isinstance(rule_name, str) and isinstance(entry, dict):
-                bucket[_norm_rule_name(rule_name)] = entry
-        index[str(lang).lower()] = bucket
-    return index
-
-
-def lookup_snyk_vendor_owasp_2021(
-    *,
-    vendor_map: dict,
-    vendor_index: Dict[str, Dict[str, dict]],
-    language: Optional[str],
-    rule_name: Optional[str],
-) -> Tuple[List[str], Optional[dict]]:
-    """
-    Return (owasp_2021_codes, vendor_entry) for the given language + rule_name.
-    """
-    if not language or not rule_name:
-        return [], None
-
-    lang = str(language).lower()
-    aliases = vendor_map.get("aliases") if isinstance(vendor_map, dict) else None
-    if isinstance(aliases, dict) and lang in aliases:
-        lang = aliases.get(lang) or lang
-
-    entry = (vendor_index.get(lang) or {}).get(_norm_rule_name(rule_name))
-    if not isinstance(entry, dict):
-        return [], None
-
-    codes = entry.get("owasp_top_10_2021") or entry.get("owasp_2021") or entry.get("owasp")
-    if not isinstance(codes, list):
-        return [], entry
-
-    return [str(c) for c in codes if c is not None], entry
-
-
-# -----------------------------
+# ----------------------------
 # Snyk execution
-# -----------------------------
+# ----------------------------
 
-def run_snyk_scan(
-    *,
-    repo_path: Path,
-    raw_results_path: Path,
-    org: Optional[str],
-    severity_threshold: Optional[str],
-) -> Tuple[int, float, str, str, str]:
-    """
-    Run 'snyk code test' and write JSON output to raw_results_path.
-    Returns (exit_code, elapsed_seconds, command_str).
-    """
-    cmd: List[str] = [
-        "snyk",
+def require_snyk_token() -> None:
+    if not os.environ.get("SNYK_TOKEN"):
+        raise SystemExit(
+            "Missing SNYK_TOKEN environment variable.\n"
+            "Set it in your shell or .env before running."
+        )
+
+
+def snyk_version(snyk_bin: str) -> str:
+    res = run_cmd([snyk_bin, "--version"], print_stderr=False, print_stdout=False)
+    return (res.stdout or res.stderr).strip() or "unknown"
+
+
+def run_snyk_code_sarif(repo_path: Path, out_sarif: Path) -> Tuple[int, float, str]:
+    require_snyk_token()
+    snyk_bin = which_or_raise("snyk", fallbacks=["/opt/homebrew/bin/snyk", "/usr/local/bin/snyk"])
+
+    cmd = [
+        snyk_bin,
         "code",
         "test",
-        "--quiet",
-        "--json-file-output",
-        str(raw_results_path),
+        "--sarif",
+        "--sarif-file-output",
+        str(out_sarif),
     ]
-    if org:
-        cmd.extend(["--org", org])
-    if severity_threshold:
-        cmd.extend(["--severity-threshold", severity_threshold])
 
-    t0 = time.time()
-    proc = subprocess.run(cmd, cwd=str(repo_path), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    elapsed = time.time() - t0
-    return int(proc.returncode), float(elapsed), " ".join(cmd), (proc.stdout or ""), (proc.stderr or "")
+    res = run_cmd(cmd, cwd=repo_path, print_stderr=True, print_stdout=True)
+    return res.exit_code, res.elapsed_seconds, res.command_str
 
 
-def build_run_metadata(
-    *,
-    repo_path: Path,
-    repo_name: str,
-    repo_url: str,
-    run_id: str,
-    exit_code: int,
-    elapsed: float,
-    command_str: str,
-    stdout: str = "",
-    stderr: str = "",
-) -> dict:
-    commit = get_git_commit(repo_path)
-    author_info = get_commit_author_info(repo_path, commit)
+# ----------------------------
+# Optional vendor mapping (small + isolated)
+# ----------------------------
 
-    return {
-        "tool": "snyk",
-        "repo_name": repo_name,
-        "repo_url": repo_url,
-        "repo_commit": commit,
-        **author_info,
-        "run_id": run_id,
-        "timestamp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
-        "command": command_str,
-        "scan_time_seconds": elapsed,
-        "exit_code": exit_code,
-        "scanner_version": get_snyk_version(),
-        "scanner_stdout_tail": (stdout[-4000:] if isinstance(stdout, str) else ""),
-        "scanner_stderr_tail": (stderr[-4000:] if isinstance(stderr, str) else ""),
-    }
+def load_snyk_vendor_owasp_2021_index() -> Dict[str, List[str]]:
+    """
+    Optional: if you maintain a Snyk rule -> OWASP 2021 mapping file.
+    If none exists, return {} and classification will rely on CWE mapping + tags.
+    """
+    candidates = [
+        ROOT_DIR / "mappings" / "snyk_rule_to_owasp_2021.json",
+        ROOT_DIR / "mappings" / "snyk_rule_to_owasp_top10_2021.json",
+        ROOT_DIR / "mappings" / "snyk_to_owasp_2021.json",
+    ]
+
+    def norm(s: str) -> str:
+        return " ".join(s.strip().lower().replace("_", " ").split())
+
+    idx: Dict[str, List[str]] = {}
+    for p in candidates:
+        if not p.exists():
+            continue
+        try:
+            data = read_json(p)
+        except Exception:
+            return {}
+
+        if not isinstance(data, dict):
+            return {}
+
+        # Shape A: {"RULE_ID": ["A03"], ...} OR {"RULE_ID": {"owasp_2021":[...]}}
+        for k, v in data.items():
+            if isinstance(k, str):
+                if isinstance(v, list):
+                    idx[k] = [str(x) for x in v]
+                elif isinstance(v, dict):
+                    codes = v.get("owasp_2021") or v.get("owasp_top_10_2021") or v.get("owasp2021")
+                    if isinstance(codes, list):
+                        idx[k] = [str(x) for x in codes]
+                    if isinstance(v.get("name"), str) and isinstance(codes, list):
+                        idx[norm(v["name"])] = [str(x) for x in codes]
+
+        # Shape B: {"rules":[{"id":"...", "name":"...", "owasp_2021":[...]}]}
+        rules = data.get("rules")
+        if isinstance(rules, list):
+            for r in rules:
+                if not isinstance(r, dict):
+                    continue
+                rid = r.get("id") or r.get("rule_id")
+                name = r.get("name")
+                codes = r.get("owasp_2021") or r.get("owasp_top_10_2021") or r.get("owasp2021")
+                if isinstance(codes, str):
+                    codes = [codes]
+                if isinstance(codes, list):
+                    if isinstance(rid, str) and rid:
+                        idx[rid] = [str(x) for x in codes]
+                    if isinstance(name, str) and name.strip():
+                        idx[norm(name)] = [str(x) for x in codes]
+
+        return idx
+
+    return {}
 
 
-# -----------------------------
-# Normalization
-# -----------------------------
+def vendor_owasp_2021_codes(vendor_idx: Dict[str, List[str]], rule_id: Optional[str], rule_name: Optional[str]) -> List[str]:
+    if not vendor_idx:
+        return []
+    if rule_id and rule_id in vendor_idx:
+        return vendor_idx[rule_id]
+    if rule_name:
+        key = " ".join(rule_name.strip().lower().replace("_", " ").split())
+        return vendor_idx.get(key, [])
+    return []
 
-def _build_rules_by_id(run_obj: dict) -> Dict[str, dict]:
-    rules_by_id: Dict[str, dict] = {}
-    driver = (((run_obj.get("tool") or {}).get("driver")) if isinstance(run_obj.get("tool"), dict) else {}) or {}
-    rules = driver.get("rules") or []
+
+# ----------------------------
+# SARIF parsing (kept minimal)
+# ----------------------------
+
+_CWE_RE = re.compile(r"(CWE-\d+)", re.IGNORECASE)
+
+
+def severity_from_level(level: Optional[str]) -> Optional[str]:
+    if not level:
+        return None
+    lvl = str(level).strip().lower()
+    if lvl == "error":
+        return "HIGH"
+    if lvl == "warning":
+        return "MEDIUM"
+    if lvl in ("note", "none"):
+        return "LOW"
+    return "MEDIUM"
+
+
+def rules_by_id(run_obj: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    rules = (((run_obj.get("tool") or {}).get("driver") or {}).get("rules")) or []
+    out: Dict[str, Dict[str, Any]] = {}
     if isinstance(rules, list):
         for r in rules:
             if isinstance(r, dict) and isinstance(r.get("id"), str):
-                rules_by_id[r["id"]] = r
-    return rules_by_id
+                out[r["id"]] = r
+    return out
 
 
-def _rule_name(rule_def: Optional[dict]) -> Optional[str]:
+def rule_name(rule_def: Optional[Dict[str, Any]]) -> Optional[str]:
     if not isinstance(rule_def, dict):
         return None
-    # SARIF rules can put human name in "name" or description text
     if isinstance(rule_def.get("name"), str) and rule_def["name"].strip():
         return rule_def["name"].strip()
     sd = rule_def.get("shortDescription")
-    if isinstance(sd, dict) and isinstance(sd.get("text"), str) and sd["text"].strip():
+    if isinstance(sd, dict) and isinstance(sd.get("text"), str):
         return sd["text"].strip()
-    fd = rule_def.get("fullDescription")
-    if isinstance(fd, dict) and isinstance(fd.get("text"), str) and fd["text"].strip():
-        return fd["text"].strip()
     return None
 
 
-def _severity_from_level(level: Any) -> str:
-    if isinstance(level, str):
-        if level == "error":
-            return "high"
-        if level == "warning":
-            return "medium"
-        if level == "note":
-            return "low"
-    return "medium"
+def collect_text_blobs(rule_def: Optional[Dict[str, Any]]) -> List[str]:
+    if not isinstance(rule_def, dict):
+        return []
+    blobs: List[str] = []
+    for path in (("help", "text"), ("fullDescription", "text"), ("shortDescription", "text"), ("name",)):
+        cur: Any = rule_def
+        for k in path:
+            if not isinstance(cur, dict):
+                cur = None
+                break
+            cur = cur.get(k)
+        if isinstance(cur, str) and cur.strip():
+            blobs.append(cur.strip())
+    return blobs
 
 
-def _extract_tags(rule_def: Optional[dict], res: dict) -> List[str]:
+def extract_tags(rule_def: Optional[Dict[str, Any]], res: Dict[str, Any]) -> List[str]:
     tags: List[str] = []
 
-    def add_from_props(props: Any) -> None:
-        if not isinstance(props, dict):
-            return
-        t = props.get("tags")
-        if isinstance(t, list):
-            for x in t:
-                if isinstance(x, str) and x.strip():
-                    tags.append(x.strip())
+    rp = (rule_def or {}).get("properties") if isinstance(rule_def, dict) else None
+    if isinstance(rp, dict):
+        tags += [str(x) for x in (rp.get("tags") or [])] if isinstance(rp.get("tags"), list) else []
 
-    if isinstance(rule_def, dict):
-        add_from_props(rule_def.get("properties"))
-    add_from_props(res.get("properties"))
+    sp = res.get("properties")
+    if isinstance(sp, dict):
+        tags += [str(x) for x in (sp.get("tags") or [])] if isinstance(sp.get("tags"), list) else []
 
-    # stable unique preserving order
+    tags += collect_text_blobs(rule_def)
+
+    # dedupe while preserving order
     seen = set()
     out: List[str] = []
     for t in tags:
-        if t not in seen:
-            seen.add(t)
-            out.append(t)
+        tt = t.strip()
+        if tt and tt not in seen:
+            seen.add(tt)
+            out.append(tt)
     return out
 
 
-def _extract_cwe_candidates(*dicts_or_lists: Any) -> List[Any]:
-    """
-    Grab common CWE fields from multiple dict-like sources.
-    We intentionally return "raw candidates" (strings/ints/etc) and let the resolver normalize.
-    """
-    out: List[Any] = []
-    for obj in dicts_or_lists:
-        if isinstance(obj, dict):
-            for k in ("cwe_ids", "cweIds", "cwe", "cwe_id", "cweId"):
-                v = obj.get(k)
-                if isinstance(v, list):
-                    out.extend(v)
-                elif v is not None:
-                    out.append(v)
-        elif isinstance(obj, list):
-            out.extend(obj)
-        elif obj is not None:
-            out.append(obj)
+def extract_cwe_candidates(res: Dict[str, Any], rule_def: Optional[Dict[str, Any]], tags: List[str]) -> List[str]:
+    cands: List[str] = []
+
+    # from properties
+    for obj in (res.get("properties"), (rule_def or {}).get("properties")):
+        if not isinstance(obj, dict):
+            continue
+        for k in ("cwe", "cwe_id", "cweId", "cwe_ids", "cweIds", "cwes"):
+            v = obj.get(k)
+            if isinstance(v, str) and v.strip():
+                cands.append(v.strip())
+            elif isinstance(v, list):
+                cands += [str(x) for x in v if x is not None]
+
+    # from SARIF taxa (if present)
+    taxa = res.get("taxa")
+    if isinstance(taxa, list):
+        for t in taxa:
+            if isinstance(t, dict):
+                for k in ("id", "name"):
+                    v = t.get(k)
+                    if isinstance(v, str) and "CWE-" in v:
+                        cands.append(v)
+
+    # from tags/text blobs
+    for t in tags:
+        m = _CWE_RE.search(t)
+        if m:
+            cands.append(m.group(1).upper())
+
+    # dedupe
+    seen = set()
+    out: List[str] = []
+    for c in cands:
+        cc = str(c).strip()
+        if cc and cc not in seen:
+            seen.add(cc)
+            out.append(cc)
     return out
 
 
-def normalize_snyk_results(
-    *,
+def primary_location(repo_path: Path, res: Dict[str, Any]) -> Tuple[Optional[str], Optional[int], Optional[int], Optional[str]]:
+    locs = res.get("locations")
+    if not (isinstance(locs, list) and locs):
+        return None, None, None, None
+
+    pl = (locs[0].get("physicalLocation") or {}) if isinstance(locs[0], dict) else {}
+    if not isinstance(pl, dict):
+        return None, None, None, None
+
+    artifact = pl.get("artifactLocation") or {}
+    region = pl.get("region") or {}
+
+    uri = artifact.get("uri") if isinstance(artifact, dict) else None
+    fp = normalize_repo_relative_path(repo_path, uri if isinstance(uri, str) else None)
+
+    start = region.get("startLine") if isinstance(region, dict) else None
+    end = region.get("endLine") if isinstance(region, dict) else None
+    if end is None:
+        end = start
+
+    line_content = read_line_content(repo_path, fp, int(start)) if fp and start else None
+    return fp, int(start) if start else None, int(end) if end else None, line_content
+
+
+def normalize_sarif(
     repo_path: Path,
-    raw_results_path: Path,
-    metadata: dict,
+    repo_name: str,
+    repo_url: Optional[str],
+    commit: Optional[str],
+    raw_sarif_path: Path,
+    metadata: Dict[str, Any],
+    vendor_idx: Dict[str, List[str]],
+    cwe_to_owasp_map: Dict[str, Any],
     normalized_path: Path,
-    cwe_to_owasp_map: dict,
-    snyk_rule_to_owasp_2021_map: dict,
-    snyk_rule_index: Dict[str, Dict[str, dict]],
 ) -> None:
-    """
-    Normalize Snyk SARIF-ish JSON into schema v1.1 + OWASP/CWE enrichment.
+    target_repo = {"name": repo_name, "url": repo_url, "commit": commit}
+    scan_info = {
+        "tool": "snyk",
+        "run_id": metadata.get("run_id"),
+        "timestamp": metadata.get("timestamp"),
+        "command": metadata.get("command"),
+        "scan_time_seconds": metadata.get("scan_time_seconds"),
+        "exit_code": metadata.get("exit_code"),
+    }
+    per_finding_metadata = {"tool": "snyk", "tool_version": metadata.get("scanner_version"), "target_repo": target_repo, "scan": scan_info}
 
-    Output keys added compared to the older samples:
-      - cwe_ids
-      - owasp_top_10_2017
-      - owasp_top_10_2021
-      - vuln_class
-    """
-    target_repo = build_target_repo(metadata)
-    scan_info = build_scan_info(metadata, raw_results_path)
-    per_finding_meta = build_per_finding_metadata(
-        tool="snyk",
-        tool_version=metadata.get("scanner_version"),
-        target_repo=target_repo,
-        scan_info=scan_info,
-    )
-
-    # Missing raw results -> still emit a valid normalized doc
-    if not raw_results_path.exists():
-        normalized = {
+    if not raw_sarif_path.exists():
+        write_json(normalized_path, {
             "schema_version": "1.1",
             "tool": "snyk",
             "tool_version": metadata.get("scanner_version"),
@@ -435,138 +356,62 @@ def normalize_snyk_results(
             "scan": scan_info,
             "run_metadata": metadata,
             "findings": [],
-        }
-        write_json(normalized_path, normalized)
+        })
         return
 
-    try:
-        raw = json.loads(raw_results_path.read_text(encoding="utf-8"))
-    except Exception:
-        raw = {}
-
-    runs = raw.get("runs")
-    if not isinstance(runs, list) or not runs:
-        normalized = {
-            "schema_version": "1.1",
-            "tool": "snyk",
-            "tool_version": metadata.get("scanner_version"),
-            "target_repo": target_repo,
-            "scan": scan_info,
-            "run_metadata": metadata,
-            "findings": [],
-        }
-        write_json(normalized_path, normalized)
-        return
-
-    run0 = runs[0] if isinstance(runs[0], dict) else {}
-    rules_by_id = _build_rules_by_id(run0)
+    sarif = read_json(raw_sarif_path)
+    runs = sarif.get("runs") or []
+    run0 = runs[0] if isinstance(runs, list) and runs and isinstance(runs[0], dict) else {}
+    rmap = rules_by_id(run0)
     results = run0.get("results") or []
-    if not isinstance(results, list):
-        results = []
 
-    # Cache vendor lookups per rule_id
-    vendor_ctx: Dict[str, Dict[str, Any]] = {}
-    for rid, rdef in rules_by_id.items():
-        language = rid.split("/", 1)[0] if isinstance(rid, str) and "/" in rid else None
-        rname = _rule_name(rdef)
-        v_codes, v_entry = lookup_snyk_vendor_owasp_2021(
-            vendor_map=snyk_rule_to_owasp_2021_map,
-            vendor_index=snyk_rule_index,
-            language=language,
-            rule_name=rname,
-        )
-        vendor_ctx[rid] = {"language": language, "rule_name": rname, "vendor_codes": v_codes, "vendor_entry": v_entry}
-
-    findings: List[dict] = []
-
-    for res in results:
+    findings: List[Dict[str, Any]] = []
+    for res in results if isinstance(results, list) else []:
         if not isinstance(res, dict):
             continue
 
-        rule_id = res.get("ruleId") if isinstance(res.get("ruleId"), str) else None
-        rule_def = rules_by_id.get(rule_id) if rule_id else None
-        ctx = vendor_ctx.get(rule_id or "", {})
-        rule_name = ctx.get("rule_name") or _rule_name(rule_def) or rule_id
+        rid = res.get("ruleId") if isinstance(res.get("ruleId"), str) else None
+        rdef = rmap.get(rid) if rid else None
+        rname = rule_name(rdef)
 
-        severity = _severity_from_level(res.get("level"))
+        fp, start, end, line_content = primary_location(repo_path, res)
+        sev = severity_from_level(res.get("level"))
+        msg = res.get("message")
+        title = msg.get("text") if isinstance(msg, dict) and isinstance(msg.get("text"), str) else (rname or rid)
 
-        # title/message
-        title = None
-        msg_obj = res.get("message")
-        if isinstance(msg_obj, dict) and isinstance(msg_obj.get("text"), str):
-            title = msg_obj.get("text")
-        if not title and isinstance(rule_def, dict):
-            sd = rule_def.get("shortDescription")
-            if isinstance(sd, dict) and isinstance(sd.get("text"), str):
-                title = sd.get("text")
-        if not title:
-            title = "Snyk finding"
-
-        # location
-        file_path: Optional[str] = None
-        line: Optional[int] = None
-        end_line: Optional[int] = None
-
-        locs = res.get("locations") or []
-        if isinstance(locs, list) and locs:
-            loc0 = locs[0]
-            if isinstance(loc0, dict):
-                phys = (loc0.get("physicalLocation") or {}) if isinstance(loc0.get("physicalLocation"), dict) else {}
-                artifact = (phys.get("artifactLocation") or {}) if isinstance(phys.get("artifactLocation"), dict) else {}
-                uri = artifact.get("uri")
-                if isinstance(uri, str):
-                    file_path = uri
-                region = (phys.get("region") or {}) if isinstance(phys.get("region"), dict) else {}
-                sl = region.get("startLine")
-                el = region.get("endLine")
-                try:
-                    line = int(sl) if sl is not None else None
-                except Exception:
-                    line = None
-                try:
-                    end_line = int(el) if el is not None else None
-                except Exception:
-                    end_line = None
-
-        line_content = read_line_content(repo_path, file_path, line)
-
-        # props/tags/cwe candidates
-        res_props = res.get("properties") if isinstance(res.get("properties"), dict) else {}
-        rule_props = (rule_def.get("properties") if isinstance(rule_def, dict) else {}) if isinstance(rule_def, dict) else {}
-        vendor_entry = ctx.get("vendor_entry") if isinstance(ctx.get("vendor_entry"), dict) else {}
-
-        tags = _extract_tags(rule_def, res)
-        cwe_candidates = _extract_cwe_candidates(res_props, rule_props, vendor_entry, tags)
+        tags = extract_tags(rdef, res)
+        cwe_candidates = extract_cwe_candidates(res, rdef, tags)
+        vendor_codes = vendor_owasp_2021_codes(vendor_idx, rid, rname)
 
         cls = resolve_owasp_and_cwe(
             tags=tags,
             cwe_candidates=cwe_candidates,
-            vendor_owasp_2021_codes=ctx.get("vendor_codes") or [],
+            vendor_owasp_2021_codes=vendor_codes,
             cwe_to_owasp_map=cwe_to_owasp_map,
+            allow_2017_from_tags=True,  # parity with Semgrep, enables 2017 derivation
         )
 
-        finding_id = f"snyk:{rule_id or 'unknown'}:{file_path or 'unknown'}:{line or 0}"
-
-        finding = {
-            "metadata": per_finding_meta,
-            "finding_id": finding_id,
-            "cwe_id": cls["cwe_id"],
-            "cwe_ids": cls["cwe_ids"],
-            "vuln_class": rule_name,
-            "owasp_top_10_2017": cls["owasp_top_10_2017"],
-            "owasp_top_10_2021": cls["owasp_top_10_2021"],
-            "rule_id": rule_id,
+        findings.append({
+            "metadata": per_finding_metadata,
+            "finding_id": f"snyk:{rid}:{fp}:{start}",
+            "rule_id": rid,
             "title": title,
-            "severity": severity,
-            "file_path": file_path,
-            "line_number": line,
-            "end_line_number": end_line,
+            "severity": sev,
+            "file_path": fp,
+            "line_number": start,
+            "end_line_number": end,
             "line_content": line_content,
-            "vendor": {"raw_result": res},
-        }
-        findings.append(finding)
 
-    normalized = {
+            "cwe_id": cls.get("cwe_id"),
+            "cwe_ids": cls.get("cwe_ids") or [],
+            "vuln_class": None,
+            "owasp_top_10_2017": cls.get("owasp_top_10_2017"),
+            "owasp_top_10_2021": cls.get("owasp_top_10_2021"),
+
+            "vendor": {"raw_result": res},
+        })
+
+    write_json(normalized_path, {
         "schema_version": "1.1",
         "tool": "snyk",
         "tool_version": metadata.get("scanner_version"),
@@ -574,79 +419,60 @@ def normalize_snyk_results(
         "scan": scan_info,
         "run_metadata": metadata,
         "findings": findings,
-    }
-    write_json(normalized_path, normalized)
+    })
 
 
-def main() -> int:
-    load_dotenv()
+# ----------------------------
+# Main
+# ----------------------------
+
+def main() -> None:
     args = parse_args()
-    ensure_snyk_token()
+    if not args.repo_url and not args.repo_path:
+        raise SystemExit("Provide --repo-url or --repo-path.")
 
-    repo_path = clone_repo(args.repo_url)
-    repo_name = repo_path.name
+    repo = acquire_repo(repo_url=args.repo_url, repo_path=args.repo_path, repos_dir=args.repos_dir)
 
-    # run output root is runs/snyk/<repo_name>/YYYYMMDDNN
-    output_root = Path(args.output_root) / repo_name
-    run_id, run_dir = create_run_dir(output_root)
-
-    raw_results_path = run_dir / f"{repo_name}.json"
-    normalized_path = run_dir / f"{repo_name}.normalized.json"
+    run_id, run_dir = create_run_dir_compat(Path(args.output_root) / repo.repo_name)
+    raw_sarif_path = run_dir / f"{repo.repo_name}.sarif"
+    normalized_path = run_dir / f"{repo.repo_name}.normalized.json"
     metadata_path = run_dir / "metadata.json"
 
-    exit_code, elapsed, command_str, snyk_stdout, snyk_stderr = run_snyk_scan(
-        repo_path=repo_path,
-        raw_results_path=raw_results_path,
-        org=args.org,
-        severity_threshold=args.severity_threshold,
-    )
+    # Run Snyk
+    exit_code, elapsed, cmd_str = run_snyk_code_sarif(repo.repo_path, raw_sarif_path)
 
-    metadata = build_run_metadata(
-        repo_path=repo_path,
-        repo_name=repo_name,
-        repo_url=args.repo_url,
+    # Build metadata (shared + safe)
+    snyk_bin = which_or_raise("snyk", fallbacks=["/opt/homebrew/bin/snyk", "/usr/local/bin/snyk"])
+    meta = build_run_metadata(
+        scanner="snyk",
+        scanner_version=snyk_version(snyk_bin),
+        repo=repo,
         run_id=run_id,
+        command_str=cmd_str,
+        scan_time_seconds=elapsed,
         exit_code=exit_code,
-        elapsed=elapsed,
-        command_str=command_str,
-        stdout=snyk_stdout,
-        stderr=snyk_stderr,
     )
+    write_json(metadata_path, meta)
 
-    # Load mappings (best-effort)
-    mappings_dir = Path(args.mappings_dir)
-    if not mappings_dir.is_absolute():
-        mappings_dir = ROOT_DIR / mappings_dir
-
-    cwe_to_owasp_map = load_cwe_to_owasp_map(mappings_dir)
-    snyk_rule_map = load_snyk_rule_to_owasp_2021_map(mappings_dir)
-    snyk_rule_index = build_snyk_rule_index(snyk_rule_map)
-
-    metadata.setdefault("mappings", {})
-    metadata["mappings"].update(
-        {
-            "mappings_dir": str(mappings_dir),
-            "cwe_to_owasp_loaded": bool(cwe_to_owasp_map),
-            "snyk_rule_to_owasp_2021_loaded": bool(snyk_rule_map),
-        }
-    )
-
-    write_json(metadata_path, metadata)
-    print("📄 Metadata saved to:", metadata_path)
-
-    normalize_snyk_results(
-        repo_path=repo_path,
-        raw_results_path=raw_results_path,
-        metadata=metadata,
+    # Normalize
+    cwe_map = load_cwe_to_owasp_map()
+    vendor_idx = load_snyk_vendor_owasp_2021_index()
+    normalize_sarif(
+        repo_path=repo.repo_path,
+        repo_name=repo.repo_name,
+        repo_url=repo.repo_url,
+        commit=repo.commit,
+        raw_sarif_path=raw_sarif_path,
+        metadata=meta,
+        vendor_idx=vendor_idx,
+        cwe_to_owasp_map=cwe_map,
         normalized_path=normalized_path,
-        cwe_to_owasp_map=cwe_to_owasp_map,
-        snyk_rule_to_owasp_2021_map=snyk_rule_map,
-        snyk_rule_index=snyk_rule_index,
     )
 
+    print("📄 Raw SARIF saved to:", raw_sarif_path)
+    print("📄 Metadata saved to:", metadata_path)
     print("📄 Normalized JSON saved to:", normalized_path)
-    return exit_code
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
