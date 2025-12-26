@@ -53,6 +53,21 @@ try:
 except ImportError:
     from tools.classification_resolver import resolve_owasp_and_cwe  # type: ignore
 
+try:
+    # When running as a script from tools/, this works.
+    from normalize_common import (  # type: ignore
+        build_per_finding_metadata,
+        build_scan_info,
+        build_target_repo,
+    )
+except ImportError:
+    # When imported as tools.scan_snyk, this is the correct path.
+    from tools.normalize_common import (  # type: ignore
+        build_per_finding_metadata,
+        build_scan_info,
+        build_target_repo,
+    )
+
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
@@ -108,45 +123,106 @@ def run_snyk_code_sarif(repo_path: Path, out_sarif: Path) -> Tuple[int, float, s
 # Optional vendor mapping (small + isolated)
 # ----------------------------
 
-def load_snyk_vendor_owasp_2021_index() -> Dict[str, List[str]]:
+VendorRuleIndex = Dict[str, Dict[str, List[str]]]
+
+
+def load_snyk_vendor_rule_index() -> VendorRuleIndex:
+    """Load optional Snyk rule -> (OWASP-2021, CWE) mapping.
+
+    Why this exists
+    ---------------
+    Snyk SARIF does not always include CWE/OWASP tags.
+    This repo maintains an offline mapping file so we can still populate:
+      - owasp_top_10_2021 (strong signal)
+      - cwe_ids (so we can derive OWASP 2017/2021 via MITRE as fallback)
+
+    Supported mapping file shapes
+    -----------------------------
+    1) Current repo schema (recommended):
+         {"languages": {"python": {"Rule Name": {"cwe_ids": [...], "owasp_top_10_2021": [...]}, ...}}}
+    2) Legacy flat map:
+         {"RULE_ID": ["A03"], ...}
+    3) Legacy list:
+         {"rules": [{"id": "...", "name": "...", "owasp_2021": [...]}, ...]}
     """
-    Optional: if you maintain a Snyk rule -> OWASP 2021 mapping file.
-    If none exists, return {} and classification will rely on CWE mapping + tags.
-    """
+
     candidates = [
         ROOT_DIR / "mappings" / "snyk_rule_to_owasp_2021.json",
         ROOT_DIR / "mappings" / "snyk_rule_to_owasp_top10_2021.json",
         ROOT_DIR / "mappings" / "snyk_to_owasp_2021.json",
     ]
 
-    def norm(s: str) -> str:
+    def norm_key(s: str) -> str:
         return " ".join(s.strip().lower().replace("_", " ").split())
 
-    idx: Dict[str, List[str]] = {}
+    def as_str_list(v: Any) -> List[str]:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v]
+        if isinstance(v, list):
+            return [str(x) for x in v if x is not None]
+        return []
+
+    def put(idx: VendorRuleIndex, key: str, *, owasp2021: List[str], cwe_ids: List[str]) -> None:
+        if not key:
+            return
+        if not (owasp2021 or cwe_ids):
+            return
+        idx[key] = {
+            "owasp_top_10_2021": owasp2021,
+            "cwe_ids": cwe_ids,
+        }
+
     for p in candidates:
         if not p.exists():
             continue
         try:
             data = read_json(p)
         except Exception:
-            return {}
+            continue
 
         if not isinstance(data, dict):
-            return {}
+            continue
 
-        # Shape A: {"RULE_ID": ["A03"], ...} OR {"RULE_ID": {"owasp_2021":[...]}}
+        idx: VendorRuleIndex = {}
+
+        # Shape 1: this repo's current schema: {"languages": {"python": {"Rule Name": {...}}}}
+        languages = data.get("languages")
+        if isinstance(languages, dict):
+            for _lang, rules in languages.items():
+                if not isinstance(rules, dict):
+                    continue
+                for rname, info in rules.items():
+                    if not isinstance(rname, str) or not rname.strip():
+                        continue
+                    if not isinstance(info, dict):
+                        continue
+                    owasp2021 = as_str_list(
+                        info.get("owasp_top_10_2021")
+                        or info.get("owasp_2021")
+                        or info.get("owasp2021")
+                    )
+                    cwe_ids = as_str_list(info.get("cwe_ids") or info.get("cwe") or info.get("cweIds"))
+                    put(idx, rname, owasp2021=owasp2021, cwe_ids=cwe_ids)
+                    put(idx, norm_key(rname), owasp2021=owasp2021, cwe_ids=cwe_ids)
+
+        # Shape 2: legacy flat map: {"RULE_ID": ["A03"], ...} OR {"RULE_ID": {"owasp_2021": [...], ...}}
         for k, v in data.items():
-            if isinstance(k, str):
-                if isinstance(v, list):
-                    idx[k] = [str(x) for x in v]
-                elif isinstance(v, dict):
-                    codes = v.get("owasp_2021") or v.get("owasp_top_10_2021") or v.get("owasp2021")
-                    if isinstance(codes, list):
-                        idx[k] = [str(x) for x in codes]
-                    if isinstance(v.get("name"), str) and isinstance(codes, list):
-                        idx[norm(v["name"])] = [str(x) for x in codes]
+            if not isinstance(k, str):
+                continue
+            if k in {"_meta", "aliases", "languages", "rules"}:
+                continue
+            if isinstance(v, list):
+                put(idx, k, owasp2021=[str(x) for x in v if x is not None], cwe_ids=[])
+            elif isinstance(v, dict):
+                codes = as_str_list(v.get("owasp_2021") or v.get("owasp_top_10_2021") or v.get("owasp2021"))
+                cwe_ids = as_str_list(v.get("cwe_ids") or v.get("cwe") or v.get("cweIds"))
+                put(idx, k, owasp2021=codes, cwe_ids=cwe_ids)
+                if isinstance(v.get("name"), str) and v.get("name").strip():
+                    put(idx, norm_key(v["name"]), owasp2021=codes, cwe_ids=cwe_ids)
 
-        # Shape B: {"rules":[{"id":"...", "name":"...", "owasp_2021":[...]}]}
+        # Shape 3: legacy list: {"rules": [{"id": ..., "name": ..., "owasp_2021": [...]}]}
         rules = data.get("rules")
         if isinstance(rules, list):
             for r in rules:
@@ -154,29 +230,50 @@ def load_snyk_vendor_owasp_2021_index() -> Dict[str, List[str]]:
                     continue
                 rid = r.get("id") or r.get("rule_id")
                 name = r.get("name")
-                codes = r.get("owasp_2021") or r.get("owasp_top_10_2021") or r.get("owasp2021")
-                if isinstance(codes, str):
-                    codes = [codes]
-                if isinstance(codes, list):
-                    if isinstance(rid, str) and rid:
-                        idx[rid] = [str(x) for x in codes]
-                    if isinstance(name, str) and name.strip():
-                        idx[norm(name)] = [str(x) for x in codes]
+                codes = as_str_list(r.get("owasp_2021") or r.get("owasp_top_10_2021") or r.get("owasp2021"))
+                cwe_ids = as_str_list(r.get("cwe_ids") or r.get("cwe") or r.get("cweIds"))
+                if isinstance(rid, str) and rid.strip():
+                    put(idx, rid.strip(), owasp2021=codes, cwe_ids=cwe_ids)
+                if isinstance(name, str) and name.strip():
+                    put(idx, name.strip(), owasp2021=codes, cwe_ids=cwe_ids)
+                    put(idx, norm_key(name), owasp2021=codes, cwe_ids=cwe_ids)
+
+        if not idx:
+            # File exists but schema didn't match anything we recognize.
+            # Don't fail the scan; just fall back to tags/CWE.
+            continue
 
         return idx
 
     return {}
 
 
-def vendor_owasp_2021_codes(vendor_idx: Dict[str, List[str]], rule_id: Optional[str], rule_name: Optional[str]) -> List[str]:
+def load_snyk_vendor_owasp_2021_index() -> VendorRuleIndex:
+    """Backwards-compatible alias."""
+    return load_snyk_vendor_rule_index()
+
+
+def vendor_rule_info(
+    vendor_idx: VendorRuleIndex,
+    rule_id: Optional[str],
+    rule_name: Optional[str],
+) -> Tuple[List[str], List[str]]:
+    """Lookup (owasp2021_codes, cwe_ids) for a given Snyk rule."""
     if not vendor_idx:
-        return []
+        return [], []
+
+    def norm_key(s: str) -> str:
+        return " ".join(s.strip().lower().replace("_", " ").split())
+
+    info: Optional[Dict[str, List[str]]] = None
     if rule_id and rule_id in vendor_idx:
-        return vendor_idx[rule_id]
-    if rule_name:
-        key = " ".join(rule_name.strip().lower().replace("_", " ").split())
-        return vendor_idx.get(key, [])
-    return []
+        info = vendor_idx.get(rule_id)
+    if info is None and rule_name:
+        info = vendor_idx.get(rule_name) or vendor_idx.get(norm_key(rule_name))
+
+    if not isinstance(info, dict):
+        return [], []
+    return info.get("owasp_top_10_2021") or [], info.get("cwe_ids") or []
 
 
 # ----------------------------
@@ -327,25 +424,21 @@ def primary_location(repo_path: Path, res: Dict[str, Any]) -> Tuple[Optional[str
 
 def normalize_sarif(
     repo_path: Path,
-    repo_name: str,
-    repo_url: Optional[str],
-    commit: Optional[str],
     raw_sarif_path: Path,
     metadata: Dict[str, Any],
-    vendor_idx: Dict[str, List[str]],
+    vendor_idx: VendorRuleIndex,
     cwe_to_owasp_map: Dict[str, Any],
     normalized_path: Path,
 ) -> None:
-    target_repo = {"name": repo_name, "url": repo_url, "commit": commit}
-    scan_info = {
-        "tool": "snyk",
-        "run_id": metadata.get("run_id"),
-        "timestamp": metadata.get("timestamp"),
-        "command": metadata.get("command"),
-        "scan_time_seconds": metadata.get("scan_time_seconds"),
-        "exit_code": metadata.get("exit_code"),
-    }
-    per_finding_metadata = {"tool": "snyk", "tool_version": metadata.get("scanner_version"), "target_repo": target_repo, "scan": scan_info}
+    # Align header blocks with other scanners (Sonar/Aikido) using normalize_common.
+    target_repo = build_target_repo(metadata)
+    scan_info = build_scan_info(metadata, raw_sarif_path)
+    per_finding_metadata = build_per_finding_metadata(
+        tool="snyk",
+        tool_version=metadata.get("scanner_version"),
+        target_repo=target_repo,
+        scan_info=scan_info,
+    )
 
     if not raw_sarif_path.exists():
         write_json(normalized_path, {
@@ -381,7 +474,11 @@ def normalize_sarif(
 
         tags = extract_tags(rdef, res)
         cwe_candidates = extract_cwe_candidates(res, rdef, tags)
-        vendor_codes = vendor_owasp_2021_codes(vendor_idx, rid, rname)
+
+        # Vendor mapping (offline) can add OWASP-2021 codes and CWE IDs.
+        vendor_codes, vendor_cwes = vendor_rule_info(vendor_idx, rid, rname)
+        if vendor_cwes:
+            cwe_candidates = cwe_candidates + vendor_cwes
 
         cls = resolve_owasp_and_cwe(
             tags=tags,
@@ -459,9 +556,6 @@ def main() -> None:
     vendor_idx = load_snyk_vendor_owasp_2021_index()
     normalize_sarif(
         repo_path=repo.repo_path,
-        repo_name=repo.repo_name,
-        repo_url=repo.repo_url,
-        commit=repo.commit,
         raw_sarif_path=raw_sarif_path,
         metadata=meta,
         vendor_idx=vendor_idx,

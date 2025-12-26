@@ -10,176 +10,69 @@ Outputs:
     - metadata.json
     - <repo_name>.normalized.json
 
-Design goals:
-- Match the normalized output shape used by scan_snyk/scan_sonar (schema v1.1)
-- Reuse classification_resolver.py (CWE + OWASP 2017/2021)
-- Be resilient to helper signature drift in run_utils.py
+Goals
+-----
+- Keep this file a thin orchestrator (like scan_snyk.py)
+- Reuse tools/core.py for shared plumbing (repo acquisition, run dirs, JSON IO, commands)
+- Reuse tools/classification_resolver.py for consistent CWE/OWASP mapping
+- Emit a scan block consistent with Sonar/Aikido using tools/normalize_common.py
 """
 
 from __future__ import annotations
 
 import argparse
-import json
-import shutil
-import subprocess
 import sys
-import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
-# -------------------------
-# Flexible imports (your repo runs tools/*.py as scripts)
-# -------------------------
-
+# ---- Robust imports (script execution vs module import) ----
 try:
-    # Most common in your repo
-    from run_utils import (
-        clone_repo,
-        create_run_dir,
-        get_repo_name,
-        get_git_commit,
-        get_commit_author_info,
+    from core import (  # type: ignore
+        acquire_repo,
+        build_run_metadata,
+        create_run_dir_compat,
+        load_cwe_to_owasp_map,
+        normalize_repo_relative_path,
+        read_json,
+        read_line_content,
+        run_cmd,
+        which_or_raise,
+        write_json,
     )
-except Exception:
-    # Fallback if you use tools.run_utils
-    from tools.run_utils import (  # type: ignore
-        clone_repo,
-        create_run_dir,
-        get_repo_name,
-        get_git_commit,
-        get_commit_author_info,
+except ImportError:
+    from tools.core import (  # type: ignore
+        acquire_repo,
+        build_run_metadata,
+        create_run_dir_compat,
+        load_cwe_to_owasp_map,
+        normalize_repo_relative_path,
+        read_json,
+        read_line_content,
+        run_cmd,
+        which_or_raise,
+        write_json,
     )
 
 try:
     from classification_resolver import resolve_owasp_and_cwe
-except Exception:
+except ImportError:
     from tools.classification_resolver import resolve_owasp_and_cwe  # type: ignore
 
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-
-
-# -------------------------
-# Small utilities
-# -------------------------
-
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-
-def read_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _as_list(x: Any) -> List[Any]:
-    if x is None:
-        return []
-    return x if isinstance(x, list) else [x]
-
-
-def find_semgrep_bin() -> str:
-    """
-    Find semgrep binary reliably across conda / brew / pipx.
-    """
-    semgrep_bin = shutil.which("semgrep")
-    if semgrep_bin:
-        return semgrep_bin
-
-    # Common macOS fallbacks
-    for candidate in ("/opt/homebrew/bin/semgrep", "/usr/local/bin/semgrep"):
-        if Path(candidate).exists():
-            return candidate
-
-    raise FileNotFoundError(
-        "Semgrep executable not found.\n"
-        "Install with ONE of:\n"
-        "  - pip install semgrep\n"
-        "  - brew install semgrep\n"
-        "  - pipx install semgrep\n"
-        "Then ensure `semgrep` is on your PATH."
+try:
+    # When running as a script from tools/, this works.
+    from normalize_common import (  # type: ignore
+        build_per_finding_metadata,
+        build_scan_info,
+        build_target_repo,
     )
-
-
-def get_semgrep_version() -> str:
-    try:
-        semgrep_bin = find_semgrep_bin()
-        out = subprocess.check_output([semgrep_bin, "--version"], text=True)
-        return out.strip()
-    except Exception:
-        return "unknown"
-
-
-def map_semgrep_severity(sev: Optional[str]) -> Optional[str]:
-    """
-    Normalize Semgrep severity to your common severity scale.
-    Semgrep typical: ERROR, WARNING, INFO.
-    """
-    if not sev:
-        return None
-    s = str(sev).strip().upper()
-    if s == "ERROR":
-        return "HIGH"
-    if s == "WARNING":
-        return "MEDIUM"
-    if s == "INFO":
-        return "LOW"
-    if s == "CRITICAL":
-        return "HIGH"
-    if s in {"HIGH", "MEDIUM", "LOW"}:
-        return s
-    return "MEDIUM"
-
-
-def normalize_repo_relative_path(repo_path: Path, semgrep_path: Optional[str]) -> Optional[str]:
-    """
-    Semgrep sometimes returns absolute paths. Convert to repo-relative when possible.
-    """
-    if not semgrep_path:
-        return None
-    p = Path(semgrep_path)
-    try:
-        if p.is_absolute():
-            return str(p.resolve().relative_to(repo_path.resolve()))
-    except Exception:
-        return semgrep_path
-    return semgrep_path
-
-
-def read_line_content(repo_path: Path, file_path: str, line_no: int) -> Optional[str]:
-    """
-    Read one line (1-indexed) from a file relative to repo_path.
-    """
-    try:
-        abs_path = (repo_path / file_path).resolve()
-        if not abs_path.exists():
-            return None
-        with abs_path.open("r", encoding="utf-8", errors="replace") as f:
-            for i, ln in enumerate(f, start=1):
-                if i == line_no:
-                    return ln.rstrip("\n")
-    except Exception:
-        return None
-    return None
-
-
-def load_cwe_to_owasp_map() -> dict:
-    """
-    Load mappings/cwe_to_owasp_top10_mitre.json (same one you use elsewhere).
-    Supports either wrapped {"_meta":..., "cwe_to_owasp": {...}} or direct dicts.
-    """
-    p = ROOT_DIR / "mappings" / "cwe_to_owasp_top10_mitre.json"
-    if not p.exists():
-        return {}
-    try:
-        data = read_json(p)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+except ImportError:
+    # When imported as tools.scan_semgrep, this is the correct path.
+    from tools.normalize_common import (  # type: ignore
+        build_per_finding_metadata,
+        build_scan_info,
+        build_target_repo,
+    )
 
 
 # -------------------------
@@ -194,20 +87,30 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--output-root", default="runs/semgrep", help="Output root. Default: runs/semgrep.")
     ap.add_argument("--repos-dir", default="repos", help="Repos base dir. Default: repos.")
     ap.add_argument("--timeout-seconds", type=int, default=0, help="Semgrep timeout. 0 = no timeout.")
+
     ns = ap.parse_args()
 
+    # Preserve the prior interactive behavior: prompt if neither is provided.
     if not ns.repo_url and not ns.repo_path:
         ns.repo_url = input("Enter Git repo URL to scan: ").strip()
 
     if ns.repo_url and ns.repo_path:
         raise SystemExit("Provide only one of --repo-url or --repo-path.")
 
+    if not ns.repo_url and not ns.repo_path:
+        raise SystemExit("Provide --repo-url or --repo-path.")
+
     return ns
 
 
 # -------------------------
-# Running Semgrep
+# Semgrep execution
 # -------------------------
+
+def semgrep_version(semgrep_bin: str) -> str:
+    res = run_cmd([semgrep_bin, "--version"], print_stderr=False, print_stdout=False)
+    return (res.stdout or res.stderr).strip() or "unknown"
+
 
 def run_semgrep(
     repo_path: Path,
@@ -215,37 +118,49 @@ def run_semgrep(
     output_path: Path,
     timeout_seconds: int = 0,
 ) -> Tuple[int, float, str]:
-    semgrep_bin = find_semgrep_bin()
-    cmd = [semgrep_bin, "--json", "--config", config, "--output", str(output_path)]
+    semgrep_bin = which_or_raise("semgrep", fallbacks=["/opt/homebrew/bin/semgrep", "/usr/local/bin/semgrep"])
+
+    cmd = [
+        semgrep_bin,
+        "--json",
+        "--config",
+        config,
+        "--output",
+        str(output_path),
+    ]
 
     print(f"\n🔍 Running Semgrep on {repo_path.name} ...")
     print("Command:", " ".join(cmd))
 
-    t0 = time.time()
-    try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(repo_path),
-            text=True,
-            capture_output=True,
-            timeout=timeout_seconds if timeout_seconds and timeout_seconds > 0 else None,
-        )
-    except subprocess.TimeoutExpired:
-        elapsed = time.time() - t0
-        return 124, elapsed, " ".join(cmd)
-
-    elapsed = time.time() - t0
-
-    # Semgrep prints a lot of status text to stderr even on success — show it
-    if proc.stderr:
-        print(proc.stderr)
-
-    return proc.returncode, elapsed, " ".join(cmd)
+    res = run_cmd(cmd, cwd=repo_path, timeout_seconds=timeout_seconds, print_stderr=True, print_stdout=False)
+    return res.exit_code, res.elapsed_seconds, res.command_str
 
 
 # -------------------------
-# Normalize Semgrep JSON to your schema
+# Normalize Semgrep JSON to schema v1.1
 # -------------------------
+
+def _as_list(x: Any) -> List[Any]:
+    if x is None:
+        return []
+    return x if isinstance(x, list) else [x]
+
+
+def map_semgrep_severity(sev: Optional[str]) -> Optional[str]:
+    """Normalize Semgrep severity to HIGH/MEDIUM/LOW."""
+    if not sev:
+        return None
+    s = str(sev).strip().upper()
+    if s in {"ERROR", "CRITICAL"}:
+        return "HIGH"
+    if s in {"WARNING"}:
+        return "MEDIUM"
+    if s in {"INFO"}:
+        return "LOW"
+    if s in {"HIGH", "MEDIUM", "LOW"}:
+        return s
+    return "MEDIUM"
+
 
 def normalize_semgrep_results(
     repo_path: Path,
@@ -253,29 +168,29 @@ def normalize_semgrep_results(
     metadata: Dict[str, Any],
     normalized_path: Path,
 ) -> None:
+    # Align header blocks with other scanners (Sonar/Aikido) using normalize_common.
+    target_repo = build_target_repo(metadata)
+    scan_info = build_scan_info(metadata, raw_results_path)
+    per_finding_metadata = build_per_finding_metadata(
+        tool="semgrep",
+        tool_version=metadata.get("scanner_version"),
+        target_repo=target_repo,
+        scan_info=scan_info,
+    )
+
     if not raw_results_path.exists():
-        # If semgrep produced no output file, still emit a normalized shell.
-        normalized = {
-            "schema_version": "1.1",
-            "tool": "semgrep",
-            "tool_version": metadata.get("scanner_version"),
-            "target_repo": {
-                "name": metadata.get("repo_name"),
-                "url": metadata.get("repo_url"),
-                "commit": metadata.get("repo_commit"),
-            },
-            "scan": {
+        write_json(
+            normalized_path,
+            {
+                "schema_version": "1.1",
                 "tool": "semgrep",
-                "run_id": metadata.get("run_id"),
-                "timestamp": metadata.get("timestamp"),
-                "command": metadata.get("command"),
-                "scan_time_seconds": metadata.get("scan_time_seconds"),
-                "exit_code": metadata.get("exit_code"),
+                "tool_version": metadata.get("scanner_version"),
+                "target_repo": target_repo,
+                "scan": scan_info,
+                "run_metadata": metadata,
+                "findings": [],
             },
-            "run_metadata": metadata,
-            "findings": [],
-        }
-        write_json(normalized_path, normalized)
+        )
         return
 
     raw = read_json(raw_results_path)
@@ -283,29 +198,12 @@ def normalize_semgrep_results(
 
     cwe_to_owasp_map = load_cwe_to_owasp_map()
 
-    target_repo = {
-        "name": metadata.get("repo_name"),
-        "url": metadata.get("repo_url"),
-        "commit": metadata.get("repo_commit"),
-    }
-    scan_info = {
-        "tool": "semgrep",
-        "run_id": metadata.get("run_id"),
-        "timestamp": metadata.get("timestamp"),
-        "command": metadata.get("command"),
-        "scan_time_seconds": metadata.get("scan_time_seconds"),
-        "exit_code": metadata.get("exit_code"),
-    }
-    per_finding_metadata = {
-        "tool": "semgrep",
-        "tool_version": metadata.get("scanner_version"),
-        "target_repo": target_repo,
-        "scan": scan_info,
-    }
-
     findings: List[Dict[str, Any]] = []
 
-    for res in results:
+    for res in results if isinstance(results, list) else []:
+        if not isinstance(res, dict):
+            continue
+
         rule_id = res.get("check_id")
 
         file_path = normalize_repo_relative_path(repo_path, res.get("path"))
@@ -314,9 +212,7 @@ def normalize_semgrep_results(
         line = start.get("line")
         end_line = end.get("line", line)
 
-        line_content = None
-        if file_path and line:
-            line_content = read_line_content(repo_path, file_path, int(line))
+        line_content = read_line_content(repo_path, file_path, int(line)) if file_path and line else None
 
         extra = res.get("extra") or {}
         message = extra.get("message")
@@ -328,7 +224,7 @@ def normalize_semgrep_results(
         vuln_class_list = _as_list(meta.get("vulnerability_class"))
         vuln_class = str(vuln_class_list[0]) if vuln_class_list else None
 
-        # Feed your shared resolver (same idea as Snyk)
+        # Feed your shared resolver (same policy as Snyk)
         tags: List[str] = []
         tags += [str(x) for x in semgrep_owasp_tags if x is not None]
         tags += [str(x) for x in vuln_class_list if x is not None]
@@ -368,67 +264,18 @@ def normalize_semgrep_results(
             }
         )
 
-    normalized = {
-        "schema_version": "1.1",
-        "tool": "semgrep",
-        "tool_version": metadata.get("scanner_version"),
-        "target_repo": target_repo,
-        "scan": scan_info,
-        "run_metadata": metadata,
-        "findings": findings,
-    }
-    write_json(normalized_path, normalized)
-
-
-# -------------------------
-# Helpers: run_dir creation tolerant to signature drift
-# -------------------------
-
-def create_run_dir_compat(output_root: Path) -> Tuple[str, Path]:
-    """
-    Your run_utils.create_run_dir() has drifted in signature/return shape.
-    This wrapper makes it consistent.
-
-    Accepts: output_root = runs/semgrep/<repo_name>
-    Returns: (run_id, run_dir)
-    """
-    output_root = output_root.resolve()
-    output_root.mkdir(parents=True, exist_ok=True)
-
-    # Try positional call first (works regardless of kw names)
-    res = create_run_dir(output_root)
-
-    # Common patterns:
-    #  - (run_id, run_dir)
-    #  - (run_dir, run_id)
-    #  - run_dir only
-    if isinstance(res, tuple) and len(res) == 2:
-        a, b = res
-        if isinstance(a, str) and isinstance(b, (str, Path)):
-            run_id = a
-            run_dir = Path(b)
-            return run_id, run_dir
-        if isinstance(a, Path) and isinstance(b, str):
-            return b, a
-        if isinstance(a, Path) and isinstance(b, Path):
-            # pick name as run_id
-            return b.name, b
-        if isinstance(a, str) and isinstance(b, str):
-            return a, Path(b)
-
-    if isinstance(res, Path):
-        return res.name, res
-
-    if isinstance(res, str):
-        # If function returns a run_dir path as string
-        p = Path(res)
-        return p.name, p
-
-    # As a final fallback, create our own run folder
-    run_id = datetime.now().strftime("%Y%m%d%H")
-    run_dir = output_root / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_id, run_dir
+    write_json(
+        normalized_path,
+        {
+            "schema_version": "1.1",
+            "tool": "semgrep",
+            "tool_version": metadata.get("scanner_version"),
+            "target_repo": target_repo,
+            "scan": scan_info,
+            "run_metadata": metadata,
+            "findings": findings,
+        },
+    )
 
 
 # -------------------------
@@ -438,71 +285,44 @@ def create_run_dir_compat(output_root: Path) -> Tuple[str, Path]:
 def main() -> None:
     args = parse_args()
 
-    # 1) Acquire repo
-    repo_url = args.repo_url
-    if args.repo_path:
-        repo_path = Path(args.repo_path).resolve()
-        repo_name = repo_path.name
-    else:
-        if not repo_url:
-            raise SystemExit("Missing --repo-url (or provide --repo-path).")
-        repos_dir = Path(args.repos_dir).resolve()
-        repo_path = clone_repo(repo_url, repos_dir)
-        repo_name = get_repo_name(repo_url)
+    repo = acquire_repo(repo_url=args.repo_url, repo_path=args.repo_path, repos_dir=args.repos_dir)
 
-    # 2) Create run directory
-    output_root = Path(args.output_root).resolve() / repo_name
-    run_id, run_dir = create_run_dir_compat(output_root)
+    run_id, run_dir = create_run_dir_compat(Path(args.output_root) / repo.repo_name)
 
-    results_path = run_dir / f"{repo_name}.json"
-    normalized_path = run_dir / f"{repo_name}.normalized.json"
+    results_path = run_dir / f"{repo.repo_name}.json"
+    normalized_path = run_dir / f"{repo.repo_name}.normalized.json"
     metadata_path = run_dir / "metadata.json"
 
-    # 3) Run semgrep
     exit_code, elapsed, command_str = run_semgrep(
-        repo_path=repo_path,
+        repo_path=repo.repo_path,
         config=args.config,
         output_path=results_path,
         timeout_seconds=args.timeout_seconds,
     )
 
-    # 4) Metadata (IMPORTANT: your get_commit_author_info needs (repo_path, commit))
-    commit = get_git_commit(repo_path)
-    try:
-        author_info = get_commit_author_info(repo_path, commit)
-    except TypeError:
-        # If your helper ever changes again, don't break scans
-        author_info = {}
+    semgrep_bin = which_or_raise("semgrep", fallbacks=["/opt/homebrew/bin/semgrep", "/usr/local/bin/semgrep"])
+    meta = build_run_metadata(
+        scanner="semgrep",
+        scanner_version=semgrep_version(semgrep_bin),
+        repo=repo,
+        run_id=run_id,
+        command_str=command_str,
+        scan_time_seconds=elapsed,
+        exit_code=exit_code,
+    )
 
-    metadata: Dict[str, Any] = {
-        "scanner": "semgrep",
-        "scanner_version": get_semgrep_version(),
-        "repo_name": repo_name,
-        "repo_url": repo_url,
-        "repo_commit": commit,
-        "run_id": run_id,
-        "timestamp": datetime.now().isoformat(),
-        "command": command_str,
-        "scan_time_seconds": elapsed,
-        "exit_code": exit_code,
-        **(author_info or {}),
-    }
-
-    write_json(metadata_path, metadata)
+    write_json(metadata_path, meta)
     print("📄 Raw JSON saved to:", results_path)
     print("📄 Metadata saved to:", metadata_path)
 
-    # 5) Normalize
     normalize_semgrep_results(
-        repo_path=repo_path,
+        repo_path=repo.repo_path,
         raw_results_path=results_path,
-        metadata=metadata,
+        metadata=meta,
         normalized_path=normalized_path,
     )
-    print("📄 Normalized JSON saved to:", normalized_path)
 
-    # Important: let the wrapper decide what to print based on exit code.
-    # We do not print "Scan finished with exit code ..." here.
+    print("📄 Normalized JSON saved to:", normalized_path)
 
 
 if __name__ == "__main__":
