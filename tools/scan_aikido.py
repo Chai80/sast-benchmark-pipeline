@@ -53,38 +53,36 @@ import requests
 from dotenv import load_dotenv
 
 
-# ---- Robust imports (script execution vs module import) ----
-try:
-    from core import create_run_dir_compat, load_cwe_to_owasp_map, write_json  # type: ignore
-except ImportError:
-    from tools.core import create_run_dir_compat, load_cwe_to_owasp_map, write_json  # type: ignore
 
-try:
-    from normalize_common import (  # type: ignore
-        build_per_finding_metadata,
-        build_scan_info,
-        build_target_repo,
-    )
-except ImportError:
-    from tools.normalize_common import (  # type: ignore
-        build_per_finding_metadata,
-        build_scan_info,
-        build_target_repo,
-    )
+# ---------------------------------------------------------------------------
+# Package bootstrap + imports
+# ---------------------------------------------------------------------------
 
-try:
-    from classification_resolver import resolve_owasp_and_cwe
-except ImportError:
-    from tools.classification_resolver import resolve_owasp_and_cwe  # type: ignore
+# When this file is executed directly (e.g. `python tools/scan_aikido.py`),
+# Python adds `tools/` (not the project root) to sys.path, so `import tools.*`
+# would fail. This keeps both invocation styles working:
+#   - python -m tools.scan_aikido
+#   - python tools/scan_aikido.py
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if __package__ in (None, ""):
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
 
+from tools.core import create_run_dir_compat, load_cwe_to_owasp_map, write_json
+from tools.normalize_common import (
+    build_per_finding_metadata,
+    build_scan_info,
+    build_target_repo,
+)
+from tools.classification_resolver import resolve_owasp_and_cwe
 
 TOKEN_URL = "https://app.aikido.dev/api/oauth/token"
 API_ROOT = "https://app.aikido.dev/api/public/v1"
 AIKIDO_TOOL_VERSION = "public-api-v1"
 
-# Load .env from project root (one level up from tools/)
-ROOT_DIR = Path(__file__).resolve().parents[1]
-load_dotenv(ROOT_DIR / ".env")
+# Path to optional project-local .env file (loaded inside main()).
+ENV_PATH = PROJECT_ROOT / ".env"
+
 
 
 # ---------------------------------------------------------------------------
@@ -734,6 +732,8 @@ def build_run_metadata(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Load project .env (if present) so credentials can be provided via file.
+    load_dotenv(ENV_PATH)
     args = parse_args()
     cfg = get_aikido_config()
 
@@ -786,21 +786,30 @@ def main() -> None:
     print(f"  Normalized JSON : {paths.normalized}")
 
 
-if __name__ == "__main__":
+
+
+def _mirror_error(msg: str) -> None:
+    """Print to stderr + stdout (some wrappers only capture stdout)."""
+    print(msg, file=sys.stderr)
+    print(msg)
+
+
+def cli_entry() -> None:
+    """CLI entrypoint."""
     try:
         main()
     except SystemExit as e:
-        # Show the exit reason even when wrappers hide stderr.
+        # Mirror non-zero exit reasons to stdout as well.
         if e.code not in (None, 0):
             msg = str(e)
             if msg:
-                print(msg, file=sys.stderr)
-                print(msg)
+                _mirror_error(msg)
         raise
     except Exception as e:
-        # Make failures visible even when a wrapper hides stderr.
-        msg = f"ERROR: scan_aikido.py failed: {e}"
-        print(msg, file=sys.stderr)
-        print(msg)
+        _mirror_error(f"ERROR: tools.scan_aikido failed: {e}")
         traceback.print_exc()
         raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    cli_entry()

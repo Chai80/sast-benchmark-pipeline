@@ -59,11 +59,25 @@ def _dedupe_preserve_order(items: Iterable[str]) -> List[str]:
     return out
 
 
+def _flatten(values: Iterable[Any]) -> Iterable[Any]:
+    """Flatten nested lists/tuples/sets while treating strings as scalars."""
+    for v in values:
+        if v is None:
+            continue
+        if isinstance(v, (list, tuple, set)):
+            yield from _flatten(v)
+        else:
+            yield v
+
+
 def _normalize_cwe(value: Any) -> Optional[str]:
     if value is None:
         return None
+    # bool is a subclass of int in Python, but should never be treated as a CWE id.
+    if isinstance(value, bool):
+        return None
     if isinstance(value, int):
-        return f"CWE-{value}"
+        return f"CWE-{value}" if value > 0 else None
     if not isinstance(value, str):
         return None
 
@@ -73,12 +87,14 @@ def _normalize_cwe(value: Any) -> Optional[str]:
 
     m = _CWE_NUM_RE.search(s)
     if m:
-        return f"CWE-{int(m.group(1))}"
+        n = int(m.group(1))
+        return f"CWE-{n}" if n > 0 else None
 
     # handle "cwe:79" or "79"
     s2 = s.lower().replace("cwe:", "").replace("cwe", "").replace("-", "").replace("_", "").strip()
     if s2.isdigit():
-        return f"CWE-{int(s2)}"
+        n = int(s2)
+        return f"CWE-{n}" if n > 0 else None
 
     return None
 
@@ -86,6 +102,9 @@ def _normalize_cwe(value: Any) -> Optional[str]:
 def _normalize_owasp_code(raw: Any, year: str) -> Optional[str]:
     n: Optional[int] = None
     if raw is None:
+        return None
+    # bool is a subclass of int; treat it as invalid.
+    if isinstance(raw, bool):
         return None
     if isinstance(raw, int):
         n = raw
@@ -197,30 +216,49 @@ def _derive_owasp_from_cwe_ids(
     o17: List[str] = []
     o21: List[str] = []
 
+    def _extend_codes(dst: List[str], raw: Any) -> None:
+        """Accept list/dict/string and append candidate OWASP codes to dst."""
+        if raw is None:
+            return
+        if isinstance(raw, str):
+            if raw.strip():
+                dst.append(raw.strip())
+            return
+        if isinstance(raw, dict):
+            codes = raw.get("codes")
+            if isinstance(codes, (list, tuple, set)):
+                for x in codes:
+                    if x is None:
+                        continue
+                    s = str(x).strip()
+                    if s:
+                        dst.append(s)
+            return
+        if isinstance(raw, (list, tuple, set)):
+            for x in raw:
+                _extend_codes(dst, x)
+            return
+
     for cwe in cwe_ids:
         entry = mapping.get(cwe)
         if not isinstance(entry, dict):
-            # some maps might key by numeric string
+            # Some maps might key by numeric CWE string or int.
             m = _CWE_NUM_RE.search(cwe)
             if m:
                 entry = mapping.get(m.group(1))
+                if not isinstance(entry, dict):
+                    try:
+                        entry = mapping.get(int(m.group(1)))
+                    except Exception:
+                        entry = None
         if not isinstance(entry, dict):
             continue
 
         v17 = entry.get("owasp_top_10_2017") or entry.get("owasp_2017") or entry.get("owasp2017")
         v21 = entry.get("owasp_top_10_2021") or entry.get("owasp_2021") or entry.get("owasp2021")
-        # v17/v21 may be:
-        #   - list of codes (['A1', 'A03', ...])
-        #   - dict payload ({'codes': [...], 'categories': [...]})
-        #   - None
-        if isinstance(v17, dict):
-            o17.extend([str(x) for x in (v17.get('codes') or []) if x is not None])
-        elif isinstance(v17, list):
-            o17.extend([str(x) for x in v17 if x is not None])
-        if isinstance(v21, dict):
-            o21.extend([str(x) for x in (v21.get('codes') or []) if x is not None])
-        elif isinstance(v21, list):
-            o21.extend([str(x) for x in v21 if x is not None])
+
+        _extend_codes(o17, v17)
+        _extend_codes(o21, v21)
     o17n = _dedupe_preserve_order([c for c in (_normalize_owasp_code(x, "2017") for x in o17) if c])
     o21n = _dedupe_preserve_order([c for c in (_normalize_owasp_code(x, "2021") for x in o21) if c])
 
@@ -249,8 +287,8 @@ def resolve_owasp_and_cwe(
       - OWASP 2017: derived from CWE (primary), optional explicit 2017 tags if enabled
     """
     # CWE normalize
-    norm_cwe_ids = []
-    for v in cwe_candidates or []:
+    norm_cwe_ids: List[str] = []
+    for v in _flatten(cwe_candidates or []):
         c = _normalize_cwe(v)
         if c:
             norm_cwe_ids.append(c)
@@ -272,8 +310,8 @@ def resolve_owasp_and_cwe(
 
     # then vendor codes if nothing from tags
     if owasp2021_block is None and vendor_owasp_2021_codes:
-        vnorm = []
-        for v in vendor_owasp_2021_codes:
+        vnorm: List[str] = []
+        for v in _flatten(vendor_owasp_2021_codes):
             nc = _normalize_owasp_code(v, "2021")
             if nc:
                 vnorm.append(nc)
@@ -291,3 +329,18 @@ def resolve_owasp_and_cwe(
         "owasp_top_10_2017": owasp2017_block,
         "owasp_top_10_2021": owasp2021_block,
     }
+
+
+# -------------------------
+# Public helpers (reused by other normalizers)
+# -------------------------
+
+
+def normalize_cwe_id(value: Any) -> Optional[str]:
+    """Public wrapper: normalize inputs into 'CWE-<num>' or None."""
+    return _normalize_cwe(value)
+
+
+def normalize_owasp_top10_code(raw: Any, year: str) -> Optional[str]:
+    """Public wrapper: normalize inputs into an OWASP Top10 code for the given year."""
+    return _normalize_owasp_code(raw, year)

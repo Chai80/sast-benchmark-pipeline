@@ -4,14 +4,14 @@ tools/core.py
 
 Shared scanner plumbing used by tools/scan_*.py scripts.
 
-This module is intentionally "boring" and stable:
+Canonical utilities:
 - JSON IO
-- command execution helpers (safe: no shell=True)
-- repo acquisition (clone/reuse OR local path)
-- run directory creation (compat with run_utils drift)
-- metadata building (never fails scan if author info missing)
-- repo-relative path + line-content helpers
-- common mapping loaders (CWE -> OWASP)
+- Command execution (no shell=True)
+- Repo acquisition (clone/reuse OR local path)
+- Run directory creation (YYYYMMDD##)
+- Git commit + author metadata
+- Repo-relative path + line-content helpers
+- Common mapping loaders (CWE -> OWASP)
 
 Tool-specific parsing stays in each scan_*.py.
 """
@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+
 
 # Repo root = parent of tools/
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -101,56 +102,169 @@ def run_cmd(
     (e.g. binary not found).
     """
     t0 = time.time()
-    try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(cwd) if cwd else None,
-            text=True,
-            capture_output=True,
-            timeout=timeout_seconds if timeout_seconds and timeout_seconds > 0 else None,
-            env=env,
-        )
-        elapsed = time.time() - t0
 
-        # Many tools write progress to stderr even on success.
-        if print_stderr and proc.stderr:
-            print(proc.stderr, file=sys.stderr)
-        if print_stdout and proc.stdout:
-            print(proc.stdout)
+    # If env is provided, merge it onto the current process environment.
+    env2 = None
+    if env is not None:
+        env2 = os.environ.copy()
+        env2.update(env)
 
-        return CmdResult(
-            exit_code=proc.returncode,
-            elapsed_seconds=elapsed,
-            command_str=" ".join(cmd),
-            stdout=proc.stdout or "",
-            stderr=proc.stderr or "",
-        )
-    except subprocess.TimeoutExpired as e:
-        elapsed = time.time() - t0
-        return CmdResult(
-            exit_code=124,
-            elapsed_seconds=elapsed,
-            command_str=" ".join(cmd),
-            stdout=e.stdout or "",
-            stderr=e.stderr or "",
-        )
+    proc = subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        text=True,
+        capture_output=True,
+        timeout=timeout_seconds if timeout_seconds and timeout_seconds > 0 else None,
+        env=env2,
+    )
+    elapsed = time.time() - t0
+
+    # Many tools write progress to stderr even on success.
+    if print_stderr and proc.stderr:
+        print(proc.stderr, file=sys.stderr)
+    if print_stdout and proc.stdout:
+        print(proc.stdout)
+
+    return CmdResult(
+        exit_code=proc.returncode,
+        elapsed_seconds=elapsed,
+        command_str=" ".join(cmd),
+        stdout=proc.stdout or "",
+        stderr=proc.stderr or "",
+    )
 
 
 # -------------------------
-# run_utils import + compat
+# Repo helpers
 # -------------------------
 
-def _import_run_utils():
-    """
-    Import run_utils with a tolerant fallback, since scan scripts run as scripts.
-    """
-    try:
-        import run_utils  # type: ignore
-        return run_utils
-    except Exception:
-        from tools import run_utils  # type: ignore
-        return run_utils
+def _anchor_under_root(path: Path) -> Path:
+    """Anchor a relative path under the project root."""
+    return path if path.is_absolute() else (ROOT_DIR / path)
 
+
+def get_repo_name(repo_url: str) -> str:
+    """
+    Turn a Git URL into a simple repo name.
+
+    Examples:
+      https://github.com/juice-shop/juice-shop.git -> "juice-shop"
+      git@github.com:juice-shop/juice-shop.git    -> "juice-shop"
+      https://api.github.com/repos/org/repo       -> "repo"
+    """
+    last = repo_url.rstrip("/").split("/")[-1]
+    return last[:-4] if last.endswith(".git") else last
+
+
+def clone_repo(repo_url: str, base: Path | str = Path("repos")) -> Path:
+    """
+    Clone the given repo URL into ROOT_DIR / base / <repo_name>.
+
+    If the repo already exists locally, it is reused.
+    """
+    base_path = base if isinstance(base, Path) else Path(base)
+    base_path = _anchor_under_root(base_path)
+    base_path.mkdir(parents=True, exist_ok=True)
+
+    name = get_repo_name(repo_url)
+    path = base_path / name
+
+    if path.exists():
+        return path.resolve()
+
+    print(f"📥 Cloning {name} from {repo_url} ...")
+    result = subprocess.run(
+        ["git", "clone", "--depth", "1", repo_url, str(path)],
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git clone failed with code {result.returncode}")
+
+    return path.resolve()
+
+
+def get_git_commit(repo_path: Path) -> Optional[str]:
+    """
+    Return the current commit SHA for the repo at repo_path.
+    Returns None if repo_path is not a git repo or git is unavailable.
+    """
+    res = run_cmd(
+        ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+        print_stderr=False,
+        print_stdout=False,
+    )
+    sha = (res.stdout or "").strip()
+    return sha if res.exit_code == 0 and sha else None
+
+
+def get_commit_author_info(repo_path: Path, commit: str) -> Dict[str, Optional[str]]:
+    """
+    Return author name/email/date for the given commit SHA in the repo.
+    Never raises; returns keys with None if unavailable.
+    """
+    res = run_cmd(
+        ["git", "-C", str(repo_path), "show", "-s", "--format=%an%n%ae%n%aI", commit],
+        print_stderr=False,
+        print_stdout=False,
+    )
+    if res.exit_code != 0:
+        return {"commit_author_name": None, "commit_author_email": None, "commit_date": None}
+
+    lines = (res.stdout or "").splitlines()
+    return {
+        "commit_author_name": lines[0].strip() if len(lines) > 0 and lines[0].strip() else None,
+        "commit_author_email": lines[1].strip() if len(lines) > 1 and lines[1].strip() else None,
+        "commit_date": lines[2].strip() if len(lines) > 2 and lines[2].strip() else None,
+    }
+
+
+# -------------------------
+# Run directory
+# -------------------------
+
+def create_run_dir(output_root: Path | str) -> tuple[str, Path]:
+    """
+    Create a dated run directory like YYYYMMDD01, YYYYMMDD02, ... under output_root.
+
+    If output_root is relative (e.g. 'runs/semgrep'), it is anchored under ROOT_DIR.
+    """
+    root = output_root if isinstance(output_root, Path) else Path(output_root)
+    root = _anchor_under_root(root)
+    root.mkdir(parents=True, exist_ok=True)
+
+    today = datetime.now().strftime("%Y%m%d")
+
+    existing = [
+        d.name for d in root.iterdir()
+        if d.is_dir() and d.name.startswith(today)
+    ]
+    if not existing:
+        idx = 1
+    else:
+        last = max(existing)
+        try:
+            last_idx = int(last[-2:])
+        except ValueError:
+            last_idx = len(existing)
+        idx = last_idx + 1
+
+    run_id = f"{today}{idx:02d}"
+    run_dir = root / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    return run_id, run_dir
+
+
+def create_run_dir_compat(output_root: Union[str, Path]) -> Tuple[str, Path]:
+    """
+    Backwards-compatible alias kept so scan scripts can keep calling create_run_dir_compat().
+    """
+    run_id, run_dir = create_run_dir(output_root)
+    return run_id, run_dir
+
+
+# -------------------------
+# Repo acquisition + metadata
+# -------------------------
 
 @dataclass(frozen=True)
 class TargetRepo:
@@ -170,125 +284,47 @@ def acquire_repo(
     Standard repo acquisition for all scanners.
 
     If repo_path is provided: use it, do not clone.
-    Else: clone/reuse repo_url under repos_dir using run_utils.clone_repo.
+    Else: clone/reuse repo_url under repos_dir.
 
     Returns TargetRepo(repo_path, repo_name, repo_url, commit).
     """
-    ru = _import_run_utils()
-
     if repo_path:
         p = Path(repo_path).resolve()
-        name = p.name
-        commit = None
-        if hasattr(ru, "get_git_commit"):
-            try:
-                commit = ru.get_git_commit(p)  # type: ignore
-            except Exception:
-                commit = None
-        return TargetRepo(repo_path=p, repo_name=name, repo_url=repo_url, commit=commit)
+        return TargetRepo(
+            repo_path=p,
+            repo_name=p.name,
+            repo_url=repo_url,
+            commit=get_git_commit(p),
+        )
 
     if not repo_url:
         raise ValueError("acquire_repo requires either repo_url or repo_path.")
 
-    repos_base = Path(repos_dir).resolve()
-    repos_base.mkdir(parents=True, exist_ok=True)
+    repos_base = repos_dir if isinstance(repos_dir, Path) else Path(repos_dir)
+    repos_base = _anchor_under_root(repos_base)
 
-    # clone_repo signature drift: support clone_repo(url, base) and clone_repo(url, base=...)
-    try:
-        p = ru.clone_repo(repo_url, repos_base)  # type: ignore
-    except TypeError:
-        p = ru.clone_repo(repo_url, base=repos_base)  # type: ignore
-
-    p = p if isinstance(p, Path) else Path(p).resolve()
-
-    # repo_name
-    if hasattr(ru, "get_repo_name"):
-        try:
-            name = ru.get_repo_name(repo_url)  # type: ignore
-        except Exception:
-            name = p.name
-    else:
-        name = p.name
-
-    # commit
-    commit = None
-    if hasattr(ru, "get_git_commit"):
-        try:
-            commit = ru.get_git_commit(p)  # type: ignore
-        except Exception:
-            commit = None
+    p = clone_repo(repo_url, base=repos_base)
+    name = get_repo_name(repo_url) or p.name
+    commit = get_git_commit(p)
 
     return TargetRepo(repo_path=p, repo_name=name, repo_url=repo_url, commit=commit)
 
 
-def create_run_dir_compat(output_root: Union[str, Path]) -> Tuple[str, Path]:
+def get_commit_author_info_compat(repo_path: Path, commit: Optional[str]) -> Dict[str, Optional[str]]:
     """
-    Wrap run_utils.create_run_dir() to adapt to signature/return shape drift.
+    Backwards-compatible helper.
 
-    Input:
-      output_root = runs/<scanner>/<repo_name>
-
-    Returns:
-      (run_id, run_dir)
+    Returns keys with None if commit info isn't available; never raises.
     """
-    ru = _import_run_utils()
-    out = Path(output_root).resolve()
-    out.mkdir(parents=True, exist_ok=True)
-
-    if hasattr(ru, "create_run_dir"):
-        res = ru.create_run_dir(out)  # type: ignore
-
-        # Shapes seen:
-        #  - (run_id, run_dir)
-        #  - (run_dir, run_id)
-        #  - run_dir only
-        if isinstance(res, tuple) and len(res) == 2:
-            a, b = res
-            if isinstance(a, str) and isinstance(b, (str, Path)):
-                return a, Path(b)
-            if isinstance(a, Path) and isinstance(b, str):
-                return b, a
-            if isinstance(a, Path) and isinstance(b, Path):
-                return b.name, b
-            if isinstance(a, str) and isinstance(b, str):
-                return a, Path(b)
-
-        if isinstance(res, Path):
-            return res.name, res
-
-        if isinstance(res, str):
-            p = Path(res)
-            return p.name, p
-
-    # fallback: timestamp run id
-    run_id = datetime.now().strftime("%Y%m%d%H")
-    run_dir = out / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_id, run_dir
-
-
-def get_commit_author_info_compat(repo_path: Path, commit: Optional[str]) -> Dict[str, Any]:
-    """
-    Your run_utils.get_commit_author_info typically wants (repo_path, commit).
-    This wrapper never fails scans if metadata is unavailable.
-    """
+    base = {"commit_author_name": None, "commit_author_email": None, "commit_date": None}
     if not commit:
-        return {}
-
-    ru = _import_run_utils()
-    if not hasattr(ru, "get_commit_author_info"):
-        return {}
-
+        return base
     try:
-        return ru.get_commit_author_info(repo_path, commit) or {}  # type: ignore
-    except TypeError:
-        # if signature changes in the future, try best-effort fallback
-        try:
-            return ru.get_commit_author_info(repo_path) or {}  # type: ignore
-        except Exception:
-            return {}
+        base.update(get_commit_author_info(repo_path, commit))
     except Exception:
-        return {}
+        # Swallow errors: metadata should not break scans.
+        pass
+    return base
 
 
 def build_run_metadata(
@@ -318,7 +354,7 @@ def build_run_metadata(
         "command": command_str,
         "scan_time_seconds": scan_time_seconds,
         "exit_code": exit_code,
-        **(author_info or {}),
+        **author_info,
     }
     if extra:
         data.update(extra)
