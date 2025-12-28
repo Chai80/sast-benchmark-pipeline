@@ -1,99 +1,177 @@
 # pipeline/core.py
+"""Core orchestration helpers for the SAST benchmark pipeline.
+
+This module intentionally contains *no* scanner-specific parsing logic.
+Its job is to build stable, correct command lines for the scanner entrypoints
+in ``tools/scan_*.py``.
+
+Why this exists:
+- Avoid duplicating command-building rules across CLI(s) and other runners.
+- Keep scanner scripts focused on scanning + normalization.
+- Provide a single place to encode scanner quirks (e.g., Aikido's git-ref).
+"""
+
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
-
-PYTHON = sys.executable or "python"
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-TOOLS_DIR = ROOT_DIR / "tools"
-
-SUPPORTED_SCANNERS = {"semgrep", "snyk", "sonar", "aikido"}
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 
-def _script_for(scanner: str) -> Path:
+# Use the same interpreter that imports this module (CLI inherits it).
+PYTHON: str = sys.executable or "python"
+
+# Repo root (pipeline/ is a top-level package dir)
+ROOT_DIR: Path = Path(__file__).resolve().parents[1]
+TOOLS_DIR: Path = ROOT_DIR / "tools"
+
+# Scanner -> entrypoint script under tools/
+SCANNER_SCRIPTS: Dict[str, str] = {
+    "semgrep": "scan_semgrep.py",
+    "sonar": "scan_sonar.py",
+    "snyk": "scan_snyk.py",
+    "aikido": "scan_aikido.py",
+}
+
+SUPPORTED_SCANNERS = set(SCANNER_SCRIPTS.keys())
+
+
+def script_path(scanner: str) -> Path:
+    """Return the tools/scan_*.py path for a scanner."""
     if scanner not in SUPPORTED_SCANNERS:
-        raise ValueError(f"Unknown scanner '{scanner}'. Valid: {sorted(SUPPORTED_SCANNERS)}")
-    script = TOOLS_DIR / f"scan_{scanner}.py"
-    if not script.exists():
-        raise FileNotFoundError(f"Scanner script not found: {script}")
-    return script
+        raise ValueError(f"Unsupported scanner: {scanner!r}. Supported: {sorted(SUPPORTED_SCANNERS)}")
+    p = TOOLS_DIR / SCANNER_SCRIPTS[scanner]
+    if not p.exists():
+        raise FileNotFoundError(f"Scanner script not found: {p}")
+    return p
+
+
+def _render_extra_args(extra_args: Optional[Dict[str, Any]]) -> List[str]:
+    """Convert an ``extra_args`` dict into CLI args.
+
+    Rules:
+    - key -> "--key"
+    - value is True  => flag only: "--key"
+    - value is False/None => omitted
+    - value is list/tuple => repeated "--key value" pairs
+    - otherwise => "--key str(value)"
+    """
+    if not extra_args:
+        return []
+
+    parts: List[str] = []
+    for k, v in extra_args.items():
+        if v is None or v is False:
+            continue
+        flag = f"--{k}"
+        if v is True:
+            parts.append(flag)
+            continue
+        if isinstance(v, (list, tuple)):
+            for item in v:
+                if item is None:
+                    continue
+                parts.extend([flag, str(item)])
+            continue
+        parts.extend([flag, str(v)])
+    return parts
 
 
 def build_scan_command(
     scanner: str,
     *,
     repo_url: Optional[str] = None,
-    repo_path: Optional[str] = None,
-    extra_args: Optional[Dict[str, str]] = None,
+    repo_path: Optional[Union[str, Path]] = None,
+    extra_args: Optional[Dict[str, Any]] = None,
+    python_executable: Optional[str] = None,
 ) -> List[str]:
+    """Build a command list to run a scanner script.
+
+    Parameters
+    ----------
+    scanner:
+        One of: semgrep, sonar, snyk, aikido.
+    repo_url:
+        Git URL of the target (required for most scanners unless repo_path is used).
+    repo_path:
+        Local repo path (skips clone). If provided, will pass --repo-path.
+    extra_args:
+        Extra flags to pass to the scanner script. Keys must be in "kebab-case"
+        matching the script's argparse options (e.g. {"project-key": "..."}).
+    python_executable:
+        Override python executable. Defaults to ``sys.executable``.
     """
-    Build subprocess command to run tools/scan_<scanner>.py.
+    py = python_executable or PYTHON
+    script = script_path(scanner)
 
-    This is intentionally benchmark-free:
-    - caller provides repo_url or repo_path
-    - command is returned as a list (safe, no shell)
-    """
-    script = _script_for(scanner)
+    cmd: List[str] = [py, str(script)]
 
-    cmd: List[str] = [PYTHON, str(script)]
+    # ---- Scanner quirks ----
+    if scanner == "aikido":
+        # Aikido scanner expects a git reference / slug; it does not accept --repo-url.
+        if not repo_url:
+            raise ValueError("Aikido scanner requires repo_url to derive --git-ref.")
+        git_ref = repo_url.rstrip("/").replace(".git", "")
+        cmd += ["--git-ref", git_ref]
+        cmd += _render_extra_args(extra_args)
+        return cmd
 
+    # ---- Standard repo args (most scanners) ----
     if repo_path:
-        cmd += ["--repo-path", repo_path]
-        # Optional: some scanners may store repo_url in metadata if provided
+        cmd += ["--repo-path", str(Path(repo_path).resolve())]
         if repo_url:
             cmd += ["--repo-url", repo_url]
-    else:
-        if not repo_url:
-            raise ValueError("You must provide repo_url or repo_path.")
+    elif repo_url:
         cmd += ["--repo-url", repo_url]
+    else:
+        raise ValueError("Missing repo_url/repo_path (need one).")
 
-    if extra_args:
-        for k, v in extra_args.items():
-            if not k.startswith("--"):
-                k = "--" + k
-            cmd += [k, str(v)]
-
+    cmd += _render_extra_args(extra_args)
     return cmd
 
 
-# -------------------------------------------------------------------
-# Backwards-compatible API (so older code doesn't break)
-# -------------------------------------------------------------------
+# --------------------------
+# SonarCloud helpers
+# --------------------------
 
-def build_command(scanner: str, target: str | dict) -> List[str]:
+_SONAR_KEY_ALLOWED = re.compile(r"[^a-zA-Z0-9_.:]")
+
+def sanitize_sonar_key_fragment(value: str) -> str:
+    """Sanitize a string into something safe for Sonar project keys.
+
+    Sonar keys generally allow: letters, digits, '-', '_', '.', ':'
+    This function additionally normalizes '-' -> '_' to avoid duplicate projects
+    when a repo name contains dashes.
+
+    Examples
+    --------
+    "juice-shop" -> "juice_shop"
+    "OWASP BenchmarkJava" -> "OWASP_BenchmarkJava"
     """
-    Legacy function name used by older code.
-
-    Previously, 'target' was a benchmark key or a target dict.
-    We no longer depend on benchmarks; so we support:
-      - target is dict with repo_url / repo_path
-      - target is string treated as repo_url (if it looks like URL) or repo_path otherwise
-    """
-    repo_url: Optional[str] = None
-    repo_path: Optional[str] = None
-
-    if isinstance(target, dict):
-        repo_url = target.get("repo_url") or target.get("url")
-        repo_path = target.get("repo_path") or target.get("path")
-    else:
-        t = str(target).strip()
-        if t.startswith(("http://", "https://", "git@")):
-            repo_url = t
-        else:
-            repo_path = t
-
-    return build_scan_command(scanner, repo_url=repo_url, repo_path=repo_path)
+    v = (value or "").strip()
+    v = v.replace("-", "_")
+    # Replace anything outside [a-zA-Z0-9_.:] with underscore
+    v = _SONAR_KEY_ALLOWED.sub("_", v)
+    v = re.sub(r"_+", "_", v).strip("_")
+    if not v:
+        raise ValueError("Empty Sonar key fragment after sanitization.")
+    # Sonar requires at least one non-digit char; prefix if needed
+    if v.isdigit():
+        v = f"p_{v}"
+    return v
 
 
-def build_scan_command_for_target(scanner: str, target_key: str) -> List[str]:
-    """
-    Deprecated: benchmarks are removed.
-    Keep this only if something still calls it; otherwise delete it later.
-    """
-    raise RuntimeError(
-        "build_scan_command_for_target() is no longer supported because benchmarks were removed. "
-        "Pass repo_url or repo_path directly to build_scan_command()."
-    )
+def repo_id_from_repo_url(repo_url: str) -> str:
+    """Derive a stable repo id from a git URL (used for Sonar keys)."""
+    last = repo_url.rstrip("/").split("/")[-1]
+    if last.endswith(".git"):
+        last = last[:-4]
+    return sanitize_sonar_key_fragment(last)
+
+
+def derive_sonar_project_key(organization_key: str, repo_id: str) -> str:
+    """Return a stable SonarCloud project key like: ORG_REPO."""
+    org = sanitize_sonar_key_fragment(organization_key)
+    rid = sanitize_sonar_key_fragment(repo_id)
+    return f"{org}_{rid}"

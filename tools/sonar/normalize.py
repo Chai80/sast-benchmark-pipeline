@@ -2,9 +2,8 @@
 
 Normalization for SonarCloud issues into the common schema v1.1.
 
-Key design:
-  - Layer A (base normalization): always produce required, common fields
-  - Layer B (enrichment): optional fields added only when available
+This module MUST use package imports (tools.*) so it works when scan_sonar.py
+is invoked either as a module (python -m ...) or as a script.
 """
 
 from __future__ import annotations
@@ -13,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from normalize_common import (
+from tools.normalize_common import (
     build_per_finding_metadata,
     build_scan_info,
     build_target_repo,
@@ -51,10 +50,6 @@ def extract_location(issue: Dict[str, Any]) -> Tuple[Optional[str], Optional[int
     return file_path, line, end_line
 
 
-# -------------------------
-# Layer A: base normalization
-# -------------------------
-
 def normalize_one_issue_base(
     *,
     issue: Dict[str, Any],
@@ -71,6 +66,7 @@ def normalize_one_issue_base(
         "metadata": per_finding_metadata,
         "finding_id": f"sonar:{rule_id}:{file_path}:{line}",
         "cwe_id": None,
+        "cwe_ids": [],
         "rule_id": rule_id,
         "title": title,
         "severity": severity,
@@ -78,13 +74,12 @@ def normalize_one_issue_base(
         "line_number": line,
         "end_line_number": end_line,
         "line_content": read_line_content(repo_path, file_path, line),
+        "vuln_class": None,
+        "owasp_top_10_2017": None,
+        "owasp_top_10_2021": None,
         "vendor": {"raw_result": issue},
     }
 
-
-# -------------------------
-# Layer B: optional enrichment
-# -------------------------
 
 def apply_rule_enrichment(
     *,
@@ -116,7 +111,6 @@ def apply_rule_enrichment(
 
 
 def build_rule_cache(cfg: SonarConfig, rule_ids: List[str]) -> Dict[str, Dict[str, Any]]:
-    """Call Sonar rules API once per unique rule for *this run*."""
     cache: Dict[str, Dict[str, Any]] = {}
     for rid in rule_ids:
         raw = fetch_rule_show(cfg, rid)
@@ -146,15 +140,18 @@ def normalize_sonar_results(
     )
 
     if not raw_results_path.exists():
-        write_json(normalized_path, {
-            "schema_version": "1.1",
-            "tool": "sonar",
-            "tool_version": metadata.get("scanner_version"),
-            "target_repo": target_repo,
-            "scan": scan_info,
-            "run_metadata": metadata,
-            "findings": [],
-        })
+        write_json(
+            normalized_path,
+            {
+                "schema_version": "1.1",
+                "tool": "sonar",
+                "tool_version": metadata.get("scanner_version"),
+                "target_repo": target_repo,
+                "scan": scan_info,
+                "run_metadata": metadata,
+                "findings": [],
+            },
+        )
         return
 
     with raw_results_path.open(encoding="utf-8") as f:
@@ -162,7 +159,6 @@ def normalize_sonar_results(
 
     issues = data.get("issues") or []
 
-    # unique rules for this run
     seen: Set[str] = set()
     rule_ids: List[str] = []
     for issue in issues:
@@ -171,11 +167,7 @@ def normalize_sonar_results(
             seen.add(rid)
             rule_ids.append(rid)
 
-    print(f"🔍 Normalization: {len(issues)} issues, {len(rule_ids)} unique rule_id values.")
-    print(f"   Enriching with Sonar rules API at {cfg.host} (org={cfg.org})")
-
     rule_cache = build_rule_cache(cfg, rule_ids)
-    print(f"✅ Retrieved classification for {len(rule_cache)} / {len(rule_ids)} rules.")
 
     findings: List[Dict[str, Any]] = []
     enriched_count = 0
@@ -192,19 +184,22 @@ def normalize_sonar_results(
             enriched_count += 1
         findings.append(apply_rule_enrichment(finding=base, classification=cls))
 
-    write_json(normalized_path, {
-        "schema_version": "1.1",
-        "tool": "sonar",
-        "tool_version": metadata.get("scanner_version"),
-        "target_repo": target_repo,
-        "scan": scan_info,
-        "run_metadata": metadata,
-        "sonar_rules_enrichment": {
-            "source": "api/rules/show",
-            "host": cfg.host,
-            "organization": cfg.org,
-            "rules_with_classification": len(rule_cache),
-            "findings_enriched": enriched_count,
+    write_json(
+        normalized_path,
+        {
+            "schema_version": "1.1",
+            "tool": "sonar",
+            "tool_version": metadata.get("scanner_version"),
+            "target_repo": target_repo,
+            "scan": scan_info,
+            "run_metadata": metadata,
+            "sonar_rules_enrichment": {
+                "source": "api/rules/show",
+                "host": cfg.host,
+                "organization": cfg.org,
+                "rules_with_classification": len(rule_cache),
+                "findings_enriched": enriched_count,
+            },
+            "findings": findings,
         },
-        "findings": findings,
-    })
+    )

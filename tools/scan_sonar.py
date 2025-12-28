@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -53,6 +54,7 @@ from tools.sonar.api import (
     fetch_all_issues_for_project,
     validate_sonarcloud_credentials,
     wait_for_ce_success,
+    component_exists,
 )
 from tools.sonar.normalize import normalize_sonar_results
 from tools.sonar.types import SonarConfig
@@ -229,7 +231,25 @@ def main() -> None:
     repo = acquire_repo(repo_url=args.repo_url, repo_path=args.repo_path, repos_dir=args.repos_dir)
     repo_name = repo.repo_name
 
-    project_key = args.project_key or f"{cfg.org}_{repo_name}"
+    project_key = args.project_key
+    if not project_key:
+        # Prefer underscores to match SonarCloud UI import conventions and avoid duplicate projects.
+        frag_underscore = re.sub(r"[^A-Za-z0-9_.:-]+", "_", repo_name.replace("-", "_"))
+        frag_underscore = frag_underscore.strip("_") or repo_name.replace("-", "_")
+        frag_dash = re.sub(r"[^A-Za-z0-9_.:-]+", "_", repo_name).strip("_") or repo_name
+        candidates: List[str] = []
+        for frag in (frag_underscore, frag_dash):
+            key = f"{cfg.org}_{frag}"
+            if key not in candidates:
+                candidates.append(key)
+
+        # Reuse an existing SonarCloud project key when possible (avoids creating duplicates / private projects).
+        for cand in candidates:
+            if component_exists(cfg, cand):
+                project_key = cand
+                break
+        if not project_key:
+            project_key = candidates[0]
     print(f"Sonar project key: {project_key}")
 
     run_id, paths = prepare_run_paths(args.output_root, repo_name)

@@ -136,7 +136,10 @@ def run_snyk_code_sarif(*, snyk_bin: str, repo_path: Path, out_sarif: Path) -> T
         "--sarif-file-output",
         str(out_sarif),
     ]
-    res = run_cmd(cmd, cwd=repo_path, print_stderr=True, print_stdout=True)
+    # Snyk can emit very large JSON/SARIF to stdout.
+    # Keep stderr (progress + errors) visible, but only print stdout when explicitly requested.
+    verbose = os.environ.get("SAST_VERBOSE", "").strip().lower() in {"1", "true", "yes", "y"}
+    res = run_cmd(cmd, cwd=repo_path, print_stderr=True, print_stdout=verbose)
     return res.exit_code, res.elapsed_seconds, res.command_str
 
 

@@ -17,23 +17,24 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Use the same Python interpreter / venv as this script
-PYTHON = sys.executable or "python"
+# Centralized command builder (prevents per-CLI drift)
+from pipeline.core import (
+    ROOT_DIR as PIPELINE_ROOT_DIR,
+    SUPPORTED_SCANNERS,
+    build_scan_command,
+    derive_sonar_project_key,
+    repo_id_from_repo_url,
+    sanitize_sonar_key_fragment,
+)
 
-ROOT_DIR = Path(__file__).resolve().parent
-TOOLS_DIR = ROOT_DIR / "tools"
-
-SUPPORTED_SCANNERS: Dict[str, str] = {
-    "semgrep": "scan_semgrep.py",
-    "sonar": "scan_sonar.py",
-    "snyk": "scan_snyk.py",
-    "aikido": "scan_aikido.py",
-}
+ROOT_DIR = PIPELINE_ROOT_DIR  # repo root
+ENV_PATH = ROOT_DIR / ".env"
 
 # Replace/add your preset repos here (this replaces benchmarks/targets.py)
 REPOS: Dict[str, Dict[str, str]] = {
@@ -41,6 +42,13 @@ REPOS: Dict[str, Dict[str, str]] = {
     "webgoat": {"label": "WebGoat", "repo_url": "https://github.com/WebGoat/WebGoat.git"},
     "dvwa": {"label": "DVWA", "repo_url": "https://github.com/digininja/DVWA.git"},
     "owasp_benchmark": {"label": "OWASP BenchmarkJava", "repo_url": "https://github.com/OWASP/BenchmarkJava.git"},
+}
+
+SCANNER_LABELS: Dict[str, str] = {
+    "semgrep": "Semgrep",
+    "sonar": "SonarCloud",
+    "snyk": "Snyk Code",
+    "aikido": "Aikido",
 }
 
 
@@ -53,18 +61,36 @@ def load_dotenv_if_present(dotenv_path: Path) -> None:
     Minimal .env loader. Loads KEY=VALUE into os.environ if not already set.
     - Ignores comments/blank lines
     - Supports quoted values
+    - Supports inline comments of the form: VALUE   # comment
     """
     if not dotenv_path.exists():
         return
+
     for raw in dotenv_path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
+
         key, val = line.split("=", 1)
         key = key.strip()
-        val = val.strip().strip('"').strip("'")
+        raw_val = val.strip()
+
+        # Quoted value
+        if (raw_val.startswith('"') and raw_val.endswith('"')) or (raw_val.startswith("'") and raw_val.endswith("'")):
+            parsed_val = raw_val[1:-1]
+        else:
+            # Strip inline comments only when preceded by whitespace: "VALUE   # comment"
+            parsed_val = re.split(r"\s+#", raw_val, maxsplit=1)[0].strip()
+            parsed_val = parsed_val.strip('"').strip("'")
+
+        parsed_val = parsed_val.replace("\r", "")
         if key and key not in os.environ:
-            os.environ[key] = val
+            os.environ[key] = parsed_val
+
+
+def require_env(var: str) -> None:
+    if not os.getenv(var):
+        raise SystemExit(f"Missing {var}. Put it in {ENV_PATH} (or export it in your shell).")
 
 
 # -------------------------------------------------------------------
@@ -112,35 +138,59 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Top-level CLI for SAST pipeline (no benchmarks package).")
 
     parser.add_argument("--mode", choices=["scan", "benchmark"], help="scan = one tool, benchmark = multiple tools")
-    parser.add_argument("--scanner", choices=sorted(SUPPORTED_SCANNERS.keys()), help="(scan mode) Which scanner to run")
-    parser.add_argument("--scanners", help="(benchmark mode) Comma-separated scanners (default: semgrep,snyk,sonar,aikido)")
+    parser.add_argument(
+        "--scanner",
+        choices=sorted(SUPPORTED_SCANNERS),
+        help="(scan mode) Which scanner to run",
+    )
+    parser.add_argument(
+        "--scanners",
+        help="(benchmark mode) Comma-separated scanners (default: semgrep,snyk,sonar,aikido)",
+    )
 
     # Repo selection (either preset key, or custom URL/path)
     parser.add_argument("--repo-key", choices=sorted(REPOS.keys()), help="Preset repo key (recommended)")
     parser.add_argument("--repo-url", help="Custom git repo URL")
     parser.add_argument("--repo-path", help="Local repo path (skip clone)")
 
+    # Sonar-specific
+    parser.add_argument(
+        "--sonar-project-key",
+        help="(sonar only) Override SonarCloud project key. If omitted, we derive ORG_<repo_id>.",
+    )
+
     parser.add_argument("--dry-run", action="store_true", help="Print commands but do not execute")
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress scanner stdout/stderr (not recommended for debugging)",
+    )
     return parser.parse_args()
 
 
-def resolve_repo(args: argparse.Namespace) -> Tuple[Optional[str], Optional[str], str]:
+def resolve_repo(args: argparse.Namespace) -> Tuple[Optional[str], Optional[str], str, str]:
     """
-    Returns (repo_url, repo_path, label)
+    Returns (repo_url, repo_path, label, repo_id)
+
+    repo_id is a stable identifier used for Sonar project key derivation.
+    - For presets: it's the preset key (e.g., juice_shop)
+    - For custom URLs: derived from the URL repo name (sanitized)
+    - For local paths: derived from folder name (sanitized)
     """
     if args.repo_key:
         entry = REPOS[args.repo_key]
-        return entry.get("repo_url"), None, entry.get("label", args.repo_key)
+        return entry.get("repo_url"), None, entry.get("label", args.repo_key), args.repo_key
 
     if args.repo_path:
         p = Path(args.repo_path).resolve()
-        return args.repo_url, str(p), p.name
+        rid = sanitize_sonar_key_fragment(p.name)
+        return args.repo_url, str(p), p.name, rid
 
     if args.repo_url:
-        return args.repo_url, None, args.repo_url
+        rid = repo_id_from_repo_url(args.repo_url)
+        return args.repo_url, None, args.repo_url, rid
 
     # interactive fallback
-    # choose preset or custom
     choice = choose_from_menu(
         "Choose a repo source:",
         {
@@ -153,13 +203,14 @@ def resolve_repo(args: argparse.Namespace) -> Tuple[Optional[str], Optional[str]
     if choice == "preset":
         key = choose_from_menu("Choose a preset repo:", {k: v["label"] for k, v in REPOS.items()})
         entry = REPOS[key]
-        return entry.get("repo_url"), None, entry.get("label", key)
+        return entry.get("repo_url"), None, entry.get("label", key), key
 
     if choice == "custom_url":
         while True:
             url = input("Enter full repo URL (https://... .git or git@...): ").strip()
             if url.startswith(("https://", "http://", "git@")):
-                return url, None, url
+                rid = repo_id_from_repo_url(url)
+                return url, None, url, rid
             print("That doesn't look like a git URL. Try again.")
 
     # local_path
@@ -167,58 +218,53 @@ def resolve_repo(args: argparse.Namespace) -> Tuple[Optional[str], Optional[str]
         path = input("Enter local repo path: ").strip()
         if path:
             p = Path(path).resolve()
-            return None, str(p), p.name
+            rid = sanitize_sonar_key_fragment(p.name)
+            return None, str(p), p.name, rid
         print("Empty path. Try again.")
 
 
-def build_scan_command(scanner: str, repo_url: Optional[str], repo_path: Optional[str]) -> List[str]:
-    script = SUPPORTED_SCANNERS[scanner]
-    script_path = TOOLS_DIR / script
-    if not script_path.exists():
-        raise SystemExit(f"Scanner script not found: {script_path}")
-
-    cmd = [PYTHON, str(script_path)]
-
-    # ---- Aikido special case ----
-    if scanner == "aikido":
-        # Aikido does NOT accept repo-url; it wants a git ref / slug
-        if not repo_url:
-            raise SystemExit("Aikido requires a repo URL to derive --git-ref.")
-        git_ref = repo_url.rstrip("/").replace(".git", "")
-        cmd += ["--git-ref", git_ref]
-        return cmd
-
-    # ---- All other scanners ----
-    if repo_path:
-        cmd += ["--repo-path", repo_path]
-        if repo_url:
-            cmd += ["--repo-url", repo_url]
-        return cmd
-
-    if not repo_url:
-        raise SystemExit("Missing repo_url/repo_path.")
-    cmd += ["--repo-url", repo_url]
-    return cmd
-
-def run_one(cmd: List[str], dry_run: bool) -> int:
+def run_one(cmd: List[str], dry_run: bool, quiet: bool = False) -> int:
     print("  Command :", " ".join(cmd))
     if dry_run:
         print("  (dry-run: not executing)")
         return 0
 
-    result = subprocess.run(
-        cmd,
-        env=os.environ.copy(),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    env = os.environ.copy()
+    env.setdefault("PYTHONUNBUFFERED", "1")
+
+    if quiet:
+        result = subprocess.run(
+            cmd,
+            env=env,
+            cwd=str(ROOT_DIR),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    else:
+        result = subprocess.run(
+            cmd,
+            env=env,
+            cwd=str(ROOT_DIR),
+        )
     return result.returncode
 
 
+def sonar_extra_args(args: argparse.Namespace, repo_id: str) -> Dict[str, str]:
+    """Compute sonar-specific args (currently just --project-key)."""
+    require_env("SONAR_ORG")
+    require_env("SONAR_TOKEN")
+
+    if args.sonar_project_key:
+        project_key = args.sonar_project_key
+    else:
+        project_key = derive_sonar_project_key(os.environ["SONAR_ORG"], repo_id)
+
+    return {"project-key": project_key}
+
 
 def main() -> None:
-    # ✅ Always load .env from repo root so terminal runs behave like PyCharm runs
-    load_dotenv_if_present(ROOT_DIR / ".env")
+    # Always load .env from repo root so terminal runs behave like PyCharm runs
+    load_dotenv_if_present(ENV_PATH)
 
     args = parse_args()
 
@@ -234,23 +280,36 @@ def main() -> None:
                 {"scan": "Scan a repo with a single tool", "benchmark": "Run multiple scanners on a repo"},
             )
 
-    repo_url, repo_path, label = resolve_repo(args)
+    repo_url, repo_path, label, repo_id = resolve_repo(args)
 
     # --------------------- SCAN MODE ---------------------
     if mode == "scan":
         scanner = args.scanner
         if scanner is None:
+            # interactive menu
             scanner = choose_from_menu(
                 "Choose a scanner:",
-                {"semgrep": "Semgrep", "sonar": "SonarCloud", "snyk": "Snyk Code", "aikido": "Aikido"},
+                {k: SCANNER_LABELS.get(k, k) for k in sorted(SUPPORTED_SCANNERS)},
             )
 
-        cmd = build_scan_command(scanner, repo_url, repo_path)
+        extra_args: Dict[str, object] = {}
+        if scanner == "sonar":
+            extra_args = sonar_extra_args(args, repo_id)
+            print(f"  Sonar project key : {extra_args.get('project-key')}")
+
+        cmd = build_scan_command(
+            scanner,
+            repo_url=repo_url,
+            repo_path=repo_path,
+            extra_args=extra_args,
+            python_executable=sys.executable or "python",
+        )
 
         print("\n🚀 Running scan")
         print(f"  Scanner : {scanner}")
         print(f"  Target  : {label}")
-        code = run_one(cmd, args.dry_run)
+
+        code = run_one(cmd, args.dry_run, args.quiet)
 
         if code == 0:
             print("\n✅ Scan completed.")
@@ -274,8 +333,21 @@ def main() -> None:
     for scanner in scanners:
         print("\n----------------------------------------")
         print(f"▶ {scanner}")
-        cmd = build_scan_command(scanner, repo_url, repo_path)
-        code = run_one(cmd, args.dry_run)
+
+        extra_args: Dict[str, object] = {}
+        if scanner == "sonar":
+            extra_args = sonar_extra_args(args, repo_id)
+            print(f"  Sonar project key : {extra_args.get('project-key')}")
+
+        cmd = build_scan_command(
+            scanner,
+            repo_url=repo_url,
+            repo_path=repo_path,
+            extra_args=extra_args,
+            python_executable=sys.executable or "python",
+        )
+
+        code = run_one(cmd, args.dry_run, args.quiet)
         if code != 0:
             overall = code
 

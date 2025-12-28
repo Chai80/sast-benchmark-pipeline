@@ -45,6 +45,57 @@ def validate_sonarcloud_credentials(cfg: SonarConfig) -> None:
         )
 
 
+
+def fetch_ce_task(cfg: SonarConfig, task_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch /api/ce/task payload for a task id (best-effort)."""
+    headers = _auth_headers(cfg)
+    try:
+        resp = requests.get(
+            f"{cfg.host}/api/ce/task",
+            params={"id": task_id},
+            headers=headers,
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        print(f"⚠️ CE task request error for {task_id}: {e}")
+        return None
+
+    if resp.status_code == 404:
+        print(f"⚠️ CE task '{task_id}' not found (404).")
+        return None
+    if not resp.ok:
+        print(f"⚠️ CE task fetch failed: HTTP {resp.status_code} {resp.text[:120]}")
+        return None
+
+    try:
+        return resp.json()
+    except ValueError:
+        print(f"⚠️ Could not decode CE task JSON for {task_id}")
+        return None
+
+
+def component_exists(cfg: SonarConfig, project_key: str) -> bool:
+    """Return True if a project/component exists and is accessible via /api/components/show."""
+    headers = _auth_headers(cfg)
+    try:
+        resp = requests.get(
+            f"{cfg.host}/api/components/show",
+            params={"component": project_key, "organization": cfg.org},
+            headers=headers,
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        print(f"⚠️ components/show request error for {project_key}: {e}")
+        return False
+
+    if resp.status_code == 404:
+        return False
+    if resp.ok:
+        return True
+
+    print(f"⚠️ components/show HTTP {resp.status_code} for {project_key}: {resp.text[:120]}")
+    return False
+
 def wait_for_ce_success(cfg: SonarConfig, project_key: str, timeout_sec: int = 300) -> None:
     """Best-effort wait for Compute Engine to finish the latest analysis."""
     ce_url = f"{cfg.host}/api/ce/component"
@@ -76,6 +127,12 @@ def wait_for_ce_success(cfg: SonarConfig, project_key: str, timeout_sec: int = 3
                 return
             if status in ("FAILED", "CANCELED"):
                 print(f"⚠️ CE job for {project_key} ended with status={status}.")
+                task_id = current.get("id")
+                if task_id:
+                    payload = fetch_ce_task(cfg, task_id) or {}
+                    task = (payload.get("task") or {})
+                    if task.get("errorMessage"):
+                        print(f"🧾 CE errorMessage: {task['errorMessage']}")
                 return
             print(f"⏳ CE job status={status}, waiting...")
         else:
