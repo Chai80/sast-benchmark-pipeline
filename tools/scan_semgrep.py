@@ -274,11 +274,11 @@ def normalize_semgrep_results(
                 "line_content": line_content,
 
                 # match Snyk/Sonar normalized fields
-                "cwe_id": classification.get("cwe_id"),
-                "cwe_ids": classification.get("cwe_ids") or [],
+
+                # Classification output from shared resolver (includes vendor + canonical OWASP views)
+                **classification,
+
                 "vuln_class": vuln_class,
-                "owasp_top_10_2017": classification.get("owasp_top_10_2017"),
-                "owasp_top_10_2021": classification.get("owasp_top_10_2021"),
 
                 "vendor": {"raw_result": res},
             }

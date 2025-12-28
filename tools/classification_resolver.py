@@ -1,15 +1,31 @@
-"""
-tools/classification_resolver.py
+"""tools/classification_resolver.py
 
-Centralized OWASP/CWE resolution logic used by scanner normalizers.
+Centralized OWASP/CWE resolution logic used by *all* scanner normalizers.
 
-Important distinction:
-- The mappings folder centralizes the *data* (offline tables).
-- This module centralizes the *policy* for how to apply that data consistently.
+Why this file exists
+--------------------
+Different scanners expose different pieces of classification data:
+  - Some provide explicit OWASP Top 10 labels ("vendor OWASP")
+  - Some provide CWE IDs only
+  - Some provide neither (or provide them inconsistently)
 
-This is intentionally tool-agnostic:
-- Snyk can pass vendor_owasp_2021_codes from an offline rule-doc mapping.
-- Semgrep/Aikido can pass vendor_owasp_2021_codes=[] and rely on tags + CWE mapping.
+To make cross-tool benchmarking possible, we want a single place where:
+  1) We normalize *formats* (e.g., OWASP 2021 uses canonical A01..A10 codes)
+  2) We define *policy* (when do we trust vendor labels vs derived labels)
+  3) We can compute two explicit views for fair comparisons:
+
+     - Vendor OWASP: what the tool explicitly claims (tags / vendor mapping)
+     - Canonical OWASP: derived uniformly from CWE via a shared mapping table
+
+Important distinction
+--------------------
+The `mappings/` folder centralizes the *data* (offline tables).
+This module centralizes the *policy* for how to apply that data consistently.
+
+Tool-agnostic inputs
+-------------------
+  - Snyk can pass `vendor_owasp_2021_codes` from an offline rule-doc mapping.
+  - Semgrep/Aikido can pass `vendor_owasp_2021_codes=None` and rely on tags + CWE mapping.
 """
 
 from __future__ import annotations
@@ -282,9 +298,20 @@ def resolve_owasp_and_cwe(
       - vendor_owasp_2021_codes: optional "strong" OWASP-2021 codes from a vendor mapping table
       - cwe_to_owasp_map: MITRE-derived mapping to derive OWASP from CWE
 
-    Policy:
-      - OWASP 2021: tags -> vendor_owasp_2021_codes -> derived from CWE
-      - OWASP 2017: derived from CWE (primary), optional explicit 2017 tags if enabled
+    Outputs
+    -------
+    This function returns *both* vendor and canonical OWASP views.
+
+      - `owasp_top_10_2021_vendor`: Derived ONLY from tool-provided labels (tags / vendor mapping).
+      - `owasp_top_10_2021_canonical`: Derived ONLY from CWE via the shared MITRE mapping.
+
+    For backwards compatibility, we also keep the existing fields:
+      - `owasp_top_10_2021`: a "resolved" view (vendor preferred; fallback to canonical)
+      - `owasp_top_10_2017`: a "resolved" view (canonical preferred; fallback to vendor tags)
+
+    Why both views?
+      - Vendor labels are useful for "what the tool says".
+      - Canonical labels allow apples-to-apples comparisons across scanners.
     """
     # CWE normalize
     norm_cwe_ids: List[str] = []
@@ -295,21 +322,40 @@ def resolve_owasp_and_cwe(
     norm_cwe_ids = _dedupe_preserve_order(norm_cwe_ids)
     cwe_id = norm_cwe_ids[0] if norm_cwe_ids else None
 
-    # derive from CWE first (used for 2017 always, and 2021 as fallback)
+    # Derive from CWE first.
+    # This is our *canonical* view because it's tool-agnostic.
     derived_2017, derived_2021 = _derive_owasp_from_cwe_ids(norm_cwe_ids, cwe_to_owasp_map)
 
-    # OWASP 2017
-    owasp2017_block = derived_2017
-    if allow_2017_from_tags and owasp2017_block is None:
+    # ----------------------------
+    # OWASP Top 10 2017
+    # ----------------------------
+    # Canonical 2017 = derived from CWE.
+    owasp2017_canonical = derived_2017
+
+    # Vendor 2017 = explicit 2017 tags (opt-in).
+    owasp2017_vendor: Optional[Dict[str, Any]] = None
+    if allow_2017_from_tags:
         codes_2017 = _extract_owasp_codes_from_tags(tags or [], "2017")
-        owasp2017_block = _build_owasp_block(codes_2017, "2017") if codes_2017 else None
+        owasp2017_vendor = _build_owasp_block(codes_2017, "2017") if codes_2017 else None
 
-    # OWASP 2021: tags first
+    # Backwards compatible "resolved" view:
+    # historically we preferred CWE-derived 2017 (if available), otherwise tags.
+    owasp2017_resolved = owasp2017_canonical or owasp2017_vendor
+
+    # ----------------------------
+    # OWASP Top 10 2021
+    # ----------------------------
+    # Canonical 2021 = derived from CWE.
+    owasp2021_canonical = derived_2021
+
+    # Vendor 2021 = tool-provided labels.
+    # IMPORTANT: Vendor view should NOT fall back to CWE derivation.
+    # (Otherwise it becomes a blended view and is not comparable across tools.)
     codes_2021_tags = _extract_owasp_codes_from_tags(tags or [], "2021")
-    owasp2021_block = _build_owasp_block(codes_2021_tags, "2021") if codes_2021_tags else None
+    owasp2021_vendor = _build_owasp_block(codes_2021_tags, "2021") if codes_2021_tags else None
 
-    # then vendor codes if nothing from tags
-    if owasp2021_block is None and vendor_owasp_2021_codes:
+    # If no 2021 tags, use explicit vendor mapping codes (e.g., Snyk offline table).
+    if owasp2021_vendor is None and vendor_owasp_2021_codes:
         vnorm: List[str] = []
         for v in _flatten(vendor_owasp_2021_codes):
             nc = _normalize_owasp_code(v, "2021")
@@ -317,17 +363,25 @@ def resolve_owasp_and_cwe(
                 vnorm.append(nc)
         vnorm = _dedupe_preserve_order(vnorm)
         if vnorm:
-            owasp2021_block = _build_owasp_block(vnorm, "2021")
+            owasp2021_vendor = _build_owasp_block(vnorm, "2021")
 
-    # then derived from CWE
-    if owasp2021_block is None:
-        owasp2021_block = derived_2021
+    # Backwards compatible "resolved" view:
+    # historically we preferred tool-provided 2021 (tags/vendor), otherwise CWE-derived.
+    owasp2021_resolved = owasp2021_vendor or owasp2021_canonical
 
     return {
         "cwe_id": cwe_id,
         "cwe_ids": norm_cwe_ids,
-        "owasp_top_10_2017": owasp2017_block,
-        "owasp_top_10_2021": owasp2021_block,
+
+        # Backwards-compatible fields (existing schema keys)
+        "owasp_top_10_2017": owasp2017_resolved,
+        "owasp_top_10_2021": owasp2021_resolved,
+
+        # New explicit views (for fair benchmarking)
+        "owasp_top_10_2017_vendor": owasp2017_vendor,
+        "owasp_top_10_2017_canonical": owasp2017_canonical,
+        "owasp_top_10_2021_vendor": owasp2021_vendor,
+        "owasp_top_10_2021_canonical": owasp2021_canonical,
     }
 
 

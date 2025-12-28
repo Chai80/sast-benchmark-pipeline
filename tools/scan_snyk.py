@@ -523,11 +523,11 @@ def normalize_sarif(
                 "line_number": start,
                 "end_line_number": end,
                 "line_content": line_content,
-                "cwe_id": cls.get("cwe_id"),
-                "cwe_ids": cls.get("cwe_ids") or [],
+
+                # Classification output from shared resolver (includes vendor + canonical OWASP views)
+                **cls,
+
                 "vuln_class": None,
-                "owasp_top_10_2017": cls.get("owasp_top_10_2017"),
-                "owasp_top_10_2021": cls.get("owasp_top_10_2021"),
                 "vendor": {"raw_result": res},
             }
         )

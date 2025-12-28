@@ -589,10 +589,9 @@ def _build_finding(
         "line_content": None,  # no local source checkout in Aikido API mode
 
         # mappings/classification
-        "cwe_id": classification.get("cwe_id"),
-        "cwe_ids": classification.get("cwe_ids") or [],
-        "owasp_top_10_2017": classification.get("owasp_top_10_2017"),
-        "owasp_top_10_2021": classification.get("owasp_top_10_2021"),
+
+        # Classification output from shared resolver (includes vendor + canonical OWASP views)
+        **classification,
 
         "vendor": {"raw_result": issue},
     }
