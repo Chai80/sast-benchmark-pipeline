@@ -5,12 +5,14 @@ Simple CLI wrapper for the SAST pipeline (benchmark-free).
 Modes:
   1) scan      - run one scanner against one repo
   2) benchmark - run multiple scanners against one repo (simple loop)
+  3) analyze   - compute cross-tool metrics from existing normalized runs
 
 Usage:
   python sast_cli.py
   python sast_cli.py --mode scan --scanner snyk --repo-key juice_shop
   python sast_cli.py --mode scan --scanner semgrep --repo-url https://github.com/juice-shop/juice-shop.git
   python sast_cli.py --mode benchmark --repo-key juice_shop --scanners semgrep,snyk
+  python sast_cli.py --mode analyze --metric hotspots --repo-key juice_shop
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import json
 
 # Centralized command builder (prevents per-CLI drift)
 from pipeline.core import (
@@ -131,13 +134,50 @@ def choose_from_menu(title: str, options: Dict[str, object]) -> str:
 
 
 # -------------------------------------------------------------------
+# Small parsing helpers
+# -------------------------------------------------------------------
+
+
+def _parse_csv(raw: Optional[str]) -> List[str]:
+    """Parse a comma-separated list into cleaned items."""
+    if not raw:
+        return []
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+def _derive_runs_repo_name(
+    *,
+    repo_url: Optional[str],
+    repo_path: Optional[str],
+    fallback: str,
+) -> str:
+    """Best-effort repo name for runs/<tool>/<repo_name>/.
+
+    Scanners typically use the *git repo name* (last path segment of repo_url)
+    as the repo folder under runs/, e.g. "juice-shop".
+
+    If scanning a local repo_path, scanners use the folder name.
+    """
+    if repo_url:
+        last = repo_url.rstrip("/").split("/")[-1]
+        return last[:-4] if last.endswith(".git") else last
+    if repo_path:
+        return Path(repo_path).resolve().name
+    return fallback
+
+
+# -------------------------------------------------------------------
 # CLI entrypoint
 # -------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Top-level CLI for SAST pipeline (no benchmarks package).")
 
-    parser.add_argument("--mode", choices=["scan", "benchmark"], help="scan = one tool, benchmark = multiple tools")
+    parser.add_argument(
+        "--mode",
+        choices=["scan", "benchmark", "analyze"],
+        help="scan = one tool, benchmark = multiple tools, analyze = compute metrics from existing runs",
+    )
     parser.add_argument(
         "--scanner",
         choices=sorted(SUPPORTED_SCANNERS),
@@ -146,6 +186,45 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--scanners",
         help="(benchmark mode) Comma-separated scanners (default: semgrep,snyk,sonar,aikido)",
+    )
+
+    # Analysis / metrics
+    parser.add_argument(
+        "--metric",
+        choices=["hotspots"],
+        help="(analyze mode) Metric to compute (currently: hotspots)",
+    )
+    parser.add_argument(
+        "--tools",
+        help="(analyze mode) Comma-separated tools to include (default: semgrep,snyk,sonar,aikido)",
+    )
+    parser.add_argument(
+        "--runs-dir",
+        default=str(ROOT_DIR / "runs"),
+        help="(analyze mode) Base runs directory (default: <repo_root>/runs)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="(analyze mode) Output format (default: text)",
+    )
+    parser.add_argument(
+        "--out",
+        help="(analyze mode) Optional output path to write the JSON report",
+    )
+    parser.add_argument(
+        "--max-unique",
+        type=int,
+        default=25,
+        help="(analyze mode) For text output, show up to N unique files per tool (default: 25)",
+    )
+    parser.add_argument(
+        "--runs-repo-name",
+        help=(
+            "(analyze mode) Override the repo directory name under runs/<tool>/. "
+            "By default we derive it from the repo URL (e.g., juice-shop) or local folder name."
+        ),
     )
 
     # Repo selection (either preset key, or custom URL/path)
@@ -277,10 +356,72 @@ def main() -> None:
         else:
             mode = choose_from_menu(
                 "Choose an action:",
-                {"scan": "Scan a repo with a single tool", "benchmark": "Run multiple scanners on a repo"},
+                {
+                    "scan": "Scan a repo with a single tool",
+                    "benchmark": "Run multiple scanners on a repo",
+                    "analyze": "Analyze existing normalized runs (metrics)",
+                },
             )
 
     repo_url, repo_path, label, repo_id = resolve_repo(args)
+
+    # ------------------- ANALYZE MODE ------------------
+    if mode == "analyze":
+        metric = args.metric or "hotspots"
+        if metric != "hotspots":
+            raise SystemExit(f"Unsupported metric: {metric!r}")
+
+        tools_csv = args.tools or "snyk,semgrep,sonar,aikido"
+        tools = _parse_csv(tools_csv)
+        tools = [t for t in tools if t in SUPPORTED_SCANNERS]
+        if not tools:
+            raise SystemExit("No valid tools specified for analyze mode.")
+
+        runs_dir = Path(args.runs_dir).resolve()
+
+        # Repo folder name under runs/<tool>/ (often differs from preset key)
+        runs_repo_name = args.runs_repo_name or _derive_runs_repo_name(
+            repo_url=repo_url,
+            repo_path=repo_path,
+            fallback=label,
+        )
+
+        # Default: write a JSON artifact under runs/analysis/<repo>/ so the result
+        # can be consumed by UIs, notebooks, etc.
+        out_path = Path(args.out) if args.out else (runs_dir / "analysis" / runs_repo_name / "latest_hotspots_by_file.json")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        from pipeline.analysis.unique_overview import analyze_latest_hotspots_for_repo, print_text_report
+
+        try:
+            report = analyze_latest_hotspots_for_repo(
+                runs_repo_name,
+                tools=tools,
+                runs_dir=runs_dir,
+            )
+        except FileNotFoundError as e:
+            print("\n⚠️  No normalized runs found for analysis.")
+            print("   Expected layout: runs/<tool>/<repo_name>/<run_id>/<repo_name>.normalized.json")
+            print(f"   runs_dir       : {runs_dir}")
+            print(f"   repo_name      : {runs_repo_name}")
+            print(f"   tools          : {', '.join(tools)}")
+            print(f"\n   Details: {e}")
+            raise SystemExit(1)
+
+        # Always persist the report for traceability
+        out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+        print("\n📊 Hotspots-by-file report")
+        print(f"  Repo (runs dir): {runs_repo_name}")
+        print(f"  Tools         : {', '.join(tools)}")
+        print(f"  Saved report  : {out_path}")
+
+        if args.format == "json":
+            print(json.dumps(report, indent=2))
+        else:
+            print_text_report(report, max_unique=args.max_unique)
+
+        raise SystemExit(0)
 
     # --------------------- SCAN MODE ---------------------
     if mode == "scan":

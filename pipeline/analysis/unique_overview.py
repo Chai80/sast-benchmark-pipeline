@@ -574,6 +574,55 @@ def main() -> None:
             codes_str = ", ".join(str(c) for c in codes)
             print(f"- {fp}: {codes_str}")
 
+def print_text_report(report: Mapping[str, Any], *, max_unique: int = 25) -> None:
+    """Pretty-print a hotspots-by-file report.
+
+    This exists so the CLI can reuse the same formatting without duplicating
+    printing logic (keeps things non-spaghetti).
+    """
+
+    tools = sorted((report.get("tools") or {}).keys())
+
+    print("\n== Cross-tool summary ==")
+    print("Repo:", report.get("repo"))
+    print("Tools:", ", ".join(tools))
+    print("Signature type:", report.get("signature_type"))
+
+    counts = report.get("counts") or {}
+    print("Union signatures       :", counts.get("union"))
+    print("Intersection signatures:", counts.get("intersection"))
+
+    unique = report.get("unique") or {}
+    for t in tools:
+        n_unique = len(unique.get(t) or [])
+        print(f"Unique to {t:>8}: {n_unique}")
+
+    warnings = report.get("warnings") or []
+    for w in warnings:
+        print("\n⚠️", w)
+
+    max_unique = max(0, int(max_unique))
+    if max_unique == 0:
+        return
+
+    unique_by_file = report.get("unique_by_file")
+    if not isinstance(unique_by_file, dict):
+        unique_by_file = {}
+
+    for t in tools:
+        items = unique_by_file.get(t) or []
+        if not items:
+            continue
+        print(f"\n== Unique hotspots for {t} (showing up to {max_unique} files) ==")
+        for row in items[:max_unique]:
+            fp = row.get("file")
+            codes = row.get("codes")
+            if not isinstance(codes, list):
+                codes = []
+            codes_str = ", ".join(str(c) for c in codes)
+            print(f"- {fp}: {codes_str}")
+
+
 
 if __name__ == "__main__":
     main()
