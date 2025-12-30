@@ -1,20 +1,28 @@
-# Normalized findings schema
+# Normalized Findings Schema
+
+> **Docs:** [README](README.md) · [Architecture](ARCHITECTURE.md)
+
 
 This pipeline normalizes scanner-specific outputs (Semgrep, SonarCloud/SonarScanner, Snyk Code, Aikido) into a **single JSON format** so you can compare tools on the same target repo.
 
-This document describes the **current on-disk shape** produced by the pipeline, plus a few **backwards-compatible adjustments** to make the schema easier to reason about and extend.
+This document describes the **on-disk shape** of one normalized run output (one tool × one repo × one run), and clarifies a few **compatibility rules** that make cross-tool analysis reliable.
+
+> **Scope note:** This schema describes the *normalized run artifact* (`<repo>.normalized.json`).  
+> Derived analysis artifacts (e.g., “unique hotspots by file”) are documented briefly at the end and live under `runs/analysis/`.
 
 ---
 
 ## Versioning
 
 - `schema_version` is a string.
-- **Current**: `1.1` (as emitted by the scripts today).
-- **Documented here**: `1.2` (a documentation + compatibility update):
-  - Does **not** break existing outputs.
-  - Clarifies optional fields and tool-specific enrichment blocks.
-  - Treats `run_metadata` as first-class (it already exists in outputs).
-  - Clarifies that per-finding `metadata` is **optional/denormalized** (it exists today, but consumers shouldn’t *require* it).
+- **Current emitted by scripts**: `1.1` (historical runs may be `"1.1"`).
+- **Documented here**: `1.2` (documentation + backwards-compatible clarifications):
+  - Clarifies **file path semantics** and recommended normalization for comparisons.
+  - Clarifies **vendor vs canonical** classification fields (OWASP Top 10).
+  - Treats `run_metadata` as a first-class convenience field (it already exists in some outputs).
+  - Clarifies that per-finding `metadata` is optional/denormalized.
+
+No changes described here should break consumers that already parse `1.1` outputs.
 
 ---
 
@@ -47,10 +55,10 @@ Top-level shape:
 |---|---:|:---:|---|
 | `schema_version` | string | ✅ | Schema version string (e.g. `"1.1"`, `"1.2"`). |
 | `tool` | string | ✅ | Scanner short name: `semgrep`, `sonar`, `snyk`, `aikido`. |
-| `tool_version` | string | ✅ | Version string reported by the scanner wrapper/script. |
+| `tool_version` | string | ✅ | Version string reported by the wrapper/script. |
 | `target_repo` | object | ✅ | Repo identity + commit info (see below). |
 | `scan` | object | ✅ | Run identity + timings + file paths (see below). |
-| `run_metadata` | object | ⭕️ | Full contents of `metadata.json` embedded for convenience. Shape is tool-specific but usually includes commit + timing + command. |
+| `run_metadata` | object | ⭕️ | Embedded copy of the full per-run `metadata.json` (tool-specific). |
 | `sonar_rules_enrichment` | object | ⭕️ | Sonar-only summary block when rule enrichment was performed. |
 | `findings` | array<object> | ✅ | List of normalized findings. |
 
@@ -103,23 +111,23 @@ Describes **how and when you scanned**:
 | Field | Type | Required | Notes |
 |---|---:|:---:|---|
 | `run_id` | string | ✅ | Run directory ID (`YYYYMMDDNN`). |
-| `scan_date` | string | ✅ | Timestamp when the run was executed / recorded. |
+| `scan_date` | string | ✅ | Timestamp when the run was executed/recorded. |
 | `command` | string\|null | ⭕️ | Command used to invoke the scanner (reproducibility). |
-| `raw_results_path` | string | ✅ | Where the raw vendor JSON is stored for this run. |
+| `raw_results_path` | string | ✅ | Where the raw vendor output is stored for this run. |
 | `scan_time_seconds` | number\|null | ⭕️ | Runtime of scan command (if measured). |
-| `exit_code` | integer\|null | ⭕️ | Exit code from the scan command (0/1 success-ish; tool-specific). |
+| `exit_code` | integer\|null | ⭕️ | Exit code from the scan command (tool-specific). |
 | `metadata_path` | string | ✅ | Relative path to `metadata.json` inside the run directory. |
-| `log_path` | string\|null | ⭕️ | Some tools (notably Sonar) may include a log path in run metadata; you *may* surface it here later for consistency. |
+| `log_path` | string\|null | ⭕️ | Optional: log path (some tools may surface this later for consistency). |
 
 **Why both `scan` and `run_metadata`?**  
-- `scan` is the *stable, minimal contract* needed to identify the run.  
-- `run_metadata` is a convenient embedded copy of the full per-run `metadata.json` (which may vary per tool).
+- `scan` is the stable minimal contract needed to identify the run.
+- `run_metadata` is a convenient embedded copy of the full per-run metadata.
 
 ---
 
 ## Findings
 
-`findings[]` is the main payload: **one element per issue/finding**.
+`findings[]` is the main payload: **one element per tool finding**.
 
 ### Finding object (core fields)
 
@@ -142,43 +150,98 @@ Describes **how and when you scanned**:
 | Field | Type | Required | Notes |
 |---|---:|:---:|---|
 | `finding_id` | string | ✅ | Stable-ish identifier. Convention: `<tool>:<rule_id>:<file_path>:<line>`. |
-| `rule_id` | string\|null | ✅ | Vendor rule identifier (Semgrep check_id, Sonar rule key, Snyk ruleId, etc.). |
+| `rule_id` | string\|null | ✅ | Vendor rule identifier (Semgrep `check_id`, Sonar rule key, Snyk `ruleId`, etc.). |
 | `title` | string\|null | ✅ | Human-readable message/title. |
-| `severity` | string\|null | ⭕️ | **Normalized** severity. Current pipeline uses: `HIGH`, `MEDIUM`, `LOW` (or `null` if unknown). |
-| `file_path` | string\|null | ⭕️ | Path within repo. |
+| `severity` | string\|null | ⭕️ | Normalized severity (`HIGH`, `MEDIUM`, `LOW`) or `null`. |
+| `file_path` | string\|null | ⭕️ | Best-effort path to the file within the repo (see “File path semantics”). |
 | `line_number` | integer\|null | ⭕️ | Start line (1-indexed). |
 | `end_line_number` | integer\|null | ⭕️ | End line (1-indexed). |
-| `line_content` | string\|null | ⭕️ | Best-effort source snippet (usually the start line). |
+| `line_content` | string\|null | ⭕️ | Best-effort snippet (usually the start line). |
 | `vendor` | object\|null | ⭕️ | Tool-specific details (see below). |
 
-### Classification fields (optional)
+---
 
-These fields exist to make analysis easier *without* having to parse vendor raw objects.
+## File path semantics (important for cross-tool comparisons)
+
+`file_path` is **best-effort** and may vary across tools and runs. In particular, some tools may include a repo prefix (e.g., `juice-shop/routes/...`) while others emit repo-relative paths (`routes/...`).
+
+### Recommended normalization for comparisons
+
+When building cross-tool metrics (e.g., “unique hotspots by file”), normalize paths at **analysis time** using these rules:
+
+1. Convert `\` → `/`
+2. Strip leading `./`
+3. Strip leading `/`
+4. Collapse duplicate slashes (`//` → `/`)
+5. If the path begins with `{target_repo.name}/`, strip that prefix
+
+This ensures the same file is comparable across tools.
+
+### Optional future field (backwards-compatible)
+
+If you later want normalization inside the normalized JSON (rather than only at analysis-time), store both:
+
+- `file_path_raw` (string\|null): original path as emitted by the tool parser
+- `file_path` (string\|null): normalized repo-relative path
+
+This preserves provenance while keeping `file_path` comparison-ready.
+
+---
+
+## Classification fields (optional but strongly recommended)
+
+These fields exist to make analysis easier without having to parse vendor raw objects.
 
 | Field | Type | Required | Notes |
 |---|---:|:---:|--|
-| `cwe_id` | string\|null | Single CWE (e.g. `"CWE-89"`). Present when the tool supplies exactly one or we pick a primary. |
-| `cwe_ids` | array<string> |Multiple CWEs (primarily from Sonar rule enrichment). If present, `cwe_id` is typically the first entry. |
-| `vuln_class` | string\|null | A human rule/category name (Sonar: rule `name` from `/api/rules/show`). |
-| `owasp_top_10_2017` | object\|null | OWASP Top 10 2017 mapping (see structure below). |
-| `owasp_top_10_2021` | object\|null | OWASP Top 10 2021 mapping (see structure below). |
-| `issue_type` | string\|null | Optional normalized “kind” (e.g. Sonar `VULNERABILITY`/`BUG`/`CODE_SMELL`). Recommended addition for readability, not required. |
+| `cwe_id` | string\|null | ⭕️ | Single CWE (e.g. `"CWE-89"`). |
+| `cwe_ids` | array<string> | ⭕️ | Multiple CWEs (often from Sonar rule enrichment). |
+| `vuln_class` | string\|null | ⭕️ | Human rule/category name (e.g., Sonar rule name). |
+| `issue_type` | string\|null | ⭕️ | Optional normalized kind (e.g., Sonar `VULNERABILITY`/`BUG`/`CODE_SMELL`). |
+| `owasp_top_10_2017_vendor` | object\|null | ⭕️ | OWASP 2017 mapping reported by the tool (if tool provides). |
+| `owasp_top_10_2017_canonical` | object\|null | ⭕️ | OWASP 2017 mapping derived from CWE→OWASP mapping (canonical). |
+| `owasp_top_10_2021_vendor` | object\|null | ⭕️ | OWASP 2021 mapping reported by the tool (if tool provides). |
+| `owasp_top_10_2021_canonical` | object\|null | ⭕️ | OWASP 2021 mapping derived from CWE→OWASP mapping (canonical). |
+| `owasp_top_10_2017` | object\|null | ⭕️ | Compatibility alias (prefer explicit `*_vendor` and `*_canonical`). |
+| `owasp_top_10_2021` | object\|null | ⭕️ | Compatibility alias (prefer explicit `*_vendor` and `*_canonical`). |
 
-#### OWASP block structure
+### Vendor vs canonical (do not blur)
 
-When present, the OWASP fields follow this structure:
+- **Vendor** OWASP fields (`*_vendor`) represent what the scanner itself claims.
+- **Canonical** OWASP fields (`*_canonical`) represent a tool-agnostic mapping derived from CWE (e.g., MITRE CWE→OWASP Top 10 mapping).
+
+To keep comparisons honest, avoid mixing these sources silently:
+- Cross-tool metrics should prefer **canonical** (tool-agnostic).
+- Vendor fields are best for “what the tool says” auditing/debugging.
+
+### OWASP block structure
+
+When present, OWASP blocks follow:
 
 ```json
-"owasp_top_10_2021": {
+"owasp_top_10_2021_canonical": {
   "codes": ["A03"],
   "categories": ["A03:2021-Injection"]
 }
 ```
 
-- `codes` is the short OWASP code list (e.g. `["A03"]`).
-- `categories` is the same list but with human-readable labels.
+- `codes`: short OWASP code list (e.g. `["A03"]`)
+- `categories`: codes with human-readable labels
 
-**Important:** most findings will **not** have OWASP mapping. For Sonar, OWASP mappings come from rule metadata (`securityStandards`) and are typically present only for security rules.
+---
+
+## Optional: finding kind (recommended future addition)
+
+Some tools may report non-SAST issues (e.g., dependency/SCA, secrets). To make filtering non-spaghetti in analysis, consider adding an optional normalized field:
+
+- `finding_kind`: one of:
+  - `sast` (code issue with file/line)
+  - `sca` (dependency/package issue)
+  - `secrets` (leaked secret)
+  - `config` (configuration issue)
+  - `other`
+
+This is **optional** and backwards-compatible. In the meantime, analysis can approximate this using heuristics (e.g., `line_number != null` often implies code).
 
 ---
 
@@ -201,7 +264,7 @@ This is useful for debugging and future enrichments, but it can make files large
 
 ## Per-finding `metadata` (denormalized / optional)
 
-Some existing outputs include a `metadata` object inside every finding:
+Some outputs include a `metadata` object inside each finding:
 
 ```json
 "metadata": {
@@ -212,11 +275,10 @@ Some existing outputs include a `metadata` object inside every finding:
 }
 ```
 
-This is **pure duplication** of top-level fields, useful only if you want each finding to stand alone as a “row”.
+This duplicates top-level fields. In schema v1.2:
 
-**In schema v1.2:**
 - Consumers should treat `finding.metadata` as **optional**.
-- Producers may keep it for convenience, but it is not required for correct parsing.
+- Producers may keep it for convenience, but it is not required.
 
 ---
 
@@ -234,17 +296,22 @@ When Sonar rule classification enrichment runs, you’ll see:
 }
 ```
 
-This block is informational and helps you debug enrichment coverage.
-
 ---
 
-## Summary of schema adjustments vs the older doc
+## Derived analysis artifacts (not part of the normalized schema)
 
-Compared to the older `normalized-schema.md` in the repo, this document updates/clarifies:
+The analysis layer reads normalized run artifacts and produces derived reports, for example:
 
-1. **`run_metadata` is documented** as a first-class top-level field (it already exists in current outputs).
-2. **`scan` documents runtime + exit code** (`scan_time_seconds`, `exit_code`) which were missing in the old doc but are in the scripts.
-3. **Optional classification keys** are documented (`cwe_ids`, `vuln_class`, OWASP blocks), matching the Sonar enrichment behavior.
-4. **Per-finding `metadata` is treated as optional** (recommended to avoid requiring duplicated data downstream).
-5. Calls out a future-compatible way to shrink files: store a vendor pointer instead of embedding full `raw_result`.
+### Unique hotspots by file
 
+Signature:
+```
+(normalized_file_path, OWASP_2021_canonical_code)
+```
+
+Typical output location:
+```
+runs/analysis/<repo_name>/latest_hotspots_by_file.json
+```
+
+These derived reports are safe to delete and recompute and are not subject to the normalized schema versioning.

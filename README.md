@@ -1,62 +1,74 @@
-# SAST Benchmark Pipeline
+# Durinn.AI — SAST Benchmark & Normalization Pipeline
 
-This repo is a small pipeline that runs multiple SAST tools on the **same codebase** (e.g. OWASP Juice Shop) and writes **comparable JSON outputs** per tool:
+This repo runs multiple SAST scanners (Semgrep, SonarCloud/SonarScanner, Snyk Code, Aikido) against a target repository and writes **comparable JSON outputs** per tool:
 
-- Raw tool output (`<repo>.json`)
-- Normalized output (`<repo>.normalized.json`) using `normalized-schema.md` (schema v1.1)
+- Raw tool output (tool-specific format, saved per run)
+- Normalized output (`<repo>.normalized.json`) using the contract in `normalized-schema.md`
 - `metadata.json` (tool version, commit SHA, command, timings, etc.)
 
-Supported tools (see `tools/`):
+## Documentation
 
-- `scan_semgrep.py`
-- `scan_sonar.py`
-- `scan_snyk.py`
-- `scan_aikido.py`
-
-There is also a unified CLI entrypoint:
-
-- `sast_cli.py` — interactive menus or fully non-interactive flags
-
-
----
-
-## Quickstart (recommended)
-
-From the repo root:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python sast_cli.py --mode scan --scanner semgrep --target juice_shop
-```
-
-Outputs will appear under `runs/` (see “Outputs” below).
-
-
----
+- **Architecture (Option B packaging):** `ARCHITECTURE.md`
+- **Normalized output contract:** `normalized-schema.md`
 
 ## Requirements
 
 ### General
 
 - Python **3.10+**
-  - The codebase uses Python 3.10 syntax (e.g. `Path | str`).
-- `git` installed
-- Python dependencies:
+- `git` available on your `PATH`
+
+### Python dependencies
+
+Install the Python dependencies from `requirements.txt`:
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 ```
 
-> Notes:
-> - `semgrep` can be installed via pip (recommended) or separately as a CLI.
-> - `sonar-scanner` and `snyk` are external CLIs and are not installed via `requirements.txt`.
+Windows (PowerShell):
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+> Note: `requirements.txt` covers the pipeline + shared utilities and includes Semgrep as a Python-installed CLI.  
+> Snyk and Sonar require **separate external CLIs** (see below).
+
+## Tool prerequisites
+
+### Semgrep
+- Installed via `pip install -r requirements.txt` (or `pip install semgrep`).
+
+### Snyk Code
+- Install the **Snyk CLI** (external dependency).
+  - Example (npm): `npm install -g snyk`
+- Provide a token via env var: `SNYK_TOKEN`
+  - If you run `sast_cli.py`, it will load a project-root `.env` file automatically (if present).
+  - If you run `tools/scan_snyk.py` directly, export `SNYK_TOKEN` in your shell.
+
+### SonarCloud / SonarScanner
+- Java **17+**
+- `sonar-scanner` installed and available on `PATH`
+- SonarCloud org + token
+  - Required env vars: `SONAR_ORG`, `SONAR_TOKEN`
+  - Optional: `SONAR_HOST` (defaults to `https://sonarcloud.io` in most setups)
+
+### Aikido
+- Aikido workspace + Public REST API credentials
+  - Required env vars: `AIKIDO_CLIENT_ID`, `AIKIDO_CLIENT_SECRET`
+
+## Configuration
 
 ### Environment variables (`.env`)
 
-Create a `.env` file in the project root (or copy from `.env.example`):
+Create a `.env` file in the repo root **or** export variables in your shell.
+
+Example `.env`:
 
 ```dotenv
 # Aikido
@@ -72,220 +84,124 @@ SONAR_HOST=https://sonarcloud.io
 SNYK_TOKEN=
 ```
 
-### Tool-specific prerequisites
+`python sast_cli.py` automatically loads `.env` if present.
 
-#### Semgrep
-- Install Semgrep:
-  ```bash
-  pip install semgrep
-  ```
+## Quickstart
 
-#### Snyk Code
-- Install Snyk CLI:
-  ```bash
-  npm install -g snyk
-  ```
-- Set `SNYK_TOKEN` in `.env`
-
-#### SonarCloud (sonar-scanner)
-- Java **17+**
-- `sonar-scanner` installed and available on `PATH`
-- SonarCloud org + projects set up (or created once via UI)
-- Set `SONAR_ORG`, `SONAR_TOKEN`, and optionally `SONAR_HOST`
-
-#### Aikido
-- Aikido workspace + Public REST API credentials
-- Set `AIKIDO_CLIENT_ID` and `AIKIDO_CLIENT_SECRET`
-
-
----
-
-## Unified CLI (`sast_cli.py`)
-
-### Interactive usage
+### 1) Run a single scan (recommended entrypoint)
 
 ```bash
-python sast_cli.py
+python sast_cli.py --mode scan --scanner semgrep --repo-key juice_shop
 ```
 
-- Menus let you pick scan vs benchmark, tool, target, etc.
-- Press `Z` to exit at any menu.
-
-### Non-interactive examples
-
-**Single scan (Snyk on Juice Shop)**
+You can also scan any repo by URL:
 
 ```bash
-python sast_cli.py --mode scan --scanner snyk --target juice_shop
+python sast_cli.py --mode scan --scanner semgrep --repo-url https://github.com/juice-shop/juice-shop.git
 ```
 
-**Single scan, show the command only (no execution)**
+### 2) Run multiple scanners (benchmark mode)
 
 ```bash
-python sast_cli.py --mode scan --scanner semgrep --target juice_shop --dry-run
+python sast_cli.py --mode benchmark --repo-key juice_shop --scanners semgrep,snyk,sonar,aikido
 ```
 
-**Runtime benchmark (all tools) on Juice Shop**
+### 3) Analyze existing normalized results
+
+Currently supported metric: `hotspots`
 
 ```bash
-python sast_cli.py --mode benchmark --suite runtime --target juice_shop
+python sast_cli.py --mode analyze --metric hotspots --repo-key juice_shop
 ```
 
-**Runtime benchmark for a subset of tools**
+This reads the latest normalized outputs and writes derived analysis artifacts under `runs/analysis/`.
 
-```bash
-python sast_cli.py --mode benchmark --suite runtime --target juice_shop --scanners semgrep,snyk
-```
+## Running scanners directly (bypassing `sast_cli.py`)
 
-Benchmark summary JSON will be written under `runs/benchmarks/` unless `--no-save-benchmark` is used.
+You can run each tool entrypoint directly. These scripts are the stable integration contract used by the pipeline:
 
-
----
-
-## Running tools directly (optional)
-
-You can run each tool script directly instead of using `sast_cli.py`.
+- `tools/scan_semgrep.py`
+- `tools/scan_snyk.py`
+- `tools/scan_sonar.py`
+- `tools/scan_aikido.py`
 
 ### Semgrep
 
 ```bash
-python tools/scan_semgrep.py \
-  --repo-url https://github.com/juice-shop/juice-shop.git \
-  --config p/security-audit \
-  --output-root runs/semgrep
+python tools/scan_semgrep.py   --repo-url https://github.com/juice-shop/juice-shop.git   --config p/security-audit   --output-root runs/semgrep
 ```
 
 ### Snyk
 
 ```bash
-python tools/scan_snyk.py \
-  --repo-url https://github.com/juice-shop/juice-shop.git \
-  --output-root runs/snyk
+python tools/scan_snyk.py   --repo-url https://github.com/juice-shop/juice-shop.git   --output-root runs/snyk
 ```
 
 ### SonarCloud
 
+Run scan + fetch issues:
+
 ```bash
-python tools/scan_sonar.py \
-  --repo-url https://github.com/juice-shop/juice-shop.git \
-  --project-key chai80_juice_shop \
-  --output-root runs/sonar
+python tools/scan_sonar.py   --repo-url https://github.com/juice-shop/juice-shop.git   --project-key <your_sonar_project_key>   --output-root runs/sonar
 ```
 
-Pull issues from an existing SonarCloud project without running a new scan:
+Fetch issues from an existing SonarCloud project without running a new scan:
 
 ```bash
-python tools/scan_sonar.py \
-  --repo-url https://github.com/juice-shop/juice-shop.git \
-  --project-key chai80_juice_shop \
-  --skip-scan \
-  --output-root runs/sonar
+python tools/scan_sonar.py   --repo-url https://github.com/juice-shop/juice-shop.git   --project-key <your_sonar_project_key>   --skip-scan   --output-root runs/sonar
 ```
 
 ### Aikido
 
 ```bash
-python tools/scan_aikido.py \
-  --git-ref Chai80/juice-shop \
-  --output-root runs/aikido
+python tools/scan_aikido.py   --git-ref <owner>/<repo>   --output-root runs/aikido
 ```
-
-
----
 
 ## Outputs
 
-### Preferred output layout (Semgrep / Snyk / Sonar)
+### Output layout
 
-These tools group outputs by repo name:
+Runs are stored locally and are safe to delete/recompute.
 
-```bash
+```text
 runs/
-  semgrep/
-    juice-shop/
-      2025120201/
-        juice-shop.json
-        juice-shop.normalized.json
-        metadata.json
-  snyk/
-    juice-shop/
-      2025120201/
-        juice-shop.json
-        juice-shop.normalized.json
-        metadata.json
-  sonar/
-    juice-shop/
-      2025120201/
-        juice-shop.json
-        juice-shop.normalized.json
-        juice-shop_sonar_scan.log
-        metadata.json
+  semgrep/<repo_name>/<run_id>/
+    <repo_name>.json
+    <repo_name>.normalized.json
+    metadata.json
+
+  snyk/<repo_name>/<run_id>/
+    <repo_name>.sarif
+    <repo_name>.normalized.json
+    metadata.json
+
+  sonar/<repo_name>/<run_id>/
+    <repo_name>.json
+    <repo_name>.normalized.json
+    <repo_name>_sonar_scan.log
+    metadata.json
+
+  aikido/<repo_name>/<run_id>/
+    <repo_name>.json
+    <repo_name>.normalized.json
+    metadata.json
+
+  analysis/<repo_name>/
+    latest_hotspots_by_file.json
 ```
-
-### Aikido output layout (current)
-
-Aikido currently writes into:
-
-```bash
-runs/
-  aikido/
-    2025120201/
-      juice-shop.json
-      juice-shop.normalized.json
-      metadata.json
-```
-
-> If you want perfect consistency, update `tools/scan_aikido.py` to also write under `runs/aikido/<repo_name>/<run_id>/` like the others.
 
 ### Run IDs
+
 Each run directory ID is `YYYYMMDDNN` (date + counter for that day).
 
+## Option B packaging (keeping code clean)
 
----
+We keep `tools/scan_*.py` as stable entrypoints and isolate tool logic behind per-scanner modules/packages to reduce “god scripts”.
 
-## Benchmark Targets
+See `ARCHITECTURE.md` for the full diagram and conventions.
 
-Targets are defined in `benchmarks/targets.py`.
-
-| Target key             | Repo URL (Semgrep/Snyk/Sonar) | Aikido ref | SonarCloud project key (example) |
-|------------------------|--------------------------------|------------|----------------------------------|
-| `juice_shop`           | https://github.com/juice-shop/juice-shop.git | Chai80/juice-shop | chai80_juice_shop |
-| `dvpwa`                | https://github.com/vulnerable-apps/dvpwa.git | Chai80/dvpwa | chai80_dvpwa |
-| `owasp_benchmark`      | https://github.com/OWASP-Benchmark/BenchmarkJava.git | Chai80/owasp_benchmark | chai80_owasp_benchmark |
-| `spring_realworld`     | https://github.com/gothinkster/spring-boot-realworld-example-app.git | Chai80/spring_realworld | chai80_spring_realworld |
-| `vuln_node_express`    | https://github.com/vulnerable-apps/vuln_node_express.git | Chai80/vuln_node_express | chai80_vuln_node_express |
-
-
----
-
-## Folder Layout Summary
-
-```bash
-sast-benchmark-pipeline/
-├── benchmarks/
-│   ├── __init__.py
-│   ├── runtime.py              # benchmark suite runner
-│   └── targets.py              # central TARGETS config used by CLI
-├── tools/
-│   ├── run_utils.py            # shared helpers (clone repo, run dirs, git info)
-│   ├── scan_semgrep.py
-│   ├── scan_snyk.py
-│   ├── scan_sonar.py
-│   └── scan_aikido.py
-├── repos/                      # cloned repos (auto-created; do not commit)
-├── runs/                       # outputs (auto-created; do not commit)
-├── sast_cli.py                 # unified CLI (scan + benchmark)
-├── normalized-schema.md
-├── README.md
-├── requirements.txt
-└── .env                        # do not commit; use .env.example
-```
-
-
----
-
-## Repo hygiene notes
+## Repo hygiene
 
 - `repos/` and `runs/` are generated. Do not commit them.
 - Do not commit IDE folders like `.idea/`
-- Commit `.env.example` (but never commit `.env`)
+- Never commit `.env` (tokens/secrets). If you add an `.env.example`, commit that instead.
