@@ -1,8 +1,15 @@
-# Architecture (Option B Packaging)
+# Architecture 
 
-This repo uses **Option B**: keep stable script entrypoints (`tools/scan_*.py`) so the pipeline can shell out reliably, while moving tool-specific logic into per-scanner packages under `tools/<scanner>/`.
+- Keep **stable script entrypoints** (`tools/scan_*.py`) so the pipeline can shell out reliably.
+- Move **tool-specific logic** into isolated packages under `tools/<tool>/`.
+- Treat **normalized JSON** as the cross-tool contract consumed by all analysis code.
 
-## Repository structure
+The primary goal is to enforce clear ownership,
+one-way dependencies, and a single source of truth for shared logic.
+
+---
+
+## Repository Structure (Layered)
 
 ```text
 repo_root/
@@ -15,27 +22,41 @@ repo_root/
 │     └─ path_normalization.py
 │
 ├─ tools/
-│  ├─ core.py
-│  ├─ normalize_common.py
-│  ├─ normalize_extractors.py
-│  ├─ classification_resolver.py
 │  │
+│  │  Stable entrypoints (subprocess contract)
 │  ├─ scan_semgrep.py
 │  ├─ scan_snyk.py
 │  ├─ scan_sonar.py
 │  └─ scan_aikido.py
 │  │
+│  │  Shared platform helpers (no tool-specific parsing here)
+│  ├─ io.py                     # canonical JSON + file IO helpers
+│  └─ core.py                   # orchestration helpers / legacy re-exports
+│  │
+│  │  Canonical shared normalization layer
+│  ├─ normalize/
+│  │  ├─ common.py              # schema builders (repo, scan metadata)
+│  │  ├─ extractors.py          # shared extraction (location, tags, CWE, text)
+│  │  └─ classification.py      # CWE / OWASP resolution and mapping logic
+│  │
+│  │  Compatibility shims (forwarding modules only)
+│  │  - kept so older imports don’t break after refactors
+│  ├─ normalize_common.py
+│  ├─ normalize_extractors.py
+│  └─ classification_resolver.py
+│  │
+│  │  Tool-specific packages (each tool isolated)
 │  ├─ semgrep/
-│  │  ├─ __init__.py        # execute(...)
-│  │  ├─ runner.py          # runs semgrep, writes raw artifacts
-│  │  └─ normalize.py       # raw semgrep JSON -> normalized schema
+│  │  ├─ __init__.py            # execute(...)
+│  │  ├─ runner.py              # runs semgrep; writes raw artifacts
+│  │  └─ normalize.py           # raw -> normalized (uses tools/normalize/*)
 │  │
 │  ├─ snyk/
-│  │  ├─ __init__.py        # execute(...)
-│  │  ├─ runner.py          # runs snyk, writes SARIF/raw
-│  │  ├─ sarif.py           # SARIF helpers (optional)
-│  │  ├─ vendor_rules.py    # mapping helpers (optional)
-│  │  └─ normalize.py       # SARIF -> normalized schema
+│  │  ├─ __init__.py
+│  │  ├─ runner.py
+│  │  ├─ sarif.py
+│  │  ├─ vendor_rules.py
+│  │  └─ normalize.py
 │  │
 │  ├─ sonar/
 │  │  ├─ __init__.py
@@ -45,56 +66,131 @@ repo_root/
 │  │  └─ normalize.py
 │  │
 │  └─ aikido/
-│     ├─ __init__.py        # execute(...)
-│     ├─ runner.py          # orchestrates scan/export, writes raw
-│     ├─ normalize.py       # raw Aikido issues -> normalized schema
-│     └─ client.py          # optional HTTP client split
+│     ├─ __init__.py
+│     ├─ runner.py
+│     ├─ normalize.py
+│     └─ client.py
 │
 └─ mappings/
    ├─ cwe_to_owasp_top10_mitre.json
    └─ snyk_rule_to_owasp_2021.json
 ```
 
-## Runtime flow
+---
+
+## Process Flow (End-to-End)
 
 ```text
-User / CI
-  |
-  v
-sast_cli.py
-  |
-  v
-pipeline/core.py  (Orchestrator)
-  |
-  |  For each selected tool:
-  |  - builds subprocess command:
-  |      python tools/scan_<tool>.py <args...>
-  v
-tools/scan_<tool>.py  (Thin shim / stable entrypoint)
-  |
-  |  parses args
-  |  calls tools.<tool>.execute(...)
-  v
-tools/<tool>/__init__.py
-  |
-  |-- runner.py      -> writes raw tool output
-  |-- normalize.py   -> writes normalized schema output
-  |
-  v
-runs/<tool>/<repo>/<run_id>/
-  ├─ <raw outputs>
-  ├─ <repo>.normalized.json
-  └─ metadata.json / logs
-  |
-  v
-pipeline/analysis/*
-  - reads normalized outputs
-  - produces derived reports under runs/analysis/
+                 +--------------------------+
+                 |        sast_cli.py       |
+                 |  (user chooses repo/tool)|
+                 +------------+-------------+
+                              |
+                              v
+                 +--------------------------+
+                 |     pipeline/core.py     |
+                 |  (orchestrates scans)    |
+                 +------------+-------------+
+                              |
+                              |  stable subprocess contract:
+                              |  python tools/scan_<tool>.py <args...>
+                              v
+        +---------------------+-----------------------+---------------------+
+        |                     |                       |                     |
+        v                     v                       v                     v
++-------------------+  +-------------------+   +-------------------+  +-------------------+
+| tools/scan_snyk.py |  | tools/scan_semgrep|   | tools/scan_sonar.py|  | tools/scan_aikido |
+| (thin shim)        |  | .py (thin shim)   |   | (thin shim)        |  | .py (thin shim)  |
++---------+---------+  +---------+---------+   +---------+---------+  +---------+---------+
+          |                      |                       |                     |
+          | calls                | calls                 | calls               | calls
+          v                      v                       v                     v
++-------------------+  +-------------------+   +-------------------+  +-------------------+
+| tools/snyk/        |  | tools/semgrep/    |   | tools/sonar/       |  | tools/aikido/     |
+| __init__.py        |  | __init__.py       |   | __init__.py        |  | __init__.py      |
+| execute(...)       |  | execute(...)      |   | execute(...)       |  | execute(...)     |
++---------+---------+  +---------+---------+   +---------+---------+  +---------+---------+
+          |                      |                       |                     |
+          | runner -> raw output | runner -> raw output  | api/runner -> raw   | runner -> raw output
+          | normalize ->         | normalize ->          | normalize ->        | normalize ->
+          | normalized JSON      | normalized JSON       | normalized JSON     | normalized JSON
+          v                      v                       v                     v
+
+                 +--------------------------------------------------+
+                 |              SHARED NORMALIZATION                 |
+                 | tools/normalize/common.py  (schema builders)      |
+                 | tools/normalize/extractors.py (location/tags/CWE) |
+                 | tools/normalize/classification.py (CWE->OWASP)    |
+                 | tools/io.py (read/write JSON, read_line_content)  |
+                 +---------------------------+---------------------- +
+                                             |
+                                             v
+                 +--------------------------------------------------+
+                 |                   OUTPUTS                         |
+                 | runs/<tool>/<repo>/<run_id>/                       |
+                 |   - raw tool outputs (vendor format)               |
+                 |   - <repo>.normalized.json (cross-tool contract)   |
+                 |   - metadata/logs                                  |
+                 +---------------------------+---------------------- +
+                                             |
+                                             v
+                 +--------------------------------------------------+
+                 |              pipeline/analysis/*                   |
+                 | - discovers latest normalized runs                 |
+                 | - computes uniques/hotspots (e.g., file x OWASP)   |
+                 | - writes derived reports under runs/analysis/      |
+                 +--------------------------------------------------+
 ```
 
-## Design rules
+---
 
-- The pipeline depends only on `tools/scan_*.py` paths (stable contract).
-- Tool-specific logic lives inside `tools/<tool>/`.
-- Normalized JSON is the cross-tool contract; analysis should not parse vendor raw formats.
-- Shared helpers stay small and boring (`tools/core.py`, normalization helpers).
+## Compatibility Shims (Plain English)
+
+The modules:
+- `tools/normalize_common.py`
+- `tools/normalize_extractors.py`
+- `tools/classification_resolver.py`
+
+exist only to keep **old import paths working** after shared normalization code was
+moved into the canonical package `tools/normalize/`.
+
+They must contain **no real logic** and only re-export symbols from the canonical modules.
+
+**Rule:** new code should import from `tools/normalize/*` directly.
+
+---
+
+## Mappings (Ground Truth Reference Data)
+
+The `mappings/` directory contains **data-only reference tables**, such as:
+
+- CWE → OWASP Top 10 mappings
+- Vendor rule ID → OWASP mappings (e.g., Snyk)
+
+These files are treated as **ground truth inside this system**, but they are interpreted
+in exactly one place:
+
+- `tools/normalize/classification.py`
+
+**Rule:** tool normalizers must NOT load mapping files directly.
+
+---
+
+## Design Rules (Anti-Spaghetti Constraints)
+
+1. **Stable contract**
+   - The pipeline depends only on `tools/scan_*.py` paths.
+
+2. **Tool isolation**
+   - Tool packages (`tools/<tool>/`) must not import other tools.
+
+3. **Single source of truth**
+   - File/JSON IO lives in `tools/io.py`.
+   - Shared normalization logic lives in `tools/normalize/*`.
+
+4. **Dependency direction**
+   - `tools/<tool>/*` → may import `tools.normalize.*`, `tools.io`
+   - `tools/normalize/*` → must NOT import `tools/<tool>/*`
+
+5. **Normalized JSON is the contract**
+   - Analysis code must not parse vendor raw formats.
