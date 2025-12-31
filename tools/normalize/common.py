@@ -1,31 +1,17 @@
-"""tools/normalize_common.py
+"""tools/normalize/common.py
 
-Shared helpers for building and writing the normalized JSON schema.
+Shared helpers for building *schema blocks* for the normalized JSON output.
 
-Why this exists
---------------
-Every scanner script needs to:
-  - build the same header blocks (target_repo, scan_info)
-  - attach per-finding metadata (schema v1.1)
-  - optionally read a source line for context
-  - write JSON in a consistent way
-
-Centralizing these utilities keeps each tool-specific normalizer small and
-prevents copy/paste drift.
+This module is intentionally focused on *normalization/schema construction*
+and should not contain filesystem IO. Keep IO helpers (read/write JSON,
+read_line_content, etc.) in :mod:`tools.io` so there is a single canonical
+implementation used by all scanners.
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Mapping, Optional
-
-
-def write_json(path: Path, data: Any) -> None:
-    """Write JSON with stable pretty-printing."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
 
 
 def build_target_repo(metadata: Mapping[str, Any]) -> dict:
@@ -69,21 +55,3 @@ def build_per_finding_metadata(
     }
 
 
-def read_line_content(
-    repo_path: Path,
-    file_path: Optional[str],
-    line_number: Optional[int],
-) -> Optional[str]:
-    """Best-effort read of the source line at (file_path, line_number)."""
-    if not file_path or not line_number:
-        return None
-
-    try:
-        file_abs = repo_path / file_path
-        lines = file_abs.read_text(encoding="utf-8", errors="replace").splitlines()
-        if 1 <= line_number <= len(lines):
-            return lines[line_number - 1].rstrip("\n")
-    except OSError:
-        return None
-
-    return None

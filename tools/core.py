@@ -18,7 +18,6 @@ Tool-specific parsing stays in each scan_*.py.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -29,24 +28,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from tools.io import read_json, read_line_content, write_json
+
 
 # Repo root = parent of tools/
 ROOT_DIR = Path(__file__).resolve().parents[1]
-
-
-# -------------------------
-# JSON IO
-# -------------------------
-
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-
-def read_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 # -------------------------
@@ -380,23 +366,9 @@ def normalize_repo_relative_path(repo_path: Path, tool_path: Optional[str]) -> O
     return tool_path
 
 
-def read_line_content(repo_path: Path, file_path: Optional[str], line_no: Optional[int]) -> Optional[str]:
-    """
-    Read a specific 1-indexed line from repo_path/file_path.
-    """
-    if not file_path or not line_no:
-        return None
-    try:
-        abs_path = (repo_path / file_path).resolve()
-        if not abs_path.exists():
-            return None
-        with abs_path.open("r", encoding="utf-8", errors="replace") as f:
-            for i, ln in enumerate(f, start=1):
-                if i == int(line_no):
-                    return ln.rstrip("\n")
-    except Exception:
-        return None
-    return None
+## NOTE:
+## JSON + line-content helpers live in tools/io.py.
+## tools/core.py re-exports them for convenience/backwards-compat.
 
 
 # -------------------------

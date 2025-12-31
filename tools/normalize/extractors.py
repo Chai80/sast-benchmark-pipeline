@@ -162,6 +162,8 @@ def collect_tags_and_text(
     if tool == "aikido":
         for key in (
             "type",
+            "subtype",
+            "language",
             "rule_id",
             "rule",
             "attack_surface",
@@ -266,20 +268,38 @@ def extract_vendor_owasp_2021_codes(obj: Dict[str, Any]) -> List[str]:
     """Extract explicit vendor-provided OWASP Top 10:2021 codes from payloads."""
     codes: List[str] = []
 
-    # direct keys used by some mapping JSON or exports
-    for key in ("owasp_top_10_2021", "owasp_2021", "owaspTop10_2021", "owaspTop10"):
-        val = obj.get(key) if isinstance(obj, dict) else None
+    def _collect(val: Any) -> None:
+        """Collect codes from mixed payload shapes (scalars/lists/dicts)."""
+        if val is None:
+            return
+
+        # Dicts may wrap codes under a known key.
+        if isinstance(val, dict):
+            for kk in ("codes", "code", "id", "name", "category", "owasp"):
+                _collect(val.get(kk))
+            return
+
         for v in _as_list(val):
             if isinstance(v, dict):
-                # allow structures like {"code": "A03", "name": "..."}
-                for kk in ("code", "id", "name", "category"):
-                    c = normalize_owasp_2021_code(v.get(kk))
-                    if c:
-                        codes.append(c)
+                for kk in ("codes", "code", "id", "name", "category", "owasp"):
+                    _collect(v.get(kk))
             else:
                 c = normalize_owasp_2021_code(v)
                 if c:
                     codes.append(c)
+
+    # Direct keys used by some mapping JSON or exports.
+    for key in ("owasp_top_10_2021", "owasp_2021", "owaspTop10_2021", "owaspTop10"):
+        _collect(obj.get(key) if isinstance(obj, dict) else None)
+
+    # Nested under an "owasp" object (seen in some exports).
+    # Example shapes:
+    #   {"owasp": {"2021": ["A03", ...]}}
+    #   {"owasp": {"owasp_top_10_2021": {"codes": ["A01", ...]}}}
+    owasp = obj.get("owasp") if isinstance(obj, dict) else None
+    if isinstance(owasp, dict):
+        for key in ("2021", "owasp_top_10_2021", "top_10_2021"):
+            _collect(owasp.get(key))
 
     # regex scan in text blobs
     blobs = collect_text_blobs(
@@ -303,51 +323,51 @@ def extract_vendor_owasp_2021_codes(obj: Dict[str, Any]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
-def map_severity(raw: Any, *, tool: Optional[str] = None) -> str:
-    """Map vendor severity into your normalized set."""
+def map_severity(raw: Any, *, tool: Optional[str] = None) -> Optional[str]:
+    """Map vendor severity into the normalized set (HIGH/MEDIUM/LOW).
+
+    Returns None if we can't determine a severity.
+    """
     if raw is None:
-        return "MEDIUM"
+        return None
 
     s = str(raw).strip().lower()
     if not s:
-        return "MEDIUM"
+        return None
 
     # Some tools have numeric severity_score; allow that.
     if s.replace(".", "", 1).isdigit():
-        score = float(s)
-        if score >= 9.0:
-            return "CRITICAL"
+        try:
+            score = float(s)
+        except ValueError:
+            score = None
+        if score is None:
+            return None
         if score >= 7.0:
             return "HIGH"
         if score >= 4.0:
             return "MEDIUM"
         if score > 0:
             return "LOW"
-        return "INFO"
+        return None
 
-    if s in {"critical", "crit"}:
-        return "CRITICAL"
-    if s in {"high", "error"}:
+    if s in {"critical", "crit", "blocker", "major", "high", "error"}:
         return "HIGH"
-    if s in {"medium", "moderate", "warning", "warn"}:
+    if s in {"medium", "moderate", "warning", "warn", "minor"}:
         return "MEDIUM"
-    if s == "low":
+    if s in {"low", "info", "informational", "note", "none"}:
         return "LOW"
-    if s in {"info", "informational", "note"}:
-        return "INFO"
 
     # Tool-specific oddities
     if tool == "aikido":
-        if "critical" in s:
-            return "CRITICAL"
-        if "high" in s:
+        if "critical" in s or "high" in s:
             return "HIGH"
         if "medium" in s:
             return "MEDIUM"
-        if "low" in s:
+        if "low" in s or "info" in s:
             return "LOW"
 
-    return "MEDIUM"
+    return None
 
 
 def extract_location(obj: Dict[str, Any], *, tool: str) -> NormalizedLocation:
@@ -356,9 +376,32 @@ def extract_location(obj: Dict[str, Any], *, tool: str) -> NormalizedLocation:
         return NormalizedLocation(file_path=None, line_number=None, end_line_number=None)
 
     if tool == "aikido":
-        file_path = obj.get("affected_file") or obj.get("file_path") or obj.get("file") or obj.get("path")
-        line = _coerce_int(obj.get("start_line") or obj.get("line") or obj.get("line_number"))
+        file_path = (
+            obj.get("file_path")
+            or obj.get("file")
+            or obj.get("path")
+            or obj.get("affected_file")
+            or obj.get("affectedFile")
+            or obj.get("filePath")
+        )
+        line = _coerce_int(obj.get("start_line") or obj.get("startLine") or obj.get("line") or obj.get("line_number"))
         end_line = _coerce_int(obj.get("end_line") or obj.get("endLine") or obj.get("end_line_number"))
+
+        # Some exports nest location under a "location" or "source_location" object.
+        loc = obj.get("location") or obj.get("source_location") or obj.get("sourceLocation")
+        if isinstance(loc, dict):
+            file_path = (
+                file_path
+                or loc.get("file_path")
+                or loc.get("file")
+                or loc.get("path")
+                or loc.get("affected_file")
+                or loc.get("affectedFile")
+                or loc.get("filePath")
+            )
+            line = line or _coerce_int(loc.get("start_line") or loc.get("startLine") or loc.get("line") or loc.get("line_number"))
+            end_line = end_line or _coerce_int(loc.get("end_line") or loc.get("endLine") or loc.get("end_line_number"))
+
         return NormalizedLocation(
             file_path=str(file_path) if file_path else None,
             line_number=line,
