@@ -381,6 +381,14 @@ def build_hotspot_report(tool_inputs: Sequence[ToolInput]) -> Dict[str, Any]:
     for t in tools[1:]:
         inter &= sig_sets[t]
 
+
+    # Sorted signature lists (used for reporting + downstream matrix generation)
+    union_sorted = sorted(union, key=_sig_sort_key)
+    inter_sorted = sorted(inter, key=_sig_sort_key)
+
+    union_signatures = [_sig_to_dict(s) for s in union_sorted]
+    intersection_signatures = [_sig_to_dict(s) for s in inter_sorted]
+
     # Unique signatures per tool (classic set-difference view)
     unique: Dict[str, List[Dict[str, str]]] = {}
 
@@ -436,6 +444,15 @@ def build_hotspot_report(tool_inputs: Sequence[ToolInput]) -> Dict[str, Any]:
 
     commits = sorted({c for c in (per_tool[t].commit for t in tools) if c})
     warnings: List[str] = []
+
+    missing_commit_tools = [t for t in tools if not per_tool[t].commit]
+    if missing_commit_tools:
+        warnings.append(
+            "Some tools did not provide commit metadata. "
+            "Cross-tool comparisons may not be apples-to-apples. "
+            f"Missing commit for: {', '.join(missing_commit_tools)}"
+        )
+
     if len(commits) > 1:
         warnings.append(
             "Not all tools scanned the same commit. "
@@ -448,6 +465,8 @@ def build_hotspot_report(tool_inputs: Sequence[ToolInput]) -> Dict[str, Any]:
         "signature_type": "(normalized_file_path, owasp_2021_code)",
         "tools": report_tools,
         "counts": counts,
+        "union_signatures": union_signatures,
+        "intersection_signatures": intersection_signatures,
         "unique": unique,
         # Convenience fields
         "unique_counts": unique_counts,
@@ -523,11 +542,19 @@ def main() -> None:
         print(json.dumps(report, indent=2))
         return
 
-    # Human-readable output
-    tools = sorted(report["tools"].keys())
+        # Human-readable output
+    print_inputs(report)
+    print_text_report(report, max_unique=args.max_unique)
+
+
+def print_inputs(report: Mapping[str, Any]) -> None:
+    """Pretty-print the per-tool input metadata from a hotspots report."""
+
+    tools = sorted((report.get("tools") or {}).keys())
+
     print("\n== Inputs ==")
     for t in tools:
-        info = report["tools"][t]
+        info = (report.get("tools") or {}).get(t) or {}
         print(f"\n== {t} ==")
         print("Input file:", info.get("input"))
         if info.get("scan_date"):
@@ -540,39 +567,6 @@ def main() -> None:
         print("Signatures:", info.get("signature_count"))
         print("Raw paths with repo prefix:", info.get("raw_paths_with_repo_prefix"))
 
-    print("\n== Cross-tool summary ==")
-    print("Repo:", report.get("repo"))
-    print("Tools:", ", ".join(tools))
-    print("Signature type:", report.get("signature_type"))
-    counts = report.get("counts") or {}
-    print("Union signatures       :", counts.get("union"))
-    print("Intersection signatures:", counts.get("intersection"))
-    for t in tools:
-        n_unique = len((report.get("unique") or {}).get(t) or [])
-        print(f"Unique to {t:>8}: {n_unique}")
-
-    warnings = report.get("warnings") or []
-    for w in warnings:
-        print("\n⚠️", w)
-
-    # Print a small sample of unique hotspots per tool
-    max_unique = max(0, int(args.max_unique))
-    if max_unique == 0:
-        return
-
-    unique_by_file = report.get("unique_by_file") or {}
-    for t in tools:
-        items = unique_by_file.get(t) or []
-        if not items:
-            continue
-        print(f"\n== Unique hotspots for {t} (showing up to {max_unique} files) ==")
-        for row in items[:max_unique]:
-            fp = row.get("file")
-            codes = row.get("codes") or []
-            if not isinstance(codes, list):
-                codes = []
-            codes_str = ", ".join(str(c) for c in codes)
-            print(f"- {fp}: {codes_str}")
 
 def print_text_report(report: Mapping[str, Any], *, max_unique: int = 25) -> None:
     """Pretty-print a hotspots-by-file report.
