@@ -213,10 +213,11 @@ def parse_args() -> argparse.Namespace:
         "--out",
         help="(analyze mode) Optional output path to write the JSON report",
     )
-parser.add_argument(
+    parser.add_argument(
         "--analysis-out-dir",
         help="(analyze mode, suite) Optional output directory for suite artifacts (default: runs/analysis/<repo>/)",
     )
+
     parser.add_argument(
         "--tolerance",
         type=int,
