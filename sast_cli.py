@@ -191,8 +191,8 @@ def parse_args() -> argparse.Namespace:
     # Analysis / metrics
     parser.add_argument(
         "--metric",
-        choices=["hotspots"],
-        help="(analyze mode) Metric to compute (currently: hotspots)",
+        choices=["hotspots","suite"],
+        help="(analyze mode) Metric to compute (hotspots|suite)",
     )
     parser.add_argument(
         "--tools",
@@ -212,6 +212,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--out",
         help="(analyze mode) Optional output path to write the JSON report",
+    )
+parser.add_argument(
+        "--analysis-out-dir",
+        help="(analyze mode, suite) Optional output directory for suite artifacts (default: runs/analysis/<repo>/)",
+    )
+    parser.add_argument(
+        "--tolerance",
+        type=int,
+        default=3,
+        help="(analyze mode, suite) Line clustering tolerance for location matrix (default: 3)",
+    )
+    parser.add_argument(
+        "--analysis-filter",
+        choices=["security", "all"],
+        default="security",
+        help="(analyze mode, suite) Finding filter mode (default: security)",
     )
     parser.add_argument(
         "--max-unique",
@@ -368,7 +384,7 @@ def main() -> None:
     # ------------------- ANALYZE MODE ------------------
     if mode == "analyze":
         metric = args.metric or "hotspots"
-        if metric != "hotspots":
+        if metric not in ("hotspots", "suite"):
             raise SystemExit(f"Unsupported metric: {metric!r}")
 
         tools_csv = args.tools or "snyk,semgrep,sonar,aikido"
@@ -385,6 +401,37 @@ def main() -> None:
             repo_path=repo_path,
             fallback=label,
         )
+
+        if metric == "suite":
+            out_dir = Path(args.analysis_out_dir).resolve() if args.analysis_out_dir else (runs_dir / "analysis" / runs_repo_name)
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            from pipeline.analysis.analyze_suite import run_suite
+
+            summary = run_suite(
+                repo_name=runs_repo_name,
+                tools=tools,
+                runs_dir=runs_dir,
+                out_dir=out_dir,
+                tolerance=int(args.tolerance),
+                mode=str(args.analysis_filter),
+                formats=["json", "csv"],
+            )
+
+            print("\n✅ Analysis suite complete")
+            print(f"  Repo (runs dir): {runs_repo_name}")
+            print(f"  Tools         : {', '.join(tools)}")
+            print(f"  Output dir    : {out_dir}")
+            print(f"  Benchmark pack: {out_dir / 'benchmark_pack.json'}")
+
+            if args.format == "json":
+                print(json.dumps(summary, indent=2))
+            else:
+                # Text-ish summary
+                print(json.dumps(summary, indent=2))
+
+            raise SystemExit(0)
+
 
         # Default: write a JSON artifact under runs/analysis/<repo>/ so the result
         # can be consumed by UIs, notebooks, etc.
