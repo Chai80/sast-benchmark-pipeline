@@ -1,7 +1,9 @@
 # --- Runtime outputs ---
+# --- Runtime outputs ---
 runs/
 repos/
-analysis/
+/analysis/
+
 
 # --- Secrets / local env ---
 .env

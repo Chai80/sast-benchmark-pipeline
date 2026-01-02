@@ -1,4 +1,4 @@
-# Durinn.AI — SAST Benchmark & Normalization Pipeline
+# SAST Benchmark & Normalization Pipeline
 
 This repo runs multiple SAST scanners (Semgrep, SonarCloud/SonarScanner, Snyk Code, Aikido) against a target repository and writes **comparable JSON outputs** per tool:
 
