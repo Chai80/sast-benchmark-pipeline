@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pipeline.analysis.io_utils import as_list, load_json, write_csv, write_json
+from pipeline.analysis.meta_utils import with_standard_meta
 
 # Optional imports (avoid circulars in simple module usage)
 from pipeline.analysis.tool_profile import build_tool_profile
@@ -255,16 +256,24 @@ def build_benchmark_pack(
     triage = build_triage_queue(matrix_path, taxonomy_path, limit=200)
 
     out = {
-        "meta": {
-            "source_matrix": str(matrix_path),
-            "source_taxonomy": str(taxonomy_path) if taxonomy_path else None,
-            "repo": meta.get("repo"),
-            "mode": meta.get("mode"),
-            "tolerance": meta.get("tolerance"),
-            "signature_type": meta.get("signature_type"),
-            "tool_names": tool_names,
-            "tool_inputs": tool_inputs,
-        },
+        "meta": with_standard_meta(
+            {
+                "source_matrix": str(matrix_path),
+                "source_taxonomy": str(taxonomy_path) if taxonomy_path else None,
+                "repo": meta.get("repo"),
+                "mode": meta.get("mode"),
+                "tolerance": meta.get("tolerance"),
+                "signature_type": meta.get("signature_type"),
+                "tool_names": tool_names,
+                "tool_inputs": tool_inputs,
+            },
+            stage="benchmark_pack",
+            repo=(meta.get("repo") if isinstance(meta.get("repo"), str) else None),
+            tool_names=tool_names,
+            mode=meta.get("mode"),
+            tolerance=meta.get("tolerance"),
+            signature_type=meta.get("signature_type"),
+        ),
         "run_meta": {
             "tools": tool_runs,
             **commit_meta,

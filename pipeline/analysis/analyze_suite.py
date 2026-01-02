@@ -28,6 +28,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
+from pipeline.analysis.io_utils import write_json
+from pipeline.analysis.meta_utils import with_standard_meta
+
 from pipeline.analysis.unique_overview import analyze_latest_hotspots_for_repo
 from pipeline.analysis.hotspot_matrix import build_hotspot_matrix, write_matrix_outputs as write_hotspot_matrix
 from pipeline.analysis.hotspot_location_matrix import build_hotspot_location_matrix, write_matrix_outputs as write_location_matrix
@@ -59,8 +62,17 @@ def run_suite(
 
     # 1) unique_overview report
     report = analyze_latest_hotspots_for_repo(repo_name, tools=tools, runs_dir=runs_dir)
+    # Standardize metadata for this top-level artifact (without changing its existing keys)
+    if isinstance(report, dict):
+        report_meta = report.get("meta") if isinstance(report.get("meta"), dict) else {}
+        report["meta"] = with_standard_meta(
+            report_meta,
+            stage="unique_overview",
+            repo=repo_name,
+            tool_names=list(tools),
+        )
     report_path = out_dir / "latest_hotspots_by_file.json"
-    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    write_json(report, report_path)
 
     # 2) coarse hotspot matrix (file|OWASP)
     coarse = build_hotspot_matrix(report_path)
@@ -97,7 +109,7 @@ def run_suite(
     pack = build_benchmark_pack(matrix_path=loc_matrix_path, taxonomy_path=tax_path, mode_for_profiles=mode, max_examples=10)
     write_benchmark_pack(pack, out_dir, "benchmark_pack", list(formats))
 
-    return {
+    summary = {
         "repo": repo_name,
         "tools": list(tools),
         "runs_dir": str(runs_dir),
@@ -113,6 +125,22 @@ def run_suite(
             "benchmark_pack": str(out_dir / "benchmark_pack.json"),
         },
     }
+
+    # 9) suite manifest (single pointer file for everything we produced)
+    manifest_path = out_dir / "suite_manifest.json"
+    manifest = dict(summary)
+    manifest["meta"] = with_standard_meta(
+        {},
+        stage="analysis_suite",
+        repo=repo_name,
+        tool_names=list(tools),
+        mode=mode,
+        tolerance=int(tolerance),
+    )
+    write_json(manifest, manifest_path)
+    summary.setdefault("artifacts", {})["suite_manifest"] = str(manifest_path)
+
+    return summary
 
 
 def main() -> None:

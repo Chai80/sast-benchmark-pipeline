@@ -51,18 +51,11 @@ This report is meant to drive *drilldowns*:
 from __future__ import annotations
 
 import argparse
-import csv
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-
-def _load_json(path: Path) -> Dict[str, Any]:
-    with path.open(encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        raise ValueError(f"Expected JSON object at {path}")
-    return data
+from pipeline.analysis.io_utils import load_json, write_csv, write_json
+from pipeline.analysis.meta_utils import with_standard_meta
 
 
 def _as_str_set(v: Any) -> Set[str]:
@@ -200,7 +193,7 @@ def classify_taxonomy(row: Mapping[str, Any], tool_names: Sequence[str]) -> Tupl
 
 
 def build_taxonomy_report(matrix_path: Path, *, min_tools: int = 2) -> Dict[str, Any]:
-    matrix = _load_json(matrix_path)
+    matrix = load_json(matrix_path)
     meta = matrix.get("meta") if isinstance(matrix.get("meta"), dict) else {}
     rows = matrix.get("rows") if isinstance(matrix.get("rows"), list) else []
     tool_names = meta.get("tool_names") if isinstance(meta.get("tool_names"), list) else []
@@ -238,12 +231,17 @@ def build_taxonomy_report(matrix_path: Path, *, min_tools: int = 2) -> Dict[str,
         counts[case] = counts.get(case, 0) + 1
 
     report = {
-        "meta": {
-            "source_matrix": str(matrix_path),
-            "min_tools": int(min_tools),
-            "tool_names": tool_names,
-            "matrix_meta": meta,
-        },
+        "meta": with_standard_meta(
+            {
+                "source_matrix": str(matrix_path),
+                "min_tools": int(min_tools),
+                "tool_names": tool_names,
+                "matrix_meta": meta,
+            },
+            stage="taxonomy_analysis",
+            repo=(meta.get("repo") if isinstance(meta, dict) else None),
+            tool_names=tool_names,
+        ),
         "summary": {"counts_by_case": counts, "rows": len(out_rows)},
         "rows": out_rows,
     }
@@ -256,7 +254,7 @@ def write_outputs(report: Dict[str, Any], out_dir: Path, name: str, formats: Seq
     formats_norm = [f.strip().lower() for f in formats if f and f.strip()]
 
     if "json" in formats_norm:
-        (out_dir / f"{name}.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+        write_json(report, out_dir / f"{name}.json")
 
     if "csv" in formats_norm:
         rows = report.get("rows") or []
@@ -277,32 +275,7 @@ def write_outputs(report: Dict[str, Any], out_dir: Path, name: str, formats: Seq
                 "owasp_intersection",
                 "owasp_union",
             ]
-            with (out_dir / f"{name}.csv").open("w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-            return
-
-        # Stable columns
-        fieldnames = [
-            "signature",
-            "file",
-            "cluster_start",
-            "cluster_end",
-            "tools_flagging_count",
-            "tools_flagging",
-            "taxonomy_disagreement_owasp",
-            "taxonomy_case",
-            "taxonomy_reason",
-            "cwe_intersection",
-            "cwe_union",
-            "owasp_intersection",
-            "owasp_union",
-        ]
-
-        with (out_dir / f"{name}.csv").open("w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
+            write_csv(rows, out_dir / f"pipeline/analysis/analyze_suite.py.csv", fieldnames=fieldnames)
 
 
 def main() -> None:

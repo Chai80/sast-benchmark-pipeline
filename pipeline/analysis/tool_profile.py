@@ -37,6 +37,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from pipeline.analysis.finding_filters import filter_findings
 from pipeline.analysis.io_utils import as_list, load_json, write_csv, write_json
+from pipeline.analysis.meta_utils import with_standard_meta
 
 
 def _is_nonempty_str(v: Any) -> bool:
@@ -249,13 +250,19 @@ def build_tool_profile(*, matrix_path: Optional[Path] = None, report_path: Optio
     commit_single = next(iter(commit_values)) if len(commit_values) == 1 else None
 
     out = {
-        "meta": {
-            "source_matrix": str(matrix_path) if matrix_path else None,
-            "source_report": str(report_path) if report_path else None,
-            "mode": mode,
-            "tool_names": tool_names,
-            "tool_inputs": tool_inputs,
-        },
+        "meta": with_standard_meta(
+            {
+                "source_matrix": str(matrix_path) if matrix_path else None,
+                "source_report": str(report_path) if report_path else None,
+                "mode": mode,
+                "tool_names": tool_names,
+                "tool_inputs": tool_inputs,
+            },
+            stage="tool_profile",
+            repo=((matrix.get("meta") or {}).get("repo") if isinstance(matrix, dict) else None),
+            tool_names=tool_names,
+            mode=mode,
+        ),
         "summary": {
             "tools": len(rows),
             "commit_consistent": commit_consistent,

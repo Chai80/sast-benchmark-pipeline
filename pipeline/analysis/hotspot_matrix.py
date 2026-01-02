@@ -21,26 +21,14 @@ Where canonical_owasp_2021_code is resolved by:
 """
 
 import argparse
-import csv
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+from pipeline.analysis.io_utils import as_list, load_json, write_csv, write_json
+from pipeline.analysis.meta_utils import with_standard_meta
 from pipeline.analysis.path_normalization import normalize_file_path
 from pipeline.analysis.unique_overview import canonical_owasp_2021_codes
 from pipeline.core import ROOT_DIR as REPO_ROOT_DIR
-
-
-def _load_json(path: Path) -> Dict[str, Any]:
-    with path.open(encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        raise ValueError(f"Expected JSON object at {path}")
-    return data
-
-
-def _as_list(v: Any) -> List[Any]:
-    return v if isinstance(v, list) else []
 
 
 def build_hotspot_matrix(
@@ -56,7 +44,7 @@ def build_hotspot_matrix(
     so it stays consistent with report['union_signatures'].
     """
 
-    report = _load_json(report_path)
+    report = load_json(report_path)
 
     tools_meta: Dict[str, Dict[str, Any]] = report.get("tools", {})
     signature_type = report.get("signature_type")
@@ -67,7 +55,7 @@ def build_hotspot_matrix(
     union = report.get("union_signatures") if isinstance(report.get("union_signatures"), list) else None
 
     # Load CWE->OWASP mapping (same one unique_overview uses for canonicalization)
-    cwe_map: Mapping[str, Any] = _load_json(cwe_map_path)
+    cwe_map: Mapping[str, Any] = load_json(cwe_map_path)
 
     # Load normalized findings + repo name per tool
     findings_by_tool: Dict[str, List[Dict[str, Any]]] = {}
@@ -77,9 +65,9 @@ def build_hotspot_matrix(
         input_path = meta.get("input")
         if not isinstance(input_path, str) or not input_path:
             raise ValueError(f"Tool '{tool}' missing tools[tool].input in report.")
-        data = _load_json(Path(input_path))
+        data = load_json(Path(input_path))
 
-        findings_by_tool[tool] = [f for f in _as_list(data.get("findings")) if isinstance(f, dict)]
+        findings_by_tool[tool] = [f for f in as_list(data.get("findings")) if isinstance(f, dict)]
 
         # Prefer target_repo.name from normalized JSON; fall back to report repo name
         tr = data.get("target_repo")
@@ -190,38 +178,52 @@ def build_hotspot_matrix(
             f"Examples: {zero[:10]}"
         )
 
-    meta: Dict[str, Any] = {
+    base_meta: Dict[str, Any] = {
         "repo": repo_name,
         "signature_type": signature_type,
         "tool_names": tool_names,
         "cwe_map": str(cwe_map_path),
     }
-    return {"meta": meta, "rows": rows}
+    meta = with_standard_meta(base_meta, stage="hotspot_matrix", repo=repo_name, tool_names=tool_names)
+
+    by_tools: Dict[int, int] = {}
+    for r in rows:
+        c = r.get("tools_flagging_count")
+        if isinstance(c, int):
+            by_tools[c] = by_tools.get(c, 0) + 1
+
+    summary = {
+        "rows": len(rows),
+        "rows_by_tools_flagging_count": dict(sorted(by_tools.items())),
+    }
+
+    return {"meta": meta, "summary": summary, "rows": rows}
 
 
 def write_matrix_outputs(matrix: Dict[str, Any], out_dir: Path, name: str, formats: List[str]) -> None:
+    """Write hotspot matrix outputs (json/csv)."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    formats_norm = [f.strip().lower() for f in formats if f and f.strip()]
+
     # JSON
-    if "json" in formats:
-        with (out_dir / f"{name}.json").open("w", encoding="utf-8") as f:
-            json.dump(matrix, f, indent=2)
+    if "json" in formats_norm:
+        write_json(matrix, out_dir / f"{name}.json")
 
     # CSV
-    if "csv" in formats:
+    if "csv" in formats_norm:
         rows = matrix.get("rows") or []
         if rows:
             # Stable column order (prevents columns from "jumping" between runs)
             tool_names = (matrix.get("meta") or {}).get("tool_names") or []
             base_fields = ["signature", "file", "owasp_code", "tools_flagging_count", "tools_flagging"]
-            per_tool_fields = []
+            per_tool_fields: List[str] = []
             for t in tool_names:
                 per_tool_fields.extend(
                     [
                         f"{t}_flagged",
                         f"{t}_finding_count",
                         f"{t}_rule_id",
-                        f"{t}_finding_id",
                         f"{t}_line_number",
                         f"{t}_cwe_id",
                         f"{t}_cwe_ids",
@@ -230,11 +232,12 @@ def write_matrix_outputs(matrix: Dict[str, Any], out_dir: Path, name: str, forma
                     ]
                 )
             fieldnames = base_fields + per_tool_fields
-            with (out_dir / f"{name}.csv").open("w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(rows)
+            write_csv(rows, out_dir / f"{name}.csv", fieldnames=fieldnames)
 
+
+def write_outputs(matrix: Dict[str, Any], out_dir: Path, name: str, formats: List[str]) -> None:
+    """Stage-contract alias for write_matrix_outputs."""
+    write_matrix_outputs(matrix, out_dir, name, formats)
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build hotspot matrix from hotspot summary report.")

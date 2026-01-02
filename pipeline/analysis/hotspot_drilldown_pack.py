@@ -35,21 +35,16 @@ No database, no UI, filesystem artifacts only.
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+
+from pipeline.analysis.io_utils import load_json, write_json
+from pipeline.analysis.meta_utils import with_standard_meta
 
 from pipeline.analysis.location_signatures import build_location_cluster_index, safe_dir_name
 from pipeline.analysis.finding_filters import filter_findings
 from pipeline.core import ROOT_DIR as REPO_ROOT_DIR
 
-
-def _load_json(path: Path) -> Dict[str, Any]:
-    with path.open(encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        raise ValueError(f"Expected JSON object at {path}")
-    return data
 
 
 def _as_list(v: Any) -> List[Any]:
@@ -125,8 +120,8 @@ def build_pack(
     min_tools: Optional[int],
     context: int,
 ) -> Path:
-    report = _load_json(report_path)
-    matrix = _load_json(matrix_path)
+    report = load_json(report_path)
+    matrix = load_json(matrix_path)
 
     meta = matrix.get("meta") if isinstance(matrix.get("meta"), dict) else {}
     tolerance = meta.get("tolerance") if isinstance(meta.get("tolerance"), int) else None
@@ -155,7 +150,7 @@ def build_pack(
             repo_name_by_tool[tool] = None
             continue
 
-        data = _load_json(Path(input_path))
+        data = load_json(Path(input_path))
         findings = [f for f in _as_list(data.get("findings")) if isinstance(f, dict)]
         findings = filter_findings(tool, findings, mode=mode)
         findings_by_tool[tool] = findings
@@ -210,7 +205,10 @@ def build_pack(
     pack_root = out_dir / repo_name / pack_name
     pack_root.mkdir(parents=True, exist_ok=True)
 
+    tool_names = list(((matrix.get("meta") or {}) if isinstance(matrix, dict) else {}).get("tool_names") or [])
+
     manifest: Dict[str, Any] = {
+        "meta": with_standard_meta({}, stage="hotspot_drilldown_pack", repo=repo_name, tool_names=tool_names),
         "repo": repo_name,
         "pack_name": pack_name,
         "matrix": str(matrix_path),
@@ -223,7 +221,7 @@ def build_pack(
         "selected_rows": len(selected_rows),
     }
 
-    (pack_root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    write_json(manifest, pack_root / "manifest.json")
 
     for r in selected_rows:
         sig_id = r.get("signature")
@@ -245,7 +243,7 @@ def build_pack(
         hotspot_dir.mkdir(parents=True, exist_ok=True)
 
         # Row snapshot
-        (hotspot_dir / "row.json").write_text(json.dumps(r, indent=2), encoding="utf-8")
+        write_json(r, hotspot_dir / "row.json")
 
         # Code context
         ctx = _read_file_context(repo_path, fp, start_line=bucket_start, end_line=bucket_end, context=context)
@@ -258,7 +256,7 @@ def build_pack(
             tdir = tools_dir / tool
             tdir.mkdir(exist_ok=True)
             findings = idx_by_tool.get(tool, {}).get(sig_id) or []
-            (tdir / "findings.json").write_text(json.dumps(findings, indent=2), encoding="utf-8")
+            write_json(findings, tdir / "findings.json")
 
     return pack_root
 

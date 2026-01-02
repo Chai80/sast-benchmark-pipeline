@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from pipeline.analysis.io_utils import as_list, load_json, write_csv, write_json
+from pipeline.analysis.meta_utils import with_standard_meta
 
 
 _SEV_WEIGHT = {
@@ -219,11 +220,16 @@ def build_triage_queue(matrix_path: Path, taxonomy_path: Optional[Path] = None, 
         rows_out = rows_out[:limit]
 
     out = {
-        "meta": {
-            "source_matrix": str(matrix_path),
-            "source_taxonomy": str(taxonomy_path) if taxonomy_path else None,
-            "tool_names": tool_names,
-        },
+        "meta": with_standard_meta(
+            {
+                "source_matrix": str(matrix_path),
+                "source_taxonomy": str(taxonomy_path) if taxonomy_path else None,
+                "tool_names": tool_names,
+            },
+            stage="triage_queue",
+            repo=((matrix.get("meta") or {}).get("repo") if isinstance(matrix.get("meta"), dict) else None),
+            tool_names=tool_names,
+        ),
         "summary": {
             "rows": len(rows_out),
             "limit": limit,

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 from pipeline.analysis.io_utils import as_list, load_json, write_csv, write_json
+from pipeline.analysis.meta_utils import with_standard_meta
 
 
 def _tool_names_from_matrix(matrix: Mapping[str, Any]) -> List[str]:
@@ -127,11 +128,16 @@ def build_pairwise_agreement(matrix_path: Path) -> Dict[str, Any]:
     incremental_rows.sort(key=lambda r: (-r["unique_locations"], r["tool"]))
 
     out = {
-        "meta": {
-            "source_matrix": str(matrix_path),
-            "tool_names": tool_names,
-            "matrix_meta": matrix.get("meta") or {},
-        },
+        "meta": with_standard_meta(
+            {
+                "source_matrix": str(matrix_path),
+                "tool_names": tool_names,
+                "matrix_meta": matrix.get("meta") or {},
+            },
+            stage="pairwise_agreement",
+            repo=((matrix.get("meta") or {}).get("repo") if isinstance(matrix.get("meta"), dict) else None),
+            tool_names=tool_names,
+        ),
         "summary": {
             "locations_total": len(as_list(matrix.get("rows"))),
             "counts_by_tools_flagging_count": _counts_by_tools_flagging_count(matrix),
