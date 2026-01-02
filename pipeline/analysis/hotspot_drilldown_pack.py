@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from pipeline.analysis.location_signatures import build_location_cluster_index, safe_dir_name
+from pipeline.analysis.finding_filters import filter_findings
 from pipeline.core import ROOT_DIR as REPO_ROOT_DIR
 
 
@@ -60,23 +61,7 @@ def _extract_repo_name_from_report(report: Mapping[str, Any]) -> str:
     return rn if isinstance(rn, str) and rn else "unknown"
 
 
-def _filter_findings(tool: str, findings: Sequence[Mapping[str, Any]], *, mode: str) -> List[Mapping[str, Any]]:
-    """Keep filtering logic consistent with hotspot_location_matrix."""
-    if mode == "all":
-        return list(findings)
 
-    out: List[Mapping[str, Any]] = []
-    for f in findings:
-        if tool == "sonar":
-            t = (f.get("vendor") or {}).get("raw_result", {}).get("type")
-            if t not in ("VULNERABILITY", "SECURITY_HOTSPOT"):
-                continue
-        if tool == "aikido":
-            t = (f.get("vendor") or {}).get("raw_result", {}).get("type")
-            if t == "open_source":
-                continue
-        out.append(f)
-    return out
 
 
 def _read_file_context(
@@ -172,7 +157,7 @@ def build_pack(
 
         data = _load_json(Path(input_path))
         findings = [f for f in _as_list(data.get("findings")) if isinstance(f, dict)]
-        findings = _filter_findings(tool, findings, mode=mode)
+        findings = filter_findings(tool, findings, mode=mode)
         findings_by_tool[tool] = findings
 
         tr = data.get("target_repo")

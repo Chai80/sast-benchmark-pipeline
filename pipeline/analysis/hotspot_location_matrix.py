@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from pipeline.analysis.location_signatures import build_location_cluster_index
+from pipeline.analysis.finding_filters import filter_findings
 from pipeline.analysis.unique_overview import canonical_owasp_2021_codes
 from pipeline.core import ROOT_DIR as REPO_ROOT_DIR
 
@@ -67,34 +68,6 @@ def _extract_repo_name(data: Mapping[str, Any], fallback: Optional[str]) -> Opti
     return rn
 
 
-def _filter_findings(tool: str, findings: Sequence[Mapping[str, Any]], *, mode: str) -> List[Mapping[str, Any]]:
-    """Tool-aware filtering to keep location alignment meaningful.
-
-    mode:
-      - "security" (default): try to exclude obvious non-security noise
-      - "all": include everything that has a location
-    """
-
-    if mode == "all":
-        return list(findings)
-
-    out: List[Mapping[str, Any]] = []
-    for f in findings:
-        # Sonar emits a lot of CODE_SMELLs; keep only VULNERABILITY/SECURITY_HOTSPOT by default.
-        if tool == "sonar":
-            t = (f.get("vendor") or {}).get("raw_result", {}).get("type")
-            if t not in ("VULNERABILITY", "SECURITY_HOTSPOT"):
-                continue
-
-        # Aikido mixes SAST, secrets, open_source, iac; exclude open_source by default
-        if tool == "aikido":
-            t = (f.get("vendor") or {}).get("raw_result", {}).get("type")
-            if t == "open_source":
-                continue
-
-        out.append(f)
-
-    return out
 
 
 def build_hotspot_location_matrix(
@@ -135,7 +108,7 @@ def build_hotspot_location_matrix(
 
         data = _load_json(Path(input_path))
         findings = [f for f in _as_list(data.get("findings")) if isinstance(f, dict)]
-        findings = _filter_findings(tool, findings, mode=mode)
+        findings = filter_findings(tool, findings, mode=mode)
 
         findings_by_tool[tool] = findings
         repo_name_by_tool[tool] = _extract_repo_name(data, repo_name)
