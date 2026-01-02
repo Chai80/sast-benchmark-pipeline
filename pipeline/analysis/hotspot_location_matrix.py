@@ -5,7 +5,7 @@ Build a union-sized hotspot matrix using a *location-based* signature.
 This is the next step after hotspot_matrix.py:
 
 - hotspot_matrix.py aligns on (file, OWASP-2021) -> coarse overlap.
-- hotspot_location_matrix.py aligns on (file, line_bucket) -> granular overlap.
+- hotspot_location_matrix.py aligns on (file, line_cluster) -> granular overlap.
 
 The point is to distinguish:
 - taxonomy disagreement: same code location, different labels
@@ -14,11 +14,16 @@ The point is to distinguish:
 
 Signature
 ---------
-    (normalize_file_path(file_path, repo_name), line_bucket)
+We use *line-tolerance clustering* instead of fixed buckets to avoid bucket
+boundary artifacts.
 
-Where line_bucket is computed from an anchor line (line_number, else end_line_number)
-and a configurable --bucket-size (default 10):
+    (normalize_file_path(file_path, repo_name), line_cluster)
 
+Where line_cluster is computed by:
+  - collecting all tools' anchor lines in a file
+  - clustering nearby anchors together if they are within --tolerance lines
+
+Signature id format:
     routes/search.ts|L21-30
 
 Outputs
@@ -37,7 +42,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from pipeline.analysis.location_signatures import iter_location_signatures
+from pipeline.analysis.location_signatures import build_location_cluster_index
 from pipeline.analysis.unique_overview import canonical_owasp_2021_codes
 from pipeline.core import ROOT_DIR as REPO_ROOT_DIR
 
@@ -95,7 +100,7 @@ def _filter_findings(tool: str, findings: Sequence[Mapping[str, Any]], *, mode: 
 def build_hotspot_location_matrix(
     report_path: Path,
     *,
-    bucket_size: int = 10,
+    tolerance: int = 3,
     mode: str = "security",
     cwe_map_path: Path = REPO_ROOT_DIR / "mappings" / "cwe_to_owasp_top10_mitre.json",
     min_tools: int = 1,
@@ -108,8 +113,8 @@ def build_hotspot_location_matrix(
 
     if not tools_meta:
         raise ValueError("Report missing 'tools' metadata. Did you pass the right JSON?")
-    if bucket_size <= 0:
-        raise ValueError("bucket_size must be positive")
+    if tolerance < 0:
+        raise ValueError("tolerance must be >= 0")
 
     # Load CWE->OWASP mapping (reused for per-location taxonomy comparison)
     cwe_map: Mapping[str, Any] = _load_json(cwe_map_path)
@@ -135,92 +140,26 @@ def build_hotspot_location_matrix(
         findings_by_tool[tool] = findings
         repo_name_by_tool[tool] = _extract_repo_name(data, repo_name)
 
-    # Build per-tool index: location_signature -> aggregate info
-    tool_sig_info: Dict[str, Dict[str, Dict[str, Any]]] = {}
-    union_keys: set[str] = set()
-
-    for tool, findings in findings_by_tool.items():
-        sig_counts: Dict[str, int] = {}
-        exemplars: Dict[str, Mapping[str, Any]] = {}
-
-        owasp_by_sig: Dict[str, set[str]] = {}
-        cwes_by_sig: Dict[str, set[str]] = {}
-
-        tool_repo_name = repo_name_by_tool.get(tool)
-
-        for sig_id, sig, finding in iter_location_signatures(
-            findings,
-            repo_name=tool_repo_name,
-            bucket_size=bucket_size,
-        ):
-            sig_counts[sig_id] = sig_counts.get(sig_id, 0) + 1
-            union_keys.add(sig_id)
-
-            if sig_id not in exemplars:
-                exemplars[sig_id] = finding
-
-            # Collect CWE ids (as-is; canonicalization happens elsewhere)
-            cset = cwes_by_sig.setdefault(sig_id, set())
-            if isinstance(finding.get("cwe_ids"), list):
-                for c in finding.get("cwe_ids") or []:
-                    if isinstance(c, str) and c:
-                        cset.add(c)
-            cwe_id = finding.get("cwe_id")
-            if isinstance(cwe_id, str) and cwe_id:
-                cset.add(cwe_id)
-
-            # Collect canonical OWASP 2021 codes for taxonomy comparison (best-effort)
-            oset = owasp_by_sig.setdefault(sig_id, set())
-            try:
-                codes = canonical_owasp_2021_codes(finding, cwe_to_owasp_map=cwe_map)
-            except Exception:
-                codes = []
-            for code in codes:
-                oset.add(code)
-
-        info: Dict[str, Dict[str, Any]] = {}
-        for sig_id, count in sig_counts.items():
-            f = exemplars[sig_id]
-            info[sig_id] = {
-                "finding_count": count,
-                "rule_id": f.get("rule_id"),
-                "finding_id": f.get("finding_id"),
-                "line_number": f.get("line_number"),
-                "end_line_number": f.get("end_line_number"),
-                "cwe_id": f.get("cwe_id"),
-                "cwe_ids": f.get("cwe_ids"),
-                "severity": f.get("severity"),
-                "title": f.get("title"),
-                # Aggregates (useful to detect taxonomy disagreement)
-                "owasp_codes": sorted(owasp_by_sig.get(sig_id, set())),
-                "cwe_ids_union": sorted(cwes_by_sig.get(sig_id, set())),
-            }
-        tool_sig_info[tool] = info
-
-    # Deterministic union ordering by (file, bucket_start)
-    def _union_sort_key(sig_id: str) -> tuple[str, int]:
-        # sig_id format: <file>|L<start>-<end>
-        try:
-            fp, rest = sig_id.rsplit("|L", 1)
-            start_s, _end_s = rest.split("-", 1)
-            return fp, int(start_s)
-        except Exception:
-            return sig_id, 0
+    # Build canonical clusters across tools (prevents per-tool cluster drift)
+    clusters, idx_by_tool = build_location_cluster_index(
+        findings_by_tool=findings_by_tool,
+        repo_name_by_tool=repo_name_by_tool,
+        tolerance=int(tolerance),
+    )
 
     rows: List[Dict[str, Any]] = []
 
-    for sig_id in sorted(union_keys, key=_union_sort_key):
-        # Parse file + bucket from signature id
-        fp, rest = sig_id.rsplit("|L", 1)
-        start_s, end_s = rest.split("-", 1)
-        bucket_start = int(start_s)
-        bucket_end = int(end_s)
+    for sig in clusters:
+        sig_id = sig.id()
+        fp = sig.file
+        cluster_start = sig.bucket.start
+        cluster_end = sig.bucket.end
 
         row: Dict[str, Any] = {
             "signature": sig_id,
             "file": fp,
-            "bucket_start": bucket_start,
-            "bucket_end": bucket_end,
+            "cluster_start": cluster_start,
+            "cluster_end": cluster_end,
         }
 
         tools_flagging: List[str] = []
@@ -228,28 +167,63 @@ def build_hotspot_location_matrix(
         owasp_sets_nonempty: List[tuple[str, tuple[str, ...]]] = []
 
         for tool in tool_names:
-            cell = tool_sig_info.get(tool, {}).get(sig_id)
-            flagged = cell is not None
+            findings = idx_by_tool.get(tool, {}).get(sig_id) or []
+            flagged = bool(findings)
             row[f"{tool}_flagged"] = flagged
-            row[f"{tool}_finding_count"] = cell["finding_count"] if flagged else 0
-            row[f"{tool}_rule_id"] = cell["rule_id"] if flagged else None
-            row[f"{tool}_finding_id"] = cell["finding_id"] if flagged else None
-            row[f"{tool}_line_number"] = cell["line_number"] if flagged else None
-            row[f"{tool}_end_line_number"] = cell["end_line_number"] if flagged else None
-            row[f"{tool}_cwe_id"] = cell["cwe_id"] if flagged else None
-            row[f"{tool}_cwe_ids"] = cell["cwe_ids"] if flagged else None
-            row[f"{tool}_cwe_ids_union"] = cell["cwe_ids_union"] if flagged else []
-            row[f"{tool}_severity"] = cell["severity"] if flagged else None
-            row[f"{tool}_title"] = cell["title"] if flagged else None
-            row[f"{tool}_owasp_codes"] = cell["owasp_codes"] if flagged else []
+            row[f"{tool}_finding_count"] = len(findings) if flagged else 0
 
-            if flagged:
-                tools_flagging.append(tool)
-                for c in cell.get("owasp_codes") or []:
-                    owasp_union.add(c)
-                codes = tuple(sorted(cell.get("owasp_codes") or []))
-                if codes:
-                    owasp_sets_nonempty.append((tool, codes))
+            if not flagged:
+                row[f"{tool}_rule_id"] = None
+                row[f"{tool}_finding_id"] = None
+                row[f"{tool}_line_number"] = None
+                row[f"{tool}_end_line_number"] = None
+                row[f"{tool}_cwe_id"] = None
+                row[f"{tool}_cwe_ids"] = None
+                row[f"{tool}_cwe_ids_union"] = []
+                row[f"{tool}_severity"] = None
+                row[f"{tool}_title"] = None
+                row[f"{tool}_owasp_codes"] = []
+                continue
+
+            # Exemplar: first finding (simple + deterministic enough for now)
+            ex = findings[0]
+
+            # CWE aggregate (union)
+            cwe_set: set[str] = set()
+            for f in findings:
+                if isinstance(f.get("cwe_ids"), list):
+                    for c in f.get("cwe_ids") or []:
+                        if isinstance(c, str) and c:
+                            cwe_set.add(c)
+                cwe_id = f.get("cwe_id")
+                if isinstance(cwe_id, str) and cwe_id:
+                    cwe_set.add(cwe_id)
+
+            # OWASP aggregate (best-effort canonicalization)
+            oset: set[str] = set()
+            for f in findings:
+                try:
+                    codes = canonical_owasp_2021_codes(f, cwe_to_owasp_map=cwe_map)
+                except Exception:
+                    codes = []
+                for code in codes:
+                    oset.add(code)
+
+            row[f"{tool}_rule_id"] = ex.get("rule_id")
+            row[f"{tool}_finding_id"] = ex.get("finding_id")
+            row[f"{tool}_line_number"] = ex.get("line_number")
+            row[f"{tool}_end_line_number"] = ex.get("end_line_number")
+            row[f"{tool}_cwe_id"] = ex.get("cwe_id")
+            row[f"{tool}_cwe_ids"] = ex.get("cwe_ids")
+            row[f"{tool}_cwe_ids_union"] = sorted(cwe_set)
+            row[f"{tool}_severity"] = ex.get("severity")
+            row[f"{tool}_title"] = ex.get("title")
+            row[f"{tool}_owasp_codes"] = sorted(oset)
+
+            tools_flagging.append(tool)
+            owasp_union.update(oset)
+            if oset:
+                owasp_sets_nonempty.append((tool, tuple(sorted(oset))))
 
         row["tools_flagging"] = tools_flagging
         row["tools_flagging_count"] = len(tools_flagging)
@@ -266,8 +240,8 @@ def build_hotspot_location_matrix(
 
     meta: Dict[str, Any] = {
         "repo": repo_name,
-        "signature_type": f"(normalized_file_path, line_bucket_{bucket_size})",
-        "bucket_size": bucket_size,
+        "signature_type": f"(normalized_file_path, line_cluster_pm_{tolerance})",
+        "tolerance": int(tolerance),
         "mode": mode,
         "tool_names": tool_names,
         "tool_inputs": tool_inputs,
@@ -293,8 +267,8 @@ def write_matrix_outputs(matrix: Dict[str, Any], out_dir: Path, name: str, forma
             base_fields = [
                 "signature",
                 "file",
-                "bucket_start",
-                "bucket_end",
+                "cluster_start",
+                "cluster_end",
                 "tools_flagging_count",
                 "tools_flagging",
                 "taxonomy_disagreement",
@@ -345,10 +319,10 @@ def main() -> None:
         help="Comma-separated list of output formats (json,csv).",
     )
     ap.add_argument(
-        "--bucket-size",
+        "--tolerance",
         type=int,
-        default=10,
-        help="Line bucket size (default: 10).",
+        default=3,
+        help="Line clustering tolerance (adjacent gap in lines; default: 3).",
     )
     ap.add_argument(
         "--mode",
@@ -377,7 +351,7 @@ def main() -> None:
 
     matrix = build_hotspot_location_matrix(
         report_path,
-        bucket_size=args.bucket_size,
+        tolerance=args.tolerance,
         mode=args.mode,
         cwe_map_path=cwe_map_path,
         min_tools=args.min_tools,

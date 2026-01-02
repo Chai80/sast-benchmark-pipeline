@@ -62,24 +62,9 @@ def build_hotspot_matrix(
     signature_type = report.get("signature_type")
     repo_name = report.get("repo") if isinstance(report.get("repo"), str) else None
 
-    union = report.get("union_signatures")
-
-    # Backwards-compat: older unique_overview reports might not include union_signatures.
-    # In that case we compute the union from the tool outputs using the same signature logic.
-    if not isinstance(union, list) or not union:
-        union_keys = set()
-        for tool, info in tool_sig_info.items():
-            union_keys.update(info.keys())
-
-        # Deterministic ordering: sort by (file_path, owasp_code)
-        def _sig_sort_key(sig_str: str) -> tuple[str, str]:
-            fp, code = sig_str.rsplit("|", 1)
-            return fp, code
-
-        union = []
-        for sig_str in sorted(union_keys, key=_sig_sort_key):
-            fp, code = sig_str.rsplit("|", 1)
-            union.append({"signature": sig_str, "file": fp, "code": code})
+    # unique_overview now emits union_signatures, but keep backward-compat:
+    # if missing, we'll compute it after we build per-tool signatures below.
+    union = report.get("union_signatures") if isinstance(report.get("union_signatures"), list) else None
 
     # Load CWE->OWASP mapping (same one unique_overview uses for canonicalization)
     cwe_map: Mapping[str, Any] = _load_json(cwe_map_path)
@@ -145,6 +130,23 @@ def build_hotspot_matrix(
                 "title": f.get("title"),
             }
         tool_sig_info[tool] = info
+
+    # Backwards-compat: if the report didn't include union_signatures, compute it
+    # from the per-tool signature maps we just built (same signature logic).
+    if union is None:
+        union_keys: set[str] = set()
+        for info in tool_sig_info.values():
+            union_keys.update(info.keys())
+
+        # Deterministic ordering: sort by (file_path, owasp_code)
+        def _sig_sort_key(sig_str: str) -> tuple[str, str]:
+            fp, code = sig_str.rsplit("|", 1)
+            return fp, code
+
+        union = []
+        for sig_str in sorted(union_keys, key=_sig_sort_key):
+            fp, code = sig_str.rsplit("|", 1)
+            union.append({"signature": sig_str, "file": fp, "code": code})
 
     # Build matrix rows
     rows: List[Dict[str, Any]] = []

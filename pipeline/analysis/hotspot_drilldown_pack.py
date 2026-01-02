@@ -39,7 +39,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from pipeline.analysis.location_signatures import iter_location_signatures, safe_dir_name
+from pipeline.analysis.location_signatures import build_location_cluster_index, safe_dir_name
 from pipeline.core import ROOT_DIR as REPO_ROOT_DIR
 
 
@@ -144,12 +144,12 @@ def build_pack(
     matrix = _load_json(matrix_path)
 
     meta = matrix.get("meta") if isinstance(matrix.get("meta"), dict) else {}
-    bucket_size = meta.get("bucket_size") if isinstance(meta.get("bucket_size"), int) else None
+    tolerance = meta.get("tolerance") if isinstance(meta.get("tolerance"), int) else None
     mode = meta.get("mode") if isinstance(meta.get("mode"), str) else "security"
     tool_names = meta.get("tool_names") if isinstance(meta.get("tool_names"), list) else []
 
-    if bucket_size is None:
-        raise ValueError("Matrix meta.bucket_size missing; is this a location matrix JSON?")
+    if tolerance is None:
+        raise ValueError("Matrix meta.tolerance missing; is this a location matrix JSON?")
     if not tool_names:
         raise ValueError("Matrix meta.tool_names missing; is this a location matrix JSON?")
 
@@ -179,17 +179,12 @@ def build_pack(
         rn = tr.get("name") if isinstance(tr, dict) else None
         repo_name_by_tool[tool] = rn if isinstance(rn, str) and rn else _extract_repo_name_from_report(report)
 
-    # Build per-tool location index: signature_id -> list[findings]
-    idx_by_tool: Dict[str, Dict[str, List[Mapping[str, Any]]]] = {}
-    for tool in tool_names:
-        idx: Dict[str, List[Mapping[str, Any]]] = {}
-        for sig_id, _sig, finding in iter_location_signatures(
-            findings_by_tool.get(tool, []),
-            repo_name=repo_name_by_tool.get(tool),
-            bucket_size=bucket_size,
-        ):
-            idx.setdefault(sig_id, []).append(finding)
-        idx_by_tool[tool] = idx
+    # Build canonical clusters across tools (must match hotspot_location_matrix)
+    _clusters, idx_by_tool = build_location_cluster_index(
+        findings_by_tool=findings_by_tool,
+        repo_name_by_tool=repo_name_by_tool,
+        tolerance=int(tolerance),
+    )
 
     # Load matrix rows and select rows
     rows = matrix.get("rows")
@@ -236,7 +231,7 @@ def build_pack(
         "matrix": str(matrix_path),
         "report": str(report_path),
         "repo_path": str(repo_path),
-        "bucket_size": bucket_size,
+        "tolerance": tolerance,
         "mode": mode,
         "tool_names": tool_names,
         "selected_signatures": list(selected_sigs),
@@ -258,8 +253,8 @@ def build_pack(
             bucket_end = int(end_s)
         except Exception:
             fp = str(r.get("file") or "")
-            bucket_start = int(r.get("bucket_start") or 1)
-            bucket_end = int(r.get("bucket_end") or bucket_start)
+            bucket_start = int(r.get("cluster_start") or r.get("bucket_start") or 1)
+            bucket_end = int(r.get("cluster_end") or r.get("bucket_end") or bucket_start)
 
         hotspot_dir = pack_root / safe_dir_name(sig_id)
         hotspot_dir.mkdir(parents=True, exist_ok=True)
