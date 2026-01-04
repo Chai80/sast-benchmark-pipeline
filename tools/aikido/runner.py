@@ -189,6 +189,7 @@ def filter_issues_for_repo(issues: Sequence[Dict[str, Any]], code_repo_id: str) 
 def build_run_metadata(
     *,
     repo_name: str,
+    source_repo_name: Optional[str],
     repo_url: Optional[str],
     code_repo_id: str,
     repo_obj: Dict[str, Any],
@@ -201,6 +202,7 @@ def build_run_metadata(
         "scanner": "aikido",
         "scanner_version": AIKIDO_TOOL_VERSION,
         "repo_name": repo_name,
+        "source_repo_name": source_repo_name,
         "repo_url": repo_url,
         "code_repo_id": code_repo_id,
         "branch": repo_obj.get("branch"),
@@ -218,7 +220,7 @@ def build_run_metadata(
     }
 
 
-def execute(*, git_ref: Optional[str], output_root: str, skip_trigger: bool) -> Tuple[RunPaths, Dict[str, Any]]:
+def execute(*, git_ref: Optional[str], output_root: str, skip_trigger: bool, repo_name_override: Optional[str] = None) -> Tuple[RunPaths, Dict[str, Any]]:
     # Load project .env (if present)
     load_dotenv(ENV_PATH)
 
@@ -229,7 +231,8 @@ def execute(*, git_ref: Optional[str], output_root: str, skip_trigger: bool) -> 
     selected_git_ref = git_ref or choose_git_ref_interactively(repos)
     code_repo_id, repo_obj = find_repo_by_git_ref(repos, selected_git_ref)
 
-    repo_name = repo_obj.get("name") or "unknown_repo"
+    source_repo_name = repo_obj.get("name") or "unknown_repo"
+    repo_name = repo_name_override or source_repo_name
     repo_url = repo_obj.get("url")
 
     run_id, paths = prepare_run_paths(output_root, repo_name)
@@ -247,6 +250,7 @@ def execute(*, git_ref: Optional[str], output_root: str, skip_trigger: bool) -> 
 
     metadata = build_run_metadata(
         repo_name=repo_name,
+        source_repo_name=source_repo_name,
         repo_url=repo_url,
         code_repo_id=code_repo_id,
         repo_obj=repo_obj,
@@ -262,9 +266,9 @@ def execute(*, git_ref: Optional[str], output_root: str, skip_trigger: bool) -> 
     return paths, metadata
 
 
-def cli_entry(git_ref: Optional[str], output_root: str, skip_trigger: bool) -> None:
+def cli_entry(git_ref: Optional[str], output_root: str, skip_trigger: bool, repo_name_override: Optional[str] = None) -> None:
     try:
-        paths, _meta = execute(git_ref=git_ref, output_root=output_root, skip_trigger=skip_trigger)
+        paths, _meta = execute(git_ref=git_ref, output_root=output_root, skip_trigger=skip_trigger, repo_name_override=repo_name_override)
         print(f"Run complete.")
         print(f"  Issues JSON     : {paths.raw_results}")
         print(f"  Metadata        : {paths.metadata}")

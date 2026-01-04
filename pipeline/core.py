@@ -110,11 +110,20 @@ def build_scan_command(
     # ---- Scanner quirks ----
     if scanner == "aikido":
         # Aikido scanner expects a git reference / slug; it does not accept --repo-url.
-        if not repo_url:
-            raise ValueError("Aikido scanner requires repo_url to derive --git-ref.")
-        git_ref = repo_url.rstrip("/").replace(".git", "")
+        # When scanning via --repo-path (e.g., suite branch worktrees/clones) we may not have a
+        # repo_url available, so allow an explicit override via extra_args["git-ref"].
+        extra = dict(extra_args or {})
+        override = extra.pop("git-ref", None)
+        if override:
+            git_ref = str(override).strip()
+        elif repo_url:
+            git_ref = repo_url.rstrip("/").replace(".git", "")
+        else:
+            raise ValueError("Aikido scanner requires repo_url or extra_args['git-ref'] to set --git-ref.")
+        if not git_ref:
+            raise ValueError("Empty Aikido git-ref (from repo_url or extra_args['git-ref']).")
         cmd += ["--git-ref", git_ref]
-        cmd += _render_extra_args(extra_args)
+        cmd += _render_extra_args(extra)
         return cmd
 
     # ---- Standard repo args (most scanners) ----
