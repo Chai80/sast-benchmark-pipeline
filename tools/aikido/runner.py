@@ -312,8 +312,9 @@ def execute_cloud(*, git_ref: Optional[str], output_root: str, skip_trigger: boo
     load_dotenv(ENV_PATH)
 
     cfg = get_aikido_config()
-    cache_dir = _infer_aikido_cache_dir(output_root)\n    cache_ttl = int(os.environ.get('AIKIDO_CACHE_TTL_SECS', '3600'))\n
-    repos = list_code_repos(cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl)\n
+    cache_dir = _infer_aikido_cache_dir(output_root)
+    cache_ttl = int(os.environ.get('AIKIDO_CACHE_TTL_SECS', '3600'))
+    repos = list_code_repos(cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl)
     selected_git_ref = git_ref or choose_git_ref_interactively(repos)
     code_repo_id, repo_obj = find_repo_by_git_ref(repos, selected_git_ref, branch=branch)
 
@@ -327,7 +328,8 @@ def execute_cloud(*, git_ref: Optional[str], output_root: str, skip_trigger: boo
     if not skip_trigger:
         trigger_http_seconds = trigger_aikido_scan(cfg.token, code_repo_id)
 
-    all_issues = export_all_issues(cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl)\n    repo_issues = filter_issues_for_repo(all_issues, code_repo_id)
+    all_issues = export_all_issues(cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl)
+    repo_issues = filter_issues_for_repo(all_issues, code_repo_id)
 
     write_json(paths.raw_results, repo_issues)
 
