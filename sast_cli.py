@@ -472,6 +472,27 @@ def _merge_dicts(a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]) -> Di
     return out
 
 
+
+def _detect_git_branch(repo_path: Optional[str]) -> Optional[str]:
+    """Best-effort detect current git branch name for a local repo checkout.
+
+    Returns None if repo_path is missing, not a git repo, or in detached HEAD.
+    """
+    if not repo_path:
+        return None
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(repo_path), "rev-parse", "--abbrev-ref", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if not out or out == "HEAD":
+            return None
+        return out
+    except Exception:
+        return None
+
+
 def _write_manifest(path: Path, manifest: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -625,13 +646,20 @@ def main() -> None:
 
         # When bundling, force output-root under the bundle.
 
+        # Aikido cloud multi-branch scanning: pass current git branch so we select
+        # the correct branch-clone repo inside Aikido when multi-branch scanning is enabled.
+        if scanner == "aikido":
+            b = _detect_git_branch(repo_path)
+            if b:
+                extra_args = _merge_dicts(extra_args, {"branch": b})
+
         if scanner == "aikido" and args.aikido_git_ref:
             extra_args = _merge_dicts(extra_args, {"git-ref": args.aikido_git_ref})
         if bundle is not None:
             extra_args = _merge_dicts(extra_args, {"output-root": str(bundle.scans_dir / scanner)})
             if scanner == "aikido":
                 # Ensure Aikido writes to the same repo folder name for analysis.
-                extra_args = _merge_dicts(extra_args, {"repo-name": runs_repo_name})
+                extra_args = _merge_dicts(extra_args, {"repo-name": runs_repo_name, "branch": runs_repo_name})
 
         cmd = build_scan_command(
             scanner,
@@ -733,12 +761,19 @@ def main() -> None:
             print(f"  Sonar project key : {extra_args.get('project-key')}")
 
 
+        # Aikido cloud multi-branch scanning: pass current git branch so we select
+        # the correct branch-clone repo inside Aikido when multi-branch scanning is enabled.
+        if scanner == "aikido":
+            b = _detect_git_branch(repo_path)
+            if b:
+                extra_args = _merge_dicts(extra_args, {"branch": b})
+
         if scanner == "aikido" and args.aikido_git_ref:
             extra_args = _merge_dicts(extra_args, {"git-ref": args.aikido_git_ref})
         if bundle is not None:
             extra_args = _merge_dicts(extra_args, {"output-root": str(bundle.scans_dir / scanner)})
             if scanner == "aikido":
-                extra_args = _merge_dicts(extra_args, {"repo-name": runs_repo_name})
+                extra_args = _merge_dicts(extra_args, {"repo-name": runs_repo_name, "branch": runs_repo_name})
 
         cmd = build_scan_command(
             scanner,
