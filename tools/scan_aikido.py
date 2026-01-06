@@ -46,6 +46,20 @@ def parse_args() -> argparse.Namespace:
         help="Repo name or GitHub URL fragment (e.g. 'juice-shop' or 'Chai80/juice-shop').",
     )
 
+    parser.add_argument(
+        "--repo-name",
+        dest="repo_name",
+        required=False,
+        help="Override the repository name used for output paths / normalized file name (useful for suite cases).",
+    )
+    parser.add_argument(
+        "--branch",
+        dest="branch",
+        required=False,
+        help="Cloud mode: branch name to select when multi-branch scanning is enabled in Aikido.",
+    )
+
+
     # Local mode inputs.
     parser.add_argument("--repo-path", required=False, help="Local repository path (required for --mode local).")
     parser.add_argument("--repo-url", required=False, help="Optional repo URL (metadata only).")
@@ -112,7 +126,8 @@ def main() -> None:
         mode=args.mode,
         repo_path=args.repo_path,
         repo_url=args.repo_url,
-        repositoryname=args.repositoryname,
+        repositoryname=(args.repo_name or args.repositoryname),
+        branch=args.branch,
         branchname=args.branchname,
         scan_types=args.scan_types,
         fail_on=args.fail_on,
