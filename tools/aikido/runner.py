@@ -42,6 +42,29 @@ from .normalize import normalize_aikido_results
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_PATH = PROJECT_ROOT / ".env"
 
+def _infer_aikido_cache_dir(output_root: str) -> Path:
+    """Infer a shared cache dir for Aikido API calls.
+
+    In the human-first suite layout, each case invokes scan_aikido.py in a separate
+    process. Without caching, cloud mode repeatedly calls expensive endpoints like
+    /issues/export, which can trigger 429 rate limits.
+
+    If output_root looks like:
+      .../runs/suites/<suite_id>/cases/<case>/scans/aikido
+
+    use:
+      .../runs/suites/<suite_id>/.cache/aikido
+    """
+    p = Path(output_root).resolve()
+    try:
+        if p.name == "aikido" and p.parent.name == "scans" and p.parents[2].name == "cases":
+            suite_dir = p.parents[3]
+            return suite_dir / ".cache" / "aikido"
+    except Exception:
+        pass
+    return p / ".cache" / "aikido"
+
+
 _GH_OWNER_REPO_RE = re.compile(r"(?i)\b([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)\b")
 
 
@@ -148,41 +171,84 @@ def _repo_variants(repo_obj: Dict[str, Any]) -> Tuple[set[str], Optional[Tuple[s
     return vars, owner_repo
 
 
-def find_repo_by_git_ref(repos: Sequence[Dict[str, Any]], git_ref: str) -> Tuple[str, Dict[str, Any]]:
-    selector = (git_ref or "").strip()
-    if not selector:
-        raise ValueError("Empty git_ref")
+def _repo_branch(repo_obj: Dict[str, Any]) -> Optional[str]:
+    """Best-effort extraction of the branch name for a code repo."""
+    for k in ("branch", "branch_name", "scanned_branch", "scan_branch", "default_branch"):
+        v = repo_obj.get(k)
+        if v not in (None, ""):
+            return str(v)
+    return None
 
+
+def find_repo_by_git_ref(
+    code_repos: List[Dict[str, Any]],
+    git_ref: str,
+    branch: Optional[str] = None,
+) -> Tuple[int, Dict[str, Any]]:
+    """Pick the correct code-repo object from Aikido's /repositories/code list.
+
+    When multi-branch scanning is enabled, Aikido returns one 'code repo' per
+    branch. In that case you should pass `branch` to avoid exporting the wrong
+    branch's findings.
+    """
+
+    selector = git_ref or ""
     sel_low = selector.lower().strip()
-    sel_slug = _slugify(selector)
-    sel_owner_repo = _extract_owner_repo(selector)
-    sel_repo_only = sel_owner_repo[1] if sel_owner_repo else None
 
-    for r in repos:
+    # Normalize GitHub URL -> owner/repo
+    sel_slug = sel_low
+    if sel_low.startswith("https://"):
+        sel_slug = sel_low.replace("https://github.com/", "").rstrip("/")
+    if sel_low.startswith("http://"):
+        sel_slug = sel_low.replace("http://github.com/", "").rstrip("/")
+
+    sel_owner_repo = sel_slug if "/" in sel_slug else ""
+    sel_repo_only = sel_slug.split("/")[-1] if sel_slug else ""
+
+    matches: List[Dict[str, Any]] = []
+    for r in code_repos:
         variants, _ = _repo_variants(r)
-        if sel_low in variants or sel_slug in variants:
-            return str(r["id"]), r
-        if sel_owner_repo and f"{sel_owner_repo[0]}/{sel_owner_repo[1]}" in variants:
-            return str(r["id"]), r
-        if sel_repo_only and sel_repo_only in variants:
-            return str(r["id"]), r
-
-    for r in repos:
         url = str(r.get("url") or "").lower()
-        if not url:
-            continue
-        if sel_low and sel_low in url:
-            return str(r["id"]), r
-        if sel_owner_repo and f"{sel_owner_repo[0]}/{sel_owner_repo[1]}" in url:
-            return str(r["id"]), r
-        if sel_repo_only and f"/{sel_repo_only}" in url:
-            return str(r["id"]), r
 
-    raise ValueError(
-        "No Aikido repo found for %r.\n"
-        "Tip: try --git-ref <owner>/<repo> (e.g. juice-shop/juice-shop) or run without --git-ref to pick from the interactive list."
-        % selector
-    )
+        if (
+            (sel_low and sel_low in variants)
+            or (sel_slug and sel_slug in variants)
+            or (sel_owner_repo and sel_owner_repo in variants)
+            or (sel_repo_only and sel_repo_only in variants)
+            or (sel_low and sel_low in url)
+            or (sel_slug and sel_slug in url)
+            or (sel_owner_repo and sel_owner_repo in url)
+            or (sel_repo_only and f"/{sel_repo_only}" in url)
+        ):
+            matches.append(r)
+
+    if not matches:
+        raise ValueError(
+            f"No Aikido code repo found for git-ref '{selector}'.\n"
+            "Tip: use --git-ref <owner>/<repo> or a full GitHub URL, and make sure the repo is connected in Aikido."
+        )
+
+    if branch:
+        branch_matches = [r for r in matches if _repo_branch(r) == branch]
+        if not branch_matches:
+            available = sorted({b for b in (_repo_branch(r) for r in matches) if b})
+            raise ValueError(
+                f"Found {len(matches)} Aikido repos matching '{selector}', but none with branch '{branch}'.\n"
+                f"Available branches for this repo in Aikido: {available}"
+            )
+        matches = branch_matches
+
+    # Be deterministic (API order is not guaranteed)
+    def _rid(r: Dict[str, Any]) -> int:
+        try:
+            return int(r.get("id") or 0)
+        except Exception:
+            return 0
+
+    matches = sorted(matches, key=_rid)
+    chosen = matches[0]
+    return int(chosen["id"]), chosen
+
 
 
 def filter_issues_for_repo(issues: Sequence[Dict[str, Any]], code_repo_id: str) -> List[Dict[str, Any]]:
@@ -241,18 +307,18 @@ def build_cloud_run_metadata(
     }
 
 
-def execute_cloud(*, git_ref: Optional[str], output_root: str, skip_trigger: bool) -> Tuple[RunPaths, Dict[str, Any]]:
+def execute_cloud(*, git_ref: Optional[str], output_root: str, skip_trigger: bool, repositoryname: Optional[str] = None, branch: Optional[str] = None) -> Tuple[RunPaths, Dict[str, Any]]:
     # Load project .env (if present)
     load_dotenv(ENV_PATH)
 
     cfg = get_aikido_config()
-
-    repos = list_code_repos(cfg.token)
-
+    cache_dir = _infer_aikido_cache_dir(output_root)\n    cache_ttl = int(os.environ.get('AIKIDO_CACHE_TTL_SECS', '3600'))\n
+    repos = list_code_repos(cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl)\n
     selected_git_ref = git_ref or choose_git_ref_interactively(repos)
-    code_repo_id, repo_obj = find_repo_by_git_ref(repos, selected_git_ref)
+    code_repo_id, repo_obj = find_repo_by_git_ref(repos, selected_git_ref, branch=branch)
 
-    repo_name = repo_obj.get("name") or "unknown_repo"
+    derived_repo_name = repo_obj.get("name") or "unknown_repo"
+    repo_name = repositoryname or derived_repo_name
     repo_url = repo_obj.get("url")
 
     run_id, paths = prepare_run_paths(output_root, repo_name)
@@ -261,8 +327,7 @@ def execute_cloud(*, git_ref: Optional[str], output_root: str, skip_trigger: boo
     if not skip_trigger:
         trigger_http_seconds = trigger_aikido_scan(cfg.token, code_repo_id)
 
-    all_issues = export_all_issues(cfg.token)
-    repo_issues = filter_issues_for_repo(all_issues, code_repo_id)
+    all_issues = export_all_issues(cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl)\n    repo_issues = filter_issues_for_repo(all_issues, code_repo_id)
 
     write_json(paths.raw_results, repo_issues)
 
@@ -459,6 +524,7 @@ def execute_local(
     repo_url: Optional[str] = None,
     git_ref: Optional[str] = None,
     repositoryname: Optional[str] = None,
+    branch: Optional[str] = None,
     branchname: Optional[str] = None,
     scan_types: Optional[List[str]] = None,
     fail_on: str = "low",
@@ -591,6 +657,7 @@ def execute(
     repo_path: Optional[str] = None,
     repo_url: Optional[str] = None,
     repositoryname: Optional[str] = None,
+    branch: Optional[str] = None,
     branchname: Optional[str] = None,
     scan_types: Optional[List[str]] = None,
     fail_on: str = "low",
@@ -606,7 +673,7 @@ def execute(
     """Dispatch to the chosen backend."""
     mode = (mode or "cloud").strip().lower()
     if mode == "cloud":
-        return execute_cloud(git_ref=git_ref, output_root=output_root, skip_trigger=skip_trigger)
+        return execute_cloud(git_ref=git_ref, output_root=output_root, skip_trigger=skip_trigger, repositoryname=repositoryname, branch=branch)
 
     if mode == "local":
         if not repo_path:
@@ -617,6 +684,7 @@ def execute(
             repo_url=repo_url,
             git_ref=git_ref,
             repositoryname=repositoryname,
+            branch=branch,
             branchname=branchname,
             scan_types=scan_types,
             fail_on=fail_on,
@@ -642,6 +710,7 @@ def cli_entry(
     repo_path: Optional[str] = None,
     repo_url: Optional[str] = None,
     repositoryname: Optional[str] = None,
+    branch: Optional[str] = None,
     branchname: Optional[str] = None,
     scan_types: Optional[List[str]] = None,
     fail_on: str = "low",
@@ -663,6 +732,7 @@ def cli_entry(
             repo_path=repo_path,
             repo_url=repo_url,
             repositoryname=repositoryname,
+            branch=branch,
             branchname=branchname,
             scan_types=scan_types,
             fail_on=fail_on,
