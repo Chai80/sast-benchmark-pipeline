@@ -374,9 +374,14 @@ def score_case(
     explicit_branch: Optional[str] = None,
     explicit_repo_name: Optional[str] = None,
 ) -> Dict[str, Any]:
+    tool_runs_dir = case_dir / "tool_runs"
     scans_dir = case_dir / "scans"
+    runs_root = tool_runs_dir if tool_runs_dir.exists() else scans_dir
+
     analysis_dir = case_dir / "analysis"
+    gt_dir = case_dir / "gt"
     analysis_dir.mkdir(parents=True, exist_ok=True)
+    gt_dir.mkdir(parents=True, exist_ok=True)
 
     branch = explicit_branch or case_dir.name
 
@@ -385,11 +390,11 @@ def score_case(
     if not repo_name:
         candidates: List[str] = []
         for tool in tools:
-            td = scans_dir / tool
+            td = runs_root / tool
             if not td.exists():
                 continue
             for p in td.iterdir():
-                if p.is_dir():
+                if p.is_dir() and not re.match(r"^\d{10}$", p.name):
                     candidates.append(p.name)
         if candidates:
             repo_name = Counter(candidates).most_common(1)[0][0]
@@ -410,7 +415,7 @@ def score_case(
     expected_all_with_oos = expected_all_scored + expected_oos
 
     # Discover latest normalized outputs within this case.
-    runs = discover_latest_runs(runs_dir=scans_dir, repo_name=repo_name, tools=tools, allow_missing=True)
+    runs = discover_latest_runs(runs_dir=runs_root, repo_name=repo_name, tools=tools, allow_missing=True)
 
     tools_out: Dict[str, Any] = {}
 
@@ -540,8 +545,8 @@ def score_case(
     }
 
     # Default outputs in the case analysis dir.
-    out_json = analysis_dir / "gt_score.json"
-    out_csv = analysis_dir / "gt_score.csv"
+    out_json = gt_dir / "gt_score.json"
+    out_csv = gt_dir / "gt_score.csv"
 
     write_json(report, out_json)
 

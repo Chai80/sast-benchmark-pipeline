@@ -124,7 +124,29 @@ def get_sonar_config() -> SonarConfig:
 # ---------------------------------------------------------------------------
 
 def prepare_run_paths(output_root: str, repo_name: str) -> Tuple[str, RunPaths]:
-    run_id, run_dir = create_run_dir_compat(Path(output_root) / repo_name)
+    """Prepare per-run output paths.
+
+    Layouts supported:
+    - v2 (suite/case): <output_root>/<run_id>/{raw.json,normalized.json,metadata.json,logs/...}
+      where output_root is cases/<case>/tool_runs/<tool>
+    - v1 (legacy):     <output_root>/<repo_name>/<run_id>/{<repo>.json,<repo>.normalized.json,metadata.json}
+    """
+    out_root = Path(output_root)
+    suite_mode = out_root.parent.name in {"tool_runs", "scans"}
+
+    if suite_mode:
+        run_id, run_dir = create_run_dir_compat(out_root)
+        logs_dir = run_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        return run_id, RunPaths(
+            run_dir=run_dir,
+            log=logs_dir / "sonar_scan.log",
+            raw_results=run_dir / "raw.json",
+            normalized=run_dir / "normalized.json",
+            metadata=run_dir / "metadata.json",
+        )
+
+    run_id, run_dir = create_run_dir_compat(out_root / repo_name)
     return run_id, RunPaths(
         run_dir=run_dir,
         log=run_dir / f"{repo_name}_sonar_scan.log",
@@ -263,6 +285,8 @@ def main() -> None:
 
     if not args.skip_scan:
         sonar_bin = which_or_raise("sonar-scanner", fallbacks=SONAR_SCANNER_FALLBACKS)
+
+        paths.log.parent.mkdir(parents=True, exist_ok=True)
 
         rc, elapsed, cmd = run_sonar_scan(
             sonar_bin=sonar_bin,

@@ -20,7 +20,7 @@ By default this CLI writes *everything* for a run into a single bundle folder:
   runs/bundles/<target>/<bundle_id>/
     scans/<tool>/<repo>/<run_id>/...
     analysis/...
-    run_manifest.json
+    case.json
 
 This keeps the output tree readable and makes it easy to share a specific run
 (or rerun analysis) without hunting across many directories.
@@ -417,14 +417,29 @@ def _load_json_if_exists(path: Path) -> Optional[Dict[str, Any]]:
 
 
 def _discover_single_repo_dir(output_root: Path, prefer: Optional[str] = None) -> Optional[Path]:
-    """In a bundle, output_root should contain exactly one repo folder per tool."""
+    """Discover the per-tool *run root* directory inside a case.
+
+    Supports two layouts:
+
+    v2 (preferred):
+      <output_root>/<run_id>/...
+
+    v1 (legacy):
+      <output_root>/<repo_name>/<run_id>/...
+    """
+    if not output_root.exists() or not output_root.is_dir():
+        return None
+
+    # v2: output_root contains run_id directories directly.
+    run_dirs = [d for d in output_root.iterdir() if d.is_dir() and _RUN_ID_RE.match(d.name)]
+    if run_dirs:
+        return output_root
+
+    # v1: output_root contains repo folder(s); prefer an exact match if provided.
     if prefer:
         p = output_root / prefer
         if p.exists() and p.is_dir():
             return p
-
-    if not output_root.exists() or not output_root.is_dir():
-        return None
 
     dirs = [d for d in output_root.iterdir() if d.is_dir()]
     if len(dirs) == 1:
@@ -435,6 +450,7 @@ def _discover_single_repo_dir(output_root: Path, prefer: Optional[str] = None) -
         for d in dirs:
             if d.name.lower() == prefer.lower():
                 return d
+
     return None
 
 
@@ -498,6 +514,60 @@ def _write_manifest(path: Path, manifest: Dict[str, Any]) -> None:
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
+def _write_run_json(
+    run_dir: Path,
+    *,
+    suite_id: str,
+    case_id: str,
+    tool: str,
+    repo_name: str,
+    exit_code: int,
+    command: str,
+    started: Optional[str] = None,
+    finished: Optional[str] = None,
+) -> None:
+    """Write run_dir/run.json (DB-ingestion friendly pointer file).
+
+    This file is intentionally small: it records identifiers and the artifact filenames
+    that live next to it (normalized/raw/metadata/logs).
+
+    It does **not** duplicate the full normalized findings payload.
+    """
+    run_id = run_dir.name
+
+    def _pick_first(candidates: list[str]) -> Optional[str]:
+        for name in candidates:
+            p = run_dir / name
+            if p.exists() and p.is_file():
+                return name
+        return None
+
+    normalized_name = _pick_first(["normalized.json", f"{repo_name}.normalized.json"])
+    raw_name = _pick_first(["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"])
+    metadata_name = _pick_first(["metadata.json"])
+    logs_dir = run_dir / "logs"
+    logs_dir_name = "logs" if logs_dir.exists() and logs_dir.is_dir() else None
+
+    data: Dict[str, Any] = {
+        "suite_id": suite_id,
+        "case_id": case_id,
+        "tool": tool,
+        "run_id": run_id,
+        "started": started,
+        "finished": finished,
+        "exit_code": int(exit_code),
+        "command": command,
+        "artifacts": {
+            "normalized": normalized_name,
+            "raw": raw_name,
+            "metadata": metadata_name,
+            "logs_dir": logs_dir_name,
+        },
+    }
+
+    (run_dir / "run.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 # -------------------------------------------------------------------
 # Main
 # -------------------------------------------------------------------
@@ -551,7 +621,12 @@ def main() -> None:
             )
 
         if bundle_dir is not None:
-            runs_dir = bundle_dir / "scans"
+            # v2 layout: tool_runs/ (preferred). v1: scans/ (legacy fallback).
+            runs_dir = bundle_dir / "tool_runs"
+            if not runs_dir.exists():
+                legacy = bundle_dir / "scans"
+                if legacy.exists():
+                    runs_dir = legacy
             default_out_dir = bundle_dir / "analysis"
         else:
             runs_dir = Path(args.runs_dir).resolve()
@@ -600,7 +675,9 @@ def main() -> None:
             )
         except FileNotFoundError as e:
             print("\n⚠️  No normalized runs found for analysis.")
-            print("   Expected layout: runs/<tool>/<repo_name>/<run_id>/<repo_name>.normalized.json")
+            print("   Expected layout:")
+            print("     v2: <runs_dir>/<tool>/<run_id>/normalized.json")
+            print("     v1: <runs_dir>/<tool>/<repo_name>/<run_id>/<repo_name>.normalized.json")
             print(f"   runs_dir       : {runs_dir}")
             print(f"   repo_name      : {runs_repo_name}")
             print(f"   tools          : {', '.join(tools)}")
@@ -656,7 +733,7 @@ def main() -> None:
         if scanner == "aikido" and args.aikido_git_ref:
             extra_args = _merge_dicts(extra_args, {"git-ref": args.aikido_git_ref})
         if bundle is not None:
-            extra_args = _merge_dicts(extra_args, {"output-root": str(bundle.scans_dir / scanner)})
+            extra_args = _merge_dicts(extra_args, {"output-root": str(bundle.tool_runs_dir / scanner)})
             if scanner == "aikido":
                 # Ensure Aikido writes to the same repo folder name for analysis.
                 extra_args = _merge_dicts(extra_args, {"repo-name": runs_repo_name})
@@ -679,17 +756,33 @@ def main() -> None:
 
         # Manifest (only when bundling)
         if bundle is not None:
-            tool_out_root = bundle.scans_dir / scanner
+            tool_out_root = bundle.tool_runs_dir / scanner
             repo_dir = _discover_single_repo_dir(tool_out_root, prefer=runs_repo_name)
             run_dir = _discover_latest_run_dir(repo_dir) if repo_dir else None
             metadata = _load_json_if_exists((run_dir / "metadata.json") if run_dir else Path("/nonexistent"))
 
+            # Write per-tool run.json (DB-ingestion friendly pointer file)
+            if run_dir:
+                try:
+                    _write_run_json(
+                        run_dir,
+                        suite_id=bundle.bundle_id,
+                        case_id=bundle.target,
+                        tool=scanner,
+                        repo_name=runs_repo_name,
+                        exit_code=code,
+                        command=" ".join(cmd),
+                        started=started,
+                        finished=finished,
+                    )
+                except Exception:
+                    pass
+
+            run_json_path = str(run_dir / "run.json") if run_dir else None
+
             manifest: Dict[str, Any] = {
-                "bundle": {
-                    "bundle_id": bundle.bundle_id,
-                    "target": bundle.target,
-                    "bundle_dir": str(bundle.bundle_dir),
-                },
+                "suite": {"id": bundle.bundle_id, "suite_dir": str(bundle.suite_dir)},
+                "case": {"id": bundle.target, "case_dir": str(bundle.case_dir)},
                 "repo": {
                     "label": label,
                     "repo_url": repo_url,
@@ -702,21 +795,24 @@ def main() -> None:
                     "python": sys.executable,
                 },
                 "timestamps": {"started": started, "finished": finished},
-                "scans": {
+                "scanners_requested": [scanner],
+                "tool_runs": {
                     scanner: {
                         "exit_code": code,
                         "command": " ".join(cmd),
                         "output_root": str(tool_out_root),
                         "repo_dir": str(repo_dir) if repo_dir else None,
+                        "run_id": run_dir.name if run_dir else None,
                         "run_dir": str(run_dir) if run_dir else None,
+                        "run_json": run_json_path,
                         "metadata": metadata,
                     }
                 },
             }
-            _write_manifest(bundle.manifest_path, manifest)
+            _write_manifest(bundle.case_json_path, manifest)
             update_suite_artifacts(bundle, manifest)
-            print(f"\n📦 Case dir: {bundle.bundle_dir}")
-            print(f"   Manifest: {bundle.manifest_path}")
+            print(f"\n📦 Case dir: {bundle.case_dir}")
+            print(f"   Manifest: {bundle.case_json_path}")
 
         if code == 0:
             print("\n✅ Scan completed.")
@@ -745,10 +841,10 @@ def main() -> None:
     if bundle is not None:
         print(f"  Suite id : {bundle.bundle_id}")
         print(f"  Suite dir: {bundle.suite_dir}")
-        print(f"  Case dir : {bundle.bundle_dir}")
+        print(f"  Case dir : {bundle.case_dir}")
 
     started = _now_iso()
-    scans_manifest: Dict[str, Any] = {}
+    tool_runs_manifest: Dict[str, Any] = {}
 
     overall = 0
     for scanner in scanners:
@@ -771,7 +867,7 @@ def main() -> None:
         if scanner == "aikido" and args.aikido_git_ref:
             extra_args = _merge_dicts(extra_args, {"git-ref": args.aikido_git_ref})
         if bundle is not None:
-            extra_args = _merge_dicts(extra_args, {"output-root": str(bundle.scans_dir / scanner)})
+            extra_args = _merge_dicts(extra_args, {"output-root": str(bundle.tool_runs_dir / scanner)})
             if scanner == "aikido":
                 extra_args = _merge_dicts(extra_args, {"repo-name": runs_repo_name})
 
@@ -783,23 +879,48 @@ def main() -> None:
             python_executable=sys.executable or "python",
         )
 
+        tool_started = _now_iso()
         code = run_one(cmd, args.dry_run, args.quiet)
+        tool_finished = _now_iso()
         if code != 0:
             overall = code
 
         # Record run info (best-effort)
         if bundle is not None:
-            tool_out_root = bundle.scans_dir / scanner
+            tool_out_root = bundle.tool_runs_dir / scanner
             repo_dir = _discover_single_repo_dir(tool_out_root, prefer=runs_repo_name)
             run_dir = _discover_latest_run_dir(repo_dir) if repo_dir else None
             metadata = _load_json_if_exists((run_dir / "metadata.json") if run_dir else Path("/nonexistent"))
 
-            scans_manifest[scanner] = {
+            # Write per-tool run.json (DB-ingestion friendly pointer file)
+            if run_dir:
+                try:
+                    _write_run_json(
+                        run_dir,
+                        suite_id=bundle.bundle_id,
+                        case_id=bundle.target,
+                        tool=scanner,
+                        repo_name=runs_repo_name,
+                        exit_code=code,
+                        command=" ".join(cmd),
+                        started=tool_started,
+                        finished=tool_finished,
+                    )
+                except Exception:
+                    pass
+
+            run_json_path = str(run_dir / "run.json") if run_dir else None
+
+            tool_runs_manifest[scanner] = {
                 "exit_code": code,
                 "command": " ".join(cmd),
+                "started": tool_started,
+                "finished": tool_finished,
                 "output_root": str(tool_out_root),
                 "repo_dir": str(repo_dir) if repo_dir else None,
+                "run_id": run_dir.name if run_dir else None,
                 "run_dir": str(run_dir) if run_dir else None,
+                "run_json": run_json_path,
                 "metadata": metadata,
             }
 
@@ -816,7 +937,7 @@ def main() -> None:
         available_tools: List[str] = []
         for tool in scanners:
             try:
-                find_latest_normalized_json(runs_dir=bundle.scans_dir, tool=tool, repo_name=runs_repo_name)
+                find_latest_normalized_json(runs_dir=bundle.tool_runs_dir, tool=tool, repo_name=runs_repo_name)
                 available_tools.append(tool)
             except FileNotFoundError:
                 print(f"  ⚠️  missing normalized JSON for {tool}; skipping it in analysis")
@@ -827,7 +948,7 @@ def main() -> None:
             analysis_summary = run_suite(
                 repo_name=runs_repo_name,
                 tools=available_tools,
-                runs_dir=bundle.scans_dir,
+                runs_dir=bundle.tool_runs_dir,
                 out_dir=bundle.analysis_dir,
                 tolerance=int(args.tolerance),
                 mode=str(args.analysis_filter),
@@ -841,11 +962,8 @@ def main() -> None:
 
     if bundle is not None:
         manifest: Dict[str, Any] = {
-            "bundle": {
-                "bundle_id": bundle.bundle_id,
-                "target": bundle.target,
-                "bundle_dir": str(bundle.bundle_dir),
-            },
+            "suite": {"id": bundle.bundle_id, "suite_dir": str(bundle.suite_dir)},
+            "case": {"id": bundle.target, "case_dir": str(bundle.case_dir)},
             "repo": {
                 "label": label,
                 "repo_url": repo_url,
@@ -860,19 +978,19 @@ def main() -> None:
             },
             "timestamps": {"started": started, "finished": finished},
             "scanners_requested": scanners,
-            "scans": scans_manifest,
+            "tool_runs": tool_runs_manifest,
             "analysis": analysis_summary,
         }
-        _write_manifest(bundle.manifest_path, manifest)
+        _write_manifest(bundle.case_json_path, manifest)
         update_suite_artifacts(bundle, manifest)
 
         print("\n📦 Case complete")
         print(f"  Suite id : {bundle.bundle_id}")
         print(f"  Suite dir: {bundle.suite_dir}")
-        print(f"  Case dir : {bundle.bundle_dir}")
-        print(f"  Scans    : {bundle.scans_dir}")
+        print(f"  Case dir : {bundle.case_dir}")
+        print(f"  Tool runs: {bundle.tool_runs_dir}")
         print(f"  Analysis : {bundle.analysis_dir if not args.skip_analysis else '(skipped)'}")
-        print(f"  Manifest : {bundle.manifest_path}")
+        print(f"  Manifest : {bundle.case_json_path}")
         print(f"  Summary  : {bundle.suite_summary_path}")
 
     if overall == 0:

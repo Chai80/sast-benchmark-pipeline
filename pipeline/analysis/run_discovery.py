@@ -4,21 +4,22 @@ Helpers for discovering which *normalized JSON* files to analyze.
 
 Why this exists
 ---------------
-Your scanners write outputs under a stable directory layout:
+The pipeline writes normalized outputs to disk. Analysis commands typically want
+"the latest run per tool" without manually threading run_id strings around.
 
-  runs/<tool>/<repo_name>/<run_id>/<repo_name>.normalized.json
+This module supports two filesystem layouts:
 
-The *content* of the normalized JSON includes the run_id and scan_date as
-metadata, so it's useful for traceability. But for day-to-day analysis you
-usually just want "the latest run" per tool without manually threading run_id
-strings through CLI commands.
+v2 (suite/case layout preferred):
+  <runs_dir>/<tool>/<run_id>/normalized.json
+
+v1 (legacy layout):
+  <runs_dir>/<tool>/<repo_name>/<run_id>/<repo_name>.normalized.json
 
 Design goals
 ------------
-- Keep discovery logic isolated from analysis logic (avoid spaghetti).
+- Keep discovery logic isolated from analysis logic.
 - Keep it filesystem-only (no network, no scanner imports).
-- Prefer cheap directory-name ordering (YYYYMMDDNN) and only open JSON when
-  we need metadata.
+- Prefer cheap directory-name ordering (YYYYMMDDNN).
 """
 
 from __future__ import annotations
@@ -118,27 +119,48 @@ def find_latest_normalized_json(
     FileNotFoundError if no suitable normalized JSON exists.
     """
 
-    base = runs_dir / tool / repo_name
-    run_dirs = sorted(_iter_run_dirs(base), key=lambda p: p.name)
-    if not run_dirs:
-        raise FileNotFoundError(f"No run directories found under: {base}")
+    # v1 legacy base (runs/<tool>/<repo_name>/...)
+    base_v1 = runs_dir / tool / repo_name
+    # v2 preferred base (runs/<tool>/<run_id>/...)
+    base_v2 = runs_dir / tool
+
+    run_dirs_v1 = sorted(_iter_run_dirs(base_v1), key=lambda p: p.name)
+    run_dirs_v2 = sorted(_iter_run_dirs(base_v2), key=lambda p: p.name)
+
+    # Prefer v1 if it actually exists/has runs; otherwise try v2.
+    if run_dirs_v1:
+        base = base_v1
+        run_dirs = run_dirs_v1
+        candidates = [f"{repo_name}.normalized.json", "normalized.json"]
+    elif run_dirs_v2:
+        base = base_v2
+        run_dirs = run_dirs_v2
+        candidates = ["normalized.json", f"{repo_name}.normalized.json"]
+    else:
+        raise FileNotFoundError(
+            "No run directories found under either layout:\n"
+            f"  v2: {base_v2}\n"
+            f"  v1: {base_v1}"
+        )
 
     # Iterate from newest to oldest until we find the normalized JSON.
     for rd in reversed(run_dirs):
-        candidate = rd / f"{repo_name}.normalized.json"
-        if candidate.exists() and candidate.is_file():
-            scan_date, commit = _extract_metadata(candidate)
-            return DiscoveredRun(
-                tool=tool,
-                repo_name=repo_name,
-                run_id=rd.name,
-                normalized_json=candidate,
-                scan_date=scan_date,
-                commit=commit,
-            )
+        for fname in candidates:
+            candidate = rd / fname
+            if candidate.exists() and candidate.is_file():
+                scan_date, commit = _extract_metadata(candidate)
+                return DiscoveredRun(
+                    tool=tool,
+                    repo_name=repo_name,
+                    run_id=rd.name,
+                    normalized_json=candidate,
+                    scan_date=scan_date,
+                    commit=commit,
+                )
 
     raise FileNotFoundError(
-        f"Found run dirs under {base} but none contained {repo_name}.normalized.json"
+        f"Found run dirs under {base} but none contained a normalized JSON file "
+        f"(tried: {', '.join(candidates)})"
     )
 
 

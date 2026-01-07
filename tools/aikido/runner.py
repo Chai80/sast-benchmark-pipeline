@@ -57,7 +57,7 @@ def _infer_aikido_cache_dir(output_root: str) -> Path:
     """
     p = Path(output_root).resolve()
     try:
-        if p.name == "aikido" and p.parent.name == "scans" and p.parents[2].name == "cases":
+        if p.name == "aikido" and p.parent.name in {"scans", "tool_runs"} and p.parents[2].name == "cases":
             suite_dir = p.parents[3]
             return suite_dir / ".cache" / "aikido"
     except Exception:
@@ -87,11 +87,29 @@ LOCAL_SCANNER_DOCKER_IMAGE_DEFAULT = "aikidosecurity/local-scanner:latest"
 
 
 def prepare_run_paths(output_root: str, repo_name: str) -> Tuple[str, RunPaths]:
-    run_id, run_dir = create_run_dir_compat(Path(output_root) / repo_name)
+    """Prepare per-run output paths.
+
+    Layouts supported:
+    - v2 (suite/case): <output_root>/<run_id>/{raw.json,normalized.json,metadata.json}
+      where output_root is cases/<case>/tool_runs/<tool>
+    - v1 (legacy):     <output_root>/<repo_name>/<run_id>/{<repo>.json,<repo>.normalized.json,metadata.json}
+    """
+    out_root = Path(output_root)
+    suite_mode = out_root.parent.name in {"tool_runs", "scans"}
+
+    if suite_mode:
+        run_id, run_dir = create_run_dir_compat(out_root)
+        raw = run_dir / "raw.json"
+        norm = run_dir / "normalized.json"
+    else:
+        run_id, run_dir = create_run_dir_compat(out_root / repo_name)
+        raw = run_dir / f"{repo_name}.json"
+        norm = run_dir / f"{repo_name}.normalized.json"
+
     return run_id, RunPaths(
         run_dir=run_dir,
-        raw_results=run_dir / f"{repo_name}.json",
-        normalized=run_dir / f"{repo_name}.normalized.json",
+        raw_results=raw,
+        normalized=norm,
         metadata=run_dir / "metadata.json",
     )
 
