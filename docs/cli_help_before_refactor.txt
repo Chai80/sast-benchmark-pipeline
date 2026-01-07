@@ -1,0 +1,87 @@
+# Baseline CLI help output (pre-refactor)
+# Command: python sast_cli.py --help
+# Generated: 2026-01-07
+
+usage: sast_cli.py [-h] [--mode {scan,benchmark,analyze}]
+                   [--scanner {aikido,semgrep,snyk,sonar}]
+                   [--scanners SCANNERS] [--suite-root BUNDLE_ROOT]
+                   [--suite-id BUNDLE_ID] [--case-path BUNDLE_PATH]
+                   [--no-suite] [--skip-analysis] [--metric {hotspots,suite}]
+                   [--tools TOOLS] [--runs-dir RUNS_DIR]
+                   [--format {text,json}] [--out OUT]
+                   [--analysis-out-dir ANALYSIS_OUT_DIR]
+                   [--tolerance TOLERANCE] [--analysis-filter {security,all}]
+                   [--max-unique MAX_UNIQUE] [--runs-repo-name RUNS_REPO_NAME]
+                   [--repo-key {dvwa,juice_shop,owasp_benchmark,webgoat}]
+                   [--repo-url REPO_URL] [--repo-path REPO_PATH]
+                   [--sonar-project-key SONAR_PROJECT_KEY]
+                   [--aikido-git-ref AIKIDO_GIT_REF] [--dry-run] [--quiet]
+
+Top-level CLI for SAST pipeline (Durinn).
+
+options:
+  -h, --help            show this help message and exit
+  --mode {scan,benchmark,analyze}
+                        scan = one tool, benchmark = multiple tools, analyze =
+                        compute metrics from existing runs
+  --scanner {aikido,semgrep,snyk,sonar}
+                        (scan mode) Which scanner to run
+  --scanners SCANNERS   (benchmark mode) Comma-separated scanners (default:
+                        semgrep,snyk,sonar,aikido)
+  --suite-root BUNDLE_ROOT, --bundle-root BUNDLE_ROOT
+                        Base directory for suite runs (default: runs/suites).
+  --suite-id BUNDLE_ID, --bundle-id BUNDLE_ID
+                        Suite run id to create/use. If omitted in
+                        scan/benchmark, a new UTC timestamp is used. In
+                        analyze mode you can pass 'latest'.
+  --case-path BUNDLE_PATH, --bundle-path BUNDLE_PATH
+                        (analyze mode) Path to an existing case dir (overrides
+                        --suite-root/--suite-id).
+  --no-suite, --no-bundle
+                        Disable suite layout and use legacy
+                        runs/<tool>/<repo>/<run_id>/... paths.
+  --skip-analysis       (benchmark mode) Skip the analysis suite step (scans
+                        only).
+  --metric {hotspots,suite}
+                        (analyze mode) Metric to compute (hotspots|suite)
+  --tools TOOLS         (analyze mode) Comma-separated tools to include
+                        (default: semgrep,snyk,sonar,aikido)
+  --runs-dir RUNS_DIR   (analyze mode, legacy) Base runs directory (default:
+                        <repo_root>/runs)
+  --format {text,json}  (analyze mode) Output format (default: text)
+  --out OUT             (analyze mode) Optional output path to write the JSON
+                        report
+  --analysis-out-dir ANALYSIS_OUT_DIR
+                        (analyze mode, suite) Optional output directory for
+                        suite artifacts. If using bundles, default is
+                        <bundle>/analysis/.
+  --tolerance TOLERANCE
+                        (analysis suite) Line clustering tolerance for
+                        location matrix (default: 3)
+  --analysis-filter {security,all}
+                        (analysis suite) Finding filter mode (default:
+                        security)
+  --max-unique MAX_UNIQUE
+                        (analyze hotspots) For text output, show up to N
+                        unique files per tool (default: 25)
+  --runs-repo-name RUNS_REPO_NAME
+                        (analyze mode) Override the repo directory name under
+                        runs/<tool>/. By default we derive it from the repo
+                        URL (e.g., juice-shop) or local folder name.
+  --repo-key {dvwa,juice_shop,owasp_benchmark,webgoat}
+                        Preset repo key (recommended)
+  --repo-url REPO_URL   Custom git repo URL
+  --repo-path REPO_PATH
+                        Local repo path (skip clone)
+  --sonar-project-key SONAR_PROJECT_KEY
+                        (sonar only) Override SonarCloud project key. If
+                        omitted, we derive ORG_<repo_id>.
+  --aikido-git-ref AIKIDO_GIT_REF
+                        (aikido only) Override the git reference passed to
+                        scan_aikido.py as --git-ref. Use this when running
+                        aikido with --repo-path and no --repo-url (e.g., suite
+                        branch clones/worktrees). Example: Chai80/durinn-
+                        owasp2021-python-micro-suite
+  --dry-run             Print commands but do not execute
+  --quiet               Suppress scanner stdout/stderr (not recommended for
+                        debugging)

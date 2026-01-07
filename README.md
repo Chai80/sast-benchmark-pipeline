@@ -278,3 +278,16 @@ A simple ingester can:
 - `repos/` and `runs/` are generated. Do not commit them.
 - Do not commit IDE folders like `.idea/`
 - Never commit `.env` (tokens/secrets). If you add an `.env.example`, commit that instead.
+
+## Developer notes (CLI refactor prep)
+
+Before making large changes to the CLI UX, keep a snapshot of the current interface and verify that basic codepaths still work.
+
+- `docs/cli_help_before_refactor.txt` is the baseline output of `python sast_cli.py --help`.
+- `scripts/smoke_cli_dry_run.sh` exercises dry-run scan/benchmark codepaths without requiring any API tokens.
+
+Run:
+
+```bash
+bash scripts/smoke_cli_dry_run.sh
+```
