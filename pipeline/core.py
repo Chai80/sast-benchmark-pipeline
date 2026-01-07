@@ -128,9 +128,9 @@ def build_scan_command(
 
     # ---- Standard repo args (most scanners) ----
     if repo_path:
+        # NOTE: many scan_*.py entrypoints treat --repo-url and --repo-path as mutually exclusive.
+        # When a local repo path is provided, pass only --repo-path to avoid argparse errors.
         cmd += ["--repo-path", str(Path(repo_path).resolve())]
-        if repo_url:
-            cmd += ["--repo-url", repo_url]
     elif repo_url:
         cmd += ["--repo-url", repo_url]
     else:

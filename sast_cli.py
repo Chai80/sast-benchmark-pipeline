@@ -659,7 +659,7 @@ def main() -> None:
             extra_args = _merge_dicts(extra_args, {"output-root": str(bundle.scans_dir / scanner)})
             if scanner == "aikido":
                 # Ensure Aikido writes to the same repo folder name for analysis.
-                extra_args = _merge_dicts(extra_args, {"repo-name": runs_repo_name, "branch": runs_repo_name})
+                extra_args = _merge_dicts(extra_args, {"repo-name": runs_repo_name})
 
         cmd = build_scan_command(
             scanner,
@@ -773,7 +773,7 @@ def main() -> None:
         if bundle is not None:
             extra_args = _merge_dicts(extra_args, {"output-root": str(bundle.scans_dir / scanner)})
             if scanner == "aikido":
-                extra_args = _merge_dicts(extra_args, {"repo-name": runs_repo_name, "branch": runs_repo_name})
+                extra_args = _merge_dicts(extra_args, {"repo-name": runs_repo_name})
 
         cmd = build_scan_command(
             scanner,
