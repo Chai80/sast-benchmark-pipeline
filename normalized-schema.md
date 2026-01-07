@@ -2,13 +2,42 @@
 
 > **Docs:** [README](README.md) · [Architecture](ARCHITECTURE.md)
 
-
 This pipeline normalizes scanner-specific outputs (Semgrep, SonarCloud/SonarScanner, Snyk Code, Aikido) into a **single JSON format** so you can compare tools on the same target repo.
 
-This document describes the **on-disk shape** of one normalized run output (one tool × one repo × one run), and clarifies a few **compatibility rules** that make cross-tool analysis reliable.
+This document describes the **normalized run artifact** (one tool × one target × one run), and clarifies a few **compatibility rules** that make cross-tool analysis reliable.
 
-> **Scope note:** This schema describes the *normalized run artifact* (`<repo>.normalized.json`).  
-> Derived analysis artifacts (e.g., “unique hotspots by file”) are documented briefly at the end and live under `runs/analysis/`.
+> **Scope note:** The normalized artifact is typically named:
+> - `normalized.json` (suite/case layout, preferred), or
+> - `<repo_name>.normalized.json` (legacy layout)
+
+Derived analysis artifacts (e.g., “unique hotspots by file”) are **not** part of this schema.
+
+---
+
+## On-disk layouts (where the file lives)
+
+This repo supports two filesystem layouts:
+
+### v2 (suite/case layout, preferred)
+
+```text
+runs/suites/<suite_id>/cases/<case_id>/tool_runs/<tool>/<run_id>/
+  normalized.json
+  raw.json | raw.sarif
+  metadata.json
+  run.json
+```
+
+### v1 (legacy)
+
+```text
+runs/<tool>/<repo_name>/<run_id>/
+  <repo_name>.normalized.json
+  <repo_name>.json | <repo_name>.sarif
+  metadata.json
+```
+
+Both layouts produce the **same normalized JSON schema**. The difference is only filenames/paths.
 
 ---
 
@@ -99,12 +128,12 @@ Describes **how and when you scanned**:
   "run_id": "2025122201",
   "scan_date": "2025-12-22T17:13:29.903427",
   "command": "sonar-scanner ...",
-  "raw_results_path": "runs/sonar/juice-shop/2025122201/juice-shop.json",
+
+  "raw_results_path": "raw.json",
+  "metadata_path": "metadata.json",
 
   "scan_time_seconds": 342.2597,
-  "exit_code": 3,
-
-  "metadata_path": "metadata.json"
+  "exit_code": 3
 }
 ```
 
@@ -113,15 +142,39 @@ Describes **how and when you scanned**:
 | `run_id` | string | ✅ | Run directory ID (`YYYYMMDDNN`). |
 | `scan_date` | string | ✅ | Timestamp when the run was executed/recorded. |
 | `command` | string\|null | ⭕️ | Command used to invoke the scanner (reproducibility). |
-| `raw_results_path` | string | ✅ | Where the raw vendor output is stored for this run. |
+| `raw_results_path` | string | ✅ | Raw vendor output filename or path for this run. In suite layout this is usually `raw.json` or `raw.sarif`. In legacy layout it may be `<repo>.json` or `<repo>.sarif`. |
 | `scan_time_seconds` | number\|null | ⭕️ | Runtime of scan command (if measured). |
 | `exit_code` | integer\|null | ⭕️ | Exit code from the scan command (tool-specific). |
 | `metadata_path` | string | ✅ | Relative path to `metadata.json` inside the run directory. |
-| `log_path` | string\|null | ⭕️ | Optional: log path (some tools may surface this later for consistency). |
+| `log_path` | string\|null | ⭕️ | Optional: log path (Sonar commonly produces a scan log). |
 
 **Why both `scan` and `run_metadata`?**  
 - `scan` is the stable minimal contract needed to identify the run.
 - `run_metadata` is a convenient embedded copy of the full per-run metadata.
+
+---
+
+## Run pointer file (`run.json`) for DB ingestion (v2 layout)
+
+In the suite layout, each tool run directory may contain a small `run.json` file:
+
+```json
+{
+  "suite_id": "20260107T120000Z",
+  "case_id": "juice-shop",
+  "tool": "semgrep",
+  "run_id": "2026010701",
+  "exit_code": 0,
+  "artifacts": {
+    "normalized": "normalized.json",
+    "raw": "raw.json",
+    "metadata": "metadata.json",
+    "logs_dir": null
+  }
+}
+```
+
+This file is **not required for normalized schema consumers**, but it makes ingestion much easier because it provides stable identifiers and artifact names without parsing directory structure.
 
 ---
 
@@ -309,9 +362,8 @@ Signature:
 (normalized_file_path, OWASP_2021_canonical_code)
 ```
 
-Typical output location:
-```
-runs/analysis/<repo_name>/latest_hotspots_by_file.json
-```
+Typical output locations:
+- Suite layout: `runs/suites/<suite_id>/cases/<case_id>/analysis/`
+- Legacy: `runs/analysis/<repo_name>/`
 
 These derived reports are safe to delete and recompute and are not subject to the normalized schema versioning.

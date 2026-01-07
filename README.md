@@ -1,15 +1,30 @@
 # SAST Benchmark & Normalization Pipeline
 
-This repo runs multiple SAST scanners (Semgrep, SonarCloud/SonarScanner, Snyk Code, Aikido) against a target repository and writes **comparable JSON outputs** per tool:
+This repo runs multiple security scanners (Semgrep, SonarCloud/SonarScanner, Snyk Code, Aikido) against a target repository and writes **comparable outputs** per tool:
 
 - Raw tool output (tool-specific format, saved per run)
-- Normalized output (`<repo>.normalized.json`) using the contract in `normalized-schema.md`
+- Normalized output (`normalized.json`) using the contract in `normalized-schema.md`
 - `metadata.json` (tool version, commit SHA, command, timings, etc.)
+- `run.json` (a small pointer/manifest file designed for DB ingestion)
 
 ## Documentation
 
-- **Architecture (Option B packaging):** `ARCHITECTURE.md`
+- **Architecture:** `ARCHITECTURE.md`
 - **Normalized output contract:** `normalized-schema.md`
+
+## Concepts (how to think about runs)
+
+This pipeline supports two output styles:
+
+### Suite layout (preferred, DB/ETL-friendly)
+
+A **suite** is one experiment run (timestamped), and a **case** is one scan target inside the suite (e.g., a branch/worktree checkout or one repository state).
+
+Within a case, each scanner produces a **tool run** (one tool × one case × one run_id).
+
+### Legacy layout (still supported)
+
+You can disable suite layout and write directly to `runs/<tool>/...` for quick one-off scans.
 
 ## Requirements
 
@@ -88,13 +103,13 @@ SNYK_TOKEN=
 
 ## Quickstart
 
-### 1) Run a single scan (recommended entrypoint)
+### 1) Run a single scanner (scan mode)
 
 ```bash
 python sast_cli.py --mode scan --scanner semgrep --repo-key juice_shop
 ```
 
-You can also scan any repo by URL:
+Scan any repo by URL:
 
 ```bash
 python sast_cli.py --mode scan --scanner semgrep --repo-url https://github.com/juice-shop/juice-shop.git
@@ -106,15 +121,23 @@ python sast_cli.py --mode scan --scanner semgrep --repo-url https://github.com/j
 python sast_cli.py --mode benchmark --repo-key juice_shop --scanners semgrep,snyk,sonar,aikido
 ```
 
-### 3) Analyze existing normalized results
-
-Currently supported metric: `hotspots`
+If you want to control the suite id (useful in CI):
 
 ```bash
-python sast_cli.py --mode analyze --metric hotspots --repo-key juice_shop
+python sast_cli.py --mode benchmark --repo-key juice_shop --suite-id 20260107T120000Z
 ```
 
-This reads the latest normalized outputs and writes derived analysis artifacts under `runs/analysis/`.
+### 3) Analyze the latest suite case (suite metric)
+
+```bash
+python sast_cli.py --mode analyze --metric suite --repo-key juice_shop --suite-id latest
+```
+
+### 4) Legacy behavior (write directly to runs/<tool>/...)
+
+```bash
+python sast_cli.py --mode benchmark --repo-key juice_shop --scanners semgrep,snyk,sonar --no-suite
+```
 
 ## Running scanners directly (bypassing `sast_cli.py`)
 
@@ -128,13 +151,18 @@ You can run each tool entrypoint directly. These scripts are the stable integrat
 ### Semgrep
 
 ```bash
-python tools/scan_semgrep.py   --repo-url https://github.com/juice-shop/juice-shop.git   --config p/security-audit   --output-root runs/semgrep
+python tools/scan_semgrep.py \
+  --repo-url https://github.com/juice-shop/juice-shop.git \
+  --config p/security-audit \
+  --output-root runs/semgrep
 ```
 
 ### Snyk
 
 ```bash
-python tools/scan_snyk.py   --repo-url https://github.com/juice-shop/juice-shop.git   --output-root runs/snyk
+python tools/scan_snyk.py \
+  --repo-url https://github.com/juice-shop/juice-shop.git \
+  --output-root runs/snyk
 ```
 
 ### SonarCloud
@@ -142,63 +170,108 @@ python tools/scan_snyk.py   --repo-url https://github.com/juice-shop/juice-shop.
 Run scan + fetch issues:
 
 ```bash
-python tools/scan_sonar.py   --repo-url https://github.com/juice-shop/juice-shop.git   --project-key <your_sonar_project_key>   --output-root runs/sonar
+python tools/scan_sonar.py \
+  --repo-url https://github.com/juice-shop/juice-shop.git \
+  --project-key <your_sonar_project_key> \
+  --output-root runs/sonar
 ```
 
 Fetch issues from an existing SonarCloud project without running a new scan:
 
 ```bash
-python tools/scan_sonar.py   --repo-url https://github.com/juice-shop/juice-shop.git   --project-key <your_sonar_project_key>   --skip-scan   --output-root runs/sonar
+python tools/scan_sonar.py \
+  --repo-url https://github.com/juice-shop/juice-shop.git \
+  --project-key <your_sonar_project_key> \
+  --skip-scan \
+  --output-root runs/sonar
 ```
 
 ### Aikido
 
 ```bash
-python tools/scan_aikido.py   --git-ref <owner>/<repo>   --output-root runs/aikido
+python tools/scan_aikido.py \
+  --git-ref <owner>/<repo> \
+  --output-root runs/aikido
 ```
 
 ## Outputs
 
-### Output layout
+### Suite layout (v2, preferred)
 
-Runs are stored locally and are safe to delete/recompute.
+When using suite layout (default), results are written under `runs/suites/`:
 
 ```text
 runs/
-  semgrep/<repo_name>/<run_id>/
-    <repo_name>.json
-    <repo_name>.normalized.json
-    metadata.json
-
-  snyk/<repo_name>/<run_id>/
-    <repo_name>.sarif
-    <repo_name>.normalized.json
-    metadata.json
-
-  sonar/<repo_name>/<run_id>/
-    <repo_name>.json
-    <repo_name>.normalized.json
-    <repo_name>_sonar_scan.log
-    metadata.json
-
-  aikido/<repo_name>/<run_id>/
-    <repo_name>.json
-    <repo_name>.normalized.json
-    metadata.json
-
-  analysis/<repo_name>/
-    latest_hotspots_by_file.json
+  suites/
+    LATEST                         # pointer to most recent suite_id
+    <suite_id>/
+      README.txt
+      suite.json                   # suite index (cases, timestamps)
+      summary.csv                  # one row per case
+      cases/
+        <case_id>/
+          case.json                # per-case manifest (what ran)
+          tool_runs/
+            semgrep/<run_id>/
+              run.json
+              normalized.json
+              raw.json
+              metadata.json
+            snyk/<run_id>/
+              run.json
+              normalized.json
+              raw.sarif
+              metadata.json
+            sonar/<run_id>/
+              run.json
+              normalized.json
+              raw.json
+              metadata.json
+              logs/sonar_scan.log
+            aikido/<run_id>/
+              run.json
+              normalized.json
+              raw.json
+              metadata.json
+          analysis/                # cross-tool metrics (suite metric)
+            ...
+          gt/                      # GT-based scoring outputs (if run)
+            gt_score.json
+            gt_score.csv
 ```
 
-### Run IDs
+### Legacy layout (v1, still supported)
 
-Each run directory ID is `YYYYMMDDNN` (date + counter for that day).
+If you pass `--no-suite`, or you call `tools/scan_*.py` directly with `--output-root runs/<tool>`, outputs use the legacy layout:
 
-## Option B packaging (keeping code clean)
+```text
+runs/<tool>/<repo_name>/<run_id>/
+  <repo_name>.normalized.json
+  <repo_name>.json | <repo_name>.sarif
+  metadata.json
+```
 
-We keep `tools/scan_*.py` as stable entrypoints and isolate tool logic behind per-scanner modules/packages to reduce “god scripts”.
+## Run IDs
 
-See `ARCHITECTURE.md` for the full diagram and conventions.
+Each per-tool run directory id is `YYYYMMDDNN` (date + counter for that day).
+
+Suite ids are UTC timestamps like `YYYYMMDDTHHMMSSZ` (example: `20260107T120000Z`).
+
+## DB ingestion / ETL notes
+
+The suite layout is designed so ingestion does **not** depend on parsing directory names:
+
+- `suite.json` summarizes the suite and points to each case
+- `case.json` summarizes the case and points to each tool run
+- Each tool run directory contains `run.json` with:
+  - `suite_id`, `case_id`, `tool`, `run_id`
+  - and the artifact filenames next to it (`normalized.json`, `raw.*`, `metadata.json`, logs)
+
+A simple ingester can:
+1) read `suite.json` → suites table
+2) read each `case.json` → cases table
+3) read each `run.json` → tool_runs table
+4) explode `normalized.json.findings[]` → findings table
 
 ## Repo hygiene
 

@@ -3,6 +3,7 @@
 - Keep **stable script entrypoints** (`tools/scan_*.py`) so the pipeline can shell out reliably.
 - Move **tool-specific logic** into isolated packages under `tools/<tool>/`.
 - Treat **normalized JSON** as the cross-tool contract consumed by all analysis code.
+- Write results in a **suite/case layout** by default so data is easier to browse and ingest into a database later.
 
 The primary goal is to enforce clear ownership,
 one-way dependencies, and a single source of truth for shared logic.
@@ -16,8 +17,11 @@ repo_root/
 ├─ sast_cli.py
 ├─ pipeline/
 │  ├─ core.py
+│  ├─ bundles.py                # suite/case output layout helpers
 │  └─ analysis/
-│     ├─ run_discovery.py
+│     ├─ run_discovery.py       # finds “latest run per tool” (supports v1 + v2 layouts)
+│     ├─ analyze_suite.py       # cross-tool suite metrics (location/taxonomy agreement)
+│     ├─ gt_scorer.py           # GT scoring (writes gt/gt_score.* when used)
 │     ├─ unique_overview.py
 │     └─ path_normalization.py
 │
@@ -78,12 +82,53 @@ repo_root/
 
 ---
 
+## Filesystem Layout (Outputs)
+
+This repo supports **two output layouts**:
+
+### v2 (suite/case layout, preferred)
+
+This is the default when running via `sast_cli.py` (unless you pass `--no-suite`).
+
+```text
+runs/
+  suites/<suite_id>/
+    suite.json
+    summary.csv
+    cases/<case_id>/
+      case.json
+      tool_runs/<tool>/<run_id>/
+        run.json
+        normalized.json
+        raw.(json|sarif)
+        metadata.json
+        logs/...
+      analysis/...
+      gt/gt_score.(json|csv)    # if GT scorer is used
+```
+
+**Why v2 exists:** it’s easier to browse, and it’s much easier to ingest into a DB because
+`suite.json`, `case.json`, and `run.json` provide stable pointers and IDs.
+
+### v1 (legacy)
+
+Used when running scanners directly with `--output-root runs/<tool>` or when you pass `--no-suite`.
+
+```text
+runs/<tool>/<repo_name>/<run_id>/
+  <repo_name>.normalized.json
+  <repo_name>.json | <repo_name>.sarif
+  metadata.json
+```
+
+---
+
 ## Process Flow (End-to-End)
 
 ```text
                  +--------------------------+
                  |        sast_cli.py       |
-                 |  (user chooses repo/tool)|
+                 |  (choose repo/tool/suite)|
                  +------------+-------------+
                               |
                               v
@@ -92,8 +137,8 @@ repo_root/
                  |  (orchestrates scans)    |
                  +------------+-------------+
                               |
-                              |  stable subprocess contract:
-                              |  python tools/scan_<tool>.py <args...>
+                              | stable subprocess contract:
+                              | python tools/scan_<tool>.py <args...>
                               v
         +---------------------+-----------------------+---------------------+
         |                     |                       |                     |
@@ -107,11 +152,10 @@ repo_root/
           v                      v                       v                     v
 +-------------------+  +-------------------+   +-------------------+  +-------------------+
 | tools/snyk/        |  | tools/semgrep/    |   | tools/sonar/       |  | tools/aikido/     |
-| __init__.py        |  | __init__.py       |   | __init__.py        |  | __init__.py      |
-| execute(...)       |  | execute(...)      |   | execute(...)       |  | execute(...)     |
+| execute(...)       |  | execute(...)      |   | execute(...)       |  | execute(...)      |
 +---------+---------+  +---------+---------+   +---------+---------+  +---------+---------+
           |                      |                       |                     |
-          | runner -> raw output | runner -> raw output  | api/runner -> raw   | runner -> raw output
+          | runner -> raw output | runner -> raw output  | runner/api -> raw   | runner -> raw output
           | normalize ->         | normalize ->          | normalize ->        | normalize ->
           | normalized JSON      | normalized JSON       | normalized JSON     | normalized JSON
           v                      v                       v                     v
@@ -127,18 +171,20 @@ repo_root/
                                              v
                  +--------------------------------------------------+
                  |                   OUTPUTS                         |
-                 | runs/<tool>/<repo>/<run_id>/                       |
-                 |   - raw tool outputs (vendor format)               |
-                 |   - <repo>.normalized.json (cross-tool contract)   |
-                 |   - metadata/logs                                  |
+                 | v2: runs/suites/<suite_id>/cases/<case_id>/        |
+                 |       tool_runs/<tool>/<run_id>/normalized.json    |
+                 |       + raw + metadata + run.json                  |
+                 |     + case.json + suite.json for DB ingestion      |
+                 | v1: runs/<tool>/<repo>/<run_id>/<repo>.normalized  |
                  +---------------------------+---------------------- +
                                              |
                                              v
                  +--------------------------------------------------+
                  |              pipeline/analysis/*                   |
                  | - discovers latest normalized runs                 |
-                 | - computes uniques/hotspots (e.g., file x OWASP)   |
-                 | - writes derived reports under runs/analysis/      |
+                 | - computes convergence metrics                     |
+                 | - writes derived reports (analysis/)               |
+                 | - optionally runs GT scoring (gt/)                 |
                  +--------------------------------------------------+
 ```
 
