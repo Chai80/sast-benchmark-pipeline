@@ -275,12 +275,15 @@ def _update_suite_json(paths: BundlePaths, case_manifest: Dict[str, Any]) -> Non
     data["suite_id"] = paths.bundle_id
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    # Case name: prefer manifest's repo runs_repo_name; fallback to folder name.
-    case_name = (
-        (case_manifest.get("repo") or {}).get("runs_repo_name")
-        or (case_manifest.get("case") or {}).get("id")
+    # Case identifier: prefer the explicit case id (matches cases/<case_id>/).
+    # NOTE: Using runs_repo_name here breaks micro-suite branch runs because many
+    # cases can share the same repo name.
+    case_id = (
+        (case_manifest.get("case") or {}).get("id")
         or paths.case_dir.name
     )
+
+    repo_name = (case_manifest.get("repo") or {}).get("runs_repo_name")
 
     rel_case_dir = str(paths.case_dir.relative_to(paths.suite_dir))
     rel_manifest = str(paths.case_json_path.relative_to(paths.suite_dir))
@@ -292,7 +295,8 @@ def _update_suite_json(paths: BundlePaths, case_manifest: Dict[str, Any]) -> Non
     exit_codes = {k: (v or {}).get("exit_code") for k, v in tool_runs.items()}
 
     data.setdefault("cases", {})
-    data["cases"][case_name] = {
+    data["cases"][case_id] = {
+        "repo_name": repo_name,
         "case_dir": rel_case_dir,
         "case_json": rel_manifest,
         "tool_runs_dir": rel_tool_runs,
@@ -322,11 +326,9 @@ def _write_suite_summary(paths: BundlePaths) -> None:
             continue
 
         m = _load_json(mpath)
-        case_name = (
-            (m.get("repo") or {}).get("runs_repo_name")
-            or (m.get("case") or {}).get("id")
-            or case_dir.name
-        )
+        # Prefer the explicit case id so summary rows remain unique in
+        # branch-per-case micro-suites.
+        case_id = (m.get("case") or {}).get("id") or case_dir.name
         finished = (m.get("timestamps") or {}).get("finished")
         scanners_requested = m.get("scanners_requested") or []
 
@@ -341,7 +343,7 @@ def _write_suite_summary(paths: BundlePaths) -> None:
 
         rows.append(
             {
-                "case": case_name,
+                "case": case_id,
                 "finished": finished or "",
                 "requested": ",".join(scanners_requested),
                 "ok": ",".join(ok),

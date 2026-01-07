@@ -13,17 +13,23 @@ Modes
 3) analyze
    - compute cross-tool metrics from existing normalized runs
 
-Bundle layout (recommended)
----------------------------
-By default this CLI writes *everything* for a run into a single bundle folder:
+Suite layout (recommended)
+--------------------------
+By default this CLI writes *everything* for a run into a single **suite** folder
+with one **case** folder per target:
 
-  runs/bundles/<target>/<bundle_id>/
-    scans/<tool>/<repo>/<run_id>/...
-    analysis/...
-    case.json
+  runs/suites/<suite_id>/
+    cases/<case_id>/
+      case.json
+      tool_runs/<tool>/<run_id>/...
+      analysis/...
+      gt/...
 
-This keeps the output tree readable and makes it easy to share a specific run
-(or rerun analysis) without hunting across many directories.
+This keeps the output tree readable and makes it easy to share a specific
+experiment run (or rerun analysis) without hunting across many directories.
+
+Use --case-id when you want an explicit case identifier (e.g., branch-per-case
+micro-suites).
 
 Examples
 --------
@@ -52,14 +58,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from pipeline.bundles import (
-    BundlePaths,
-    ensure_bundle_dirs,
-    get_bundle_paths,
-    new_bundle_id,
-    resolve_bundle_dir,
+from pipeline.layout import (
+    SuitePaths,
+    ensure_suite_dirs,
+    get_suite_paths,
+    new_suite_id,
+    resolve_case_dir,
     update_suite_artifacts,
-    write_latest_pointer,
+    write_latest_suite_pointer,
+    discover_repo_dir,
+    discover_latest_run_dir,
 )
 
 # Centralized command builder (prevents per-CLI drift)
@@ -90,9 +98,6 @@ SCANNER_LABELS: Dict[str, str] = {
     "snyk": "Snyk Code",
     "aikido": "Aikido",
 }
-
-_RUN_ID_RE = re.compile(r"^\d{10}$")  # YYYYMMDDNN
-
 
 # -------------------------------------------------------------------
 # .env loader (no dependency)
@@ -218,6 +223,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Suite run id to create/use. If omitted in scan/benchmark, a new UTC timestamp is used. "
             "In analyze mode you can pass 'latest'."
+        ),
+    )
+
+    parser.add_argument(
+        "--case-id",
+        dest="case_id",
+        help=(
+            "Override the case id within the suite (folder name under runs/suites/<suite_id>/cases/<case_id>/). "
+            "If omitted, we derive it from the repo name. Useful for branch-per-case micro-suites."
         ),
     )
     parser.add_argument(
@@ -416,53 +430,6 @@ def _load_json_if_exists(path: Path) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _discover_single_repo_dir(output_root: Path, prefer: Optional[str] = None) -> Optional[Path]:
-    """Discover the per-tool *run root* directory inside a case.
-
-    Supports two layouts:
-
-    v2 (preferred):
-      <output_root>/<run_id>/...
-
-    v1 (legacy):
-      <output_root>/<repo_name>/<run_id>/...
-    """
-    if not output_root.exists() or not output_root.is_dir():
-        return None
-
-    # v2: output_root contains run_id directories directly.
-    run_dirs = [d for d in output_root.iterdir() if d.is_dir() and _RUN_ID_RE.match(d.name)]
-    if run_dirs:
-        return output_root
-
-    # v1: output_root contains repo folder(s); prefer an exact match if provided.
-    if prefer:
-        p = output_root / prefer
-        if p.exists() and p.is_dir():
-            return p
-
-    dirs = [d for d in output_root.iterdir() if d.is_dir()]
-    if len(dirs) == 1:
-        return dirs[0]
-
-    # If multiple, try to find a case-insensitive match
-    if prefer:
-        for d in dirs:
-            if d.name.lower() == prefer.lower():
-                return d
-
-    return None
-
-
-def _discover_latest_run_dir(repo_dir: Path) -> Optional[Path]:
-    if not repo_dir.exists() or not repo_dir.is_dir():
-        return None
-    run_dirs = [d for d in repo_dir.iterdir() if d.is_dir() and _RUN_ID_RE.match(d.name)]
-    if not run_dirs:
-        return None
-    return max(run_dirs, key=lambda p: p.name)
-
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -600,6 +567,10 @@ def main() -> None:
         fallback=label,
     )
 
+    # Case identifier inside a suite. Defaults to the derived repo name, but can
+    # be overridden for branch-per-case micro-suites.
+    case_id = args.case_id or runs_repo_name
+
     # ------------------- ANALYZE MODE ------------------
     if mode == "analyze":
         metric = args.metric or "hotspots"
@@ -614,10 +585,10 @@ def main() -> None:
         if args.bundle_path:
             bundle_dir = Path(args.bundle_path).resolve()
         elif args.bundle_id:
-            bundle_dir = resolve_bundle_dir(
-                target=runs_repo_name,
-                bundle_id=str(args.bundle_id),
-                bundle_root=args.bundle_root,
+            bundle_dir = resolve_case_dir(
+                case_id=case_id,
+                suite_id=str(args.bundle_id),
+                suite_root=args.bundle_root,
             )
 
         if bundle_dir is not None:
@@ -709,12 +680,12 @@ def main() -> None:
             )
 
         # Bundle handling
-        bundle: Optional[BundlePaths] = None
+        bundle: Optional[SuitePaths] = None
         if not args.no_bundle:
-            bid = str(args.bundle_id) if args.bundle_id else new_bundle_id()
-            bundle = get_bundle_paths(target=runs_repo_name, bundle_id=bid, bundle_root=args.bundle_root)
-            ensure_bundle_dirs(bundle)
-            write_latest_pointer(bundle)
+            sid = str(args.bundle_id) if args.bundle_id else new_suite_id()
+            bundle = get_suite_paths(case_id=case_id, suite_id=sid, suite_root=args.bundle_root)
+            ensure_suite_dirs(bundle)
+            write_latest_suite_pointer(bundle)
 
         extra_args: Dict[str, Any] = {}
         if scanner == "sonar":
@@ -757,8 +728,8 @@ def main() -> None:
         # Manifest (only when bundling)
         if bundle is not None:
             tool_out_root = bundle.tool_runs_dir / scanner
-            repo_dir = _discover_single_repo_dir(tool_out_root, prefer=runs_repo_name)
-            run_dir = _discover_latest_run_dir(repo_dir) if repo_dir else None
+            repo_dir = discover_repo_dir(tool_out_root, prefer=runs_repo_name)
+            run_dir = discover_latest_run_dir(repo_dir) if repo_dir else None
             metadata = _load_json_if_exists((run_dir / "metadata.json") if run_dir else Path("/nonexistent"))
 
             # Write per-tool run.json (DB-ingestion friendly pointer file)
@@ -827,12 +798,12 @@ def main() -> None:
         raise SystemExit("No valid scanners specified for benchmark mode.")
 
     # Bundle handling (default)
-    bundle: Optional[BundlePaths] = None
+    bundle: Optional[SuitePaths] = None
     if not args.no_bundle:
-        bid = str(args.bundle_id) if args.bundle_id else new_bundle_id()
-        bundle = get_bundle_paths(target=runs_repo_name, bundle_id=bid, bundle_root=args.bundle_root)
-        ensure_bundle_dirs(bundle)
-        write_latest_pointer(bundle)
+        sid = str(args.bundle_id) if args.bundle_id else new_suite_id()
+        bundle = get_suite_paths(case_id=case_id, suite_id=sid, suite_root=args.bundle_root)
+        ensure_suite_dirs(bundle)
+        write_latest_suite_pointer(bundle)
 
     print("\n🚀 Running benchmark (multi-scanner loop)")
     print(f"  Target   : {label}")
@@ -888,8 +859,8 @@ def main() -> None:
         # Record run info (best-effort)
         if bundle is not None:
             tool_out_root = bundle.tool_runs_dir / scanner
-            repo_dir = _discover_single_repo_dir(tool_out_root, prefer=runs_repo_name)
-            run_dir = _discover_latest_run_dir(repo_dir) if repo_dir else None
+            repo_dir = discover_repo_dir(tool_out_root, prefer=runs_repo_name)
+            run_dir = discover_latest_run_dir(repo_dir) if repo_dir else None
             metadata = _load_json_if_exists((run_dir / "metadata.json") if run_dir else Path("/nonexistent"))
 
             # Write per-tool run.json (DB-ingestion friendly pointer file)
