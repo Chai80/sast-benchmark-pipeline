@@ -127,6 +127,43 @@ If you want to control the suite id (useful in CI):
 python sast_cli.py --mode benchmark --repo-key juice_shop --suite-id 20260107T120000Z
 ```
 
+### 2b) Run a multi-case suite (suite mode, optional YAML)
+
+Use **suite mode** when you want to run the same scanner set across **many cases**
+(e.g., multiple repos, or multiple branch/worktree checkouts) and keep everything
+grouped under one `suite_id`.
+
+YAML is **optional**:
+
+- If you pass `--suite-file`, the suite cases + defaults come from YAML.
+- If you omit it, the CLI will prompt you interactively and (optionally) write
+  a YAML definition you can rerun later.
+
+Run from a YAML suite definition:
+
+```bash
+python sast_cli.py --mode suite --suite-file suites/example_suite.yaml
+```
+
+Minimal YAML format:
+
+```yaml
+suite_id: 20260107T120000Z  # optional
+scanners: [semgrep, snyk, sonar]
+analysis:
+  skip: false
+  tolerance: 3
+  filter: security
+cases:
+  - case_id: juice_shop
+    repo_key: juice_shop
+  - case_id: webgoat
+    repo_url: https://github.com/WebGoat/WebGoat.git
+```
+
+Note: when `--suite-file` is used, we copy it into the suite output folder as
+`runs/suites/<suite_id>/suite_input.yaml` for provenance.
+
 ### 3) Analyze the latest suite case (suite metric)
 
 ```bash

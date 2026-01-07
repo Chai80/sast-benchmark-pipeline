@@ -10,7 +10,10 @@ Modes
 2) benchmark
    - run multiple scanners against one repo
    - (default) run the analysis suite after scans
-3) analyze
+3) suite
+   - run multiple scanners across multiple cases (many repos / branches)
+   - suite definitions can optionally be supplied as YAML (or built interactively)
+4) analyze
    - compute cross-tool metrics from existing normalized runs
 
 Suite layout (recommended)
@@ -44,6 +47,9 @@ python sast_cli.py --mode analyze --metric suite --repo-key juice_shop --suite-i
 
 # Legacy behavior (write directly to runs/<tool>/...)
 python sast_cli.py --mode benchmark --repo-key juice_shop --no-suite
+
+# Run a multi-case suite from a YAML definition (optional)
+python sast_cli.py --mode suite --suite-file suites/example_suite.yaml
 """
 
 from __future__ import annotations
@@ -51,6 +57,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -61,8 +68,19 @@ from pipeline.core import (
     repo_id_from_repo_url,
     sanitize_sonar_key_fragment,
 )
+from pipeline.bundles import safe_name
+from pipeline.layout import new_suite_id
 from pipeline.models import RepoSpec, CaseSpec
 from pipeline.orchestrator import AnalyzeRequest, RunRequest, run_analyze, run_tools
+
+from pipeline.suite_definition import (
+    SuiteAnalysisDefaults,
+    SuiteCase,
+    SuiteCaseOverrides,
+    SuiteDefinition,
+    dump_suite_yaml,
+    load_suite_yaml,
+)
 
 
 ROOT_DIR = PIPELINE_ROOT_DIR  # repo root
@@ -175,8 +193,11 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--mode",
-        choices=["scan", "benchmark", "analyze"],
-        help="scan = one tool, benchmark = multiple tools, analyze = compute metrics from existing runs",
+        choices=["scan", "benchmark", "suite", "analyze"],
+        help=(
+            "scan = one tool, benchmark = multiple tools, suite = multi-case suite run (optional YAML), "
+            "analyze = compute metrics from existing runs"
+        ),
     )
     parser.add_argument(
         "--scanner",
@@ -185,7 +206,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--scanners",
-        help="(benchmark mode) Comma-separated scanners (default: semgrep,snyk,sonar,aikido)",
+        help="(benchmark|suite mode) Comma-separated scanners (default: semgrep,snyk,sonar,aikido)",
     )
 
     # Suite layout
@@ -203,6 +224,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Suite run id to create/use. If omitted in scan/benchmark, a new UTC timestamp is used. "
             "In analyze mode you can pass 'latest'."
+        ),
+    )
+
+    parser.add_argument(
+        "--suite-file",
+        dest="suite_file",
+        help=(
+            "(suite mode) Optional YAML suite definition. If omitted, you can build a suite interactively. "
+            "This YAML is a *plan* (what you intend to run), while suite.json/case.json capture what actually ran."
         ),
     )
 
@@ -230,7 +260,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-analysis",
         action="store_true",
-        help="(benchmark mode) Skip the analysis suite step (scans only).",
+        help="(benchmark|suite mode) Skip the analysis suite step (scans only).",
     )
 
     # Analysis / metrics
@@ -373,6 +403,341 @@ def resolve_repo(args: argparse.Namespace) -> Tuple[Optional[str], Optional[str]
 
 
 # -------------------------------------------------------------------
+# Suite mode (optional YAML)
+# -------------------------------------------------------------------
+
+def _prompt_text(prompt: str, default: Optional[str] = None) -> str:
+    """Prompt for free-text input with an optional default."""
+    if default is not None:
+        raw = input(f"{prompt} [{default}]: ").strip()
+        return raw or str(default)
+    return input(f"{prompt}: ").strip()
+
+
+def _prompt_yes_no(prompt: str, *, default: bool = False) -> bool:
+    """Prompt for a yes/no question."""
+    suffix = "Y/n" if default else "y/N"
+    while True:
+        raw = input(f"{prompt} ({suffix}): ").strip().lower()
+        if not raw:
+            return default
+        if raw in {"y", "yes"}:
+            return True
+        if raw in {"n", "no"}:
+            return False
+        print("Please enter y or n.")
+
+
+def _parse_scanners_str(value: str) -> List[str]:
+    raw = _parse_csv(value)
+    scanners = [t for t in raw if t in SUPPORTED_SCANNERS]
+    unknown = [t for t in raw if t not in SUPPORTED_SCANNERS]
+    if unknown:
+        print(f"  ⚠️  ignoring unknown scanners: {', '.join(unknown)}")
+    return scanners
+
+
+def _resolve_repo_for_suite_case_interactive() -> Tuple[RepoSpec, str, str]:
+    """Resolve a repo target for *one* suite case.
+
+    Returns (repo_spec, label, repo_id).
+    """
+    source = choose_from_menu(
+        "Choose a repo source for this case:",
+        {
+            "preset": "Pick from preset repos",
+            "custom_url": "Enter a custom repo URL",
+            "local_path": "Use a local repo path",
+        },
+    )
+
+    if source == "preset":
+        key = choose_from_menu("Choose a preset repo:", {k: v["label"] for k, v in REPOS.items()})
+        entry = REPOS[key]
+        repo_url = entry.get("repo_url")
+        label = entry.get("label", key)
+        return RepoSpec(repo_key=key, repo_url=repo_url, repo_path=None), label, key
+
+    if source == "custom_url":
+        while True:
+            url = input("Enter full repo URL (https://... .git or git@...): ").strip()
+            if url.startswith(("https://", "http://", "git@")):
+                rid = repo_id_from_repo_url(url)
+                return RepoSpec(repo_key=None, repo_url=url, repo_path=None), url, rid
+            print("That doesn't look like a git URL. Try again.")
+
+    # local_path
+    while True:
+        path = input("Enter local repo path: ").strip()
+        if path:
+            p = Path(path).resolve()
+            rid = sanitize_sonar_key_fragment(p.name)
+            return RepoSpec(repo_key=None, repo_url=None, repo_path=str(p)), p.name, rid
+        print("Empty path. Try again.")
+
+
+def _build_suite_interactively(args: argparse.Namespace) -> SuiteDefinition:
+    print("\n🧩 Suite mode: run multiple cases under one suite id.")
+    print("   - Use this for scanning many repos or many branches/worktrees.")
+    print("   - YAML is optional; suite.json/case.json/run.json are always written.\n")
+
+    suite_id_in = _prompt_text("Suite id (press Enter to auto-generate)", default="").strip()
+    suite_id = suite_id_in or new_suite_id()
+
+    default_scanners_csv = args.scanners or "semgrep,snyk,sonar,aikido"
+    scanners_csv = _prompt_text("Scanners to run (comma-separated)", default=default_scanners_csv)
+    scanners = _parse_scanners_str(scanners_csv)
+    if not scanners:
+        raise SystemExit("No valid scanners selected.")
+
+    analysis = SuiteAnalysisDefaults(
+        skip=bool(args.skip_analysis),
+        tolerance=int(args.tolerance),
+        filter=str(args.analysis_filter),
+    )
+
+    cases: List[SuiteCase] = []
+    seen_case_ids: set[str] = set()
+
+    print("\nAdd cases to the suite (each case is one repo/checkout).")
+    print("When you're done, choose 'Finish suite definition'.\n")
+
+    while True:
+        action = choose_from_menu(
+            "Add a case:",
+            {
+                "add": "Add a new case",
+                "done": "Finish suite definition",
+            },
+        )
+        if action == "done":
+            break
+
+        repo_spec, label, _repo_id = _resolve_repo_for_suite_case_interactive()
+
+        runs_repo_name = _derive_runs_repo_name(
+            repo_url=repo_spec.repo_url,
+            repo_path=repo_spec.repo_path,
+            fallback=label,
+        )
+
+        proposed = runs_repo_name
+        raw_case_id = _prompt_text("Case id (folder + DB key)", default=proposed).strip() or proposed
+        case_id = safe_name(raw_case_id)
+        if case_id != raw_case_id:
+            print(f"  ⚠️  case_id sanitized to: {case_id}")
+
+        if case_id in seen_case_ids:
+            print(f"  ❌ case_id '{case_id}' already exists in this suite. Pick a different one.")
+            continue
+
+        seen_case_ids.add(case_id)
+
+        case = CaseSpec(
+            case_id=case_id,
+            runs_repo_name=runs_repo_name,
+            label=label,
+            repo=repo_spec,
+        )
+
+        cases.append(SuiteCase(case=case, overrides=SuiteCaseOverrides()))
+        print(f"  ✅ Added case: {case.case_id} ({label})")
+
+    if not cases:
+        raise SystemExit("Suite mode requires at least one case.")
+
+    return SuiteDefinition(
+        suite_id=suite_id,
+        scanners=scanners,
+        cases=cases,
+        analysis=analysis,
+    )
+
+
+def _resolve_suite_case_for_run(sc: SuiteCase) -> Tuple[SuiteCase, str]:
+    """Resolve repo_key -> repo_url and compute a stable repo_id for the run."""
+    c = sc.case
+    repo_key = c.repo.repo_key
+    repo_url = c.repo.repo_url
+    repo_path = c.repo.repo_path
+    label = c.label
+
+    # Resolve repo_key -> repo_url via presets (for now). In the future this
+    # will use a repos registry file.
+    if repo_key and not repo_url and not repo_path:
+        if repo_key not in REPOS:
+            raise SystemExit(
+                f"Suite case '{c.case_id}' uses repo_key='{repo_key}' but it isn't known. "
+                "Use repo_url/repo_path or add the key to REPOS."
+            )
+        entry = REPOS[repo_key]
+        repo_url = entry.get("repo_url")
+        label = entry.get("label", label)
+
+    if not repo_url and not repo_path:
+        raise SystemExit(
+            f"Suite case '{c.case_id}' must specify one of repo_url, repo_path, or a resolvable repo_key."
+        )
+
+    # Improve runs_repo_name if YAML omitted it (common).
+    derived_runs_name = _derive_runs_repo_name(repo_url=repo_url, repo_path=repo_path, fallback=c.case_id)
+    runs_repo_name = c.runs_repo_name
+    if not runs_repo_name or runs_repo_name == c.case_id:
+        runs_repo_name = derived_runs_name
+
+    # Compute repo_id (used for Sonar project key derivation).
+    if repo_key:
+        repo_id = repo_key
+    elif repo_url:
+        repo_id = repo_id_from_repo_url(repo_url)
+    else:
+        repo_id = sanitize_sonar_key_fragment(Path(repo_path).resolve().name)
+
+    case_id = safe_name(c.case_id)
+    if case_id != c.case_id:
+        print(f"  ⚠️  case_id '{c.case_id}' sanitized to '{case_id}'")
+
+    resolved = CaseSpec(
+        case_id=case_id,
+        runs_repo_name=runs_repo_name,
+        label=label,
+        repo=RepoSpec(repo_key=repo_key, repo_url=repo_url, repo_path=repo_path),
+        branch=c.branch,
+        commit=c.commit,
+        tags=c.tags or {},
+    )
+
+    return SuiteCase(case=resolved, overrides=sc.overrides), repo_id
+
+
+def run_suite_mode(args: argparse.Namespace) -> int:
+    """Run multiple cases under one suite id.
+
+    YAML is optional:
+    - If --suite-file is provided, we load it.
+    - Otherwise we prompt interactively.
+    """
+
+    if args.no_bundle:
+        print("❌ Suite mode requires suite layout (do not use --no-suite).")
+        return 2
+
+    suite_root = Path(args.bundle_root)
+
+    # Load or build suite definition
+    suite_def = load_suite_yaml(args.suite_file) if args.suite_file else _build_suite_interactively(args)
+
+    # CLI overrides
+    suite_id = str(args.bundle_id) if args.bundle_id else (suite_def.suite_id or new_suite_id())
+
+    scanners: List[str]
+    if args.scanners:
+        scanners = _parse_scanners_str(args.scanners)
+    elif suite_def.scanners:
+        scanners = [t for t in suite_def.scanners if t in SUPPORTED_SCANNERS]
+    else:
+        scanners = ["semgrep", "snyk", "sonar", "aikido"]
+
+    if not scanners:
+        raise SystemExit("No valid scanners specified for suite mode.")
+
+    # If suite YAML is present, let it drive analysis defaults; otherwise use CLI.
+    if args.suite_file:
+        tolerance = int(suite_def.analysis.tolerance)
+        analysis_filter = str(suite_def.analysis.filter)
+        skip_analysis = bool(args.skip_analysis) or bool(suite_def.analysis.skip)
+    else:
+        tolerance = int(args.tolerance)
+        analysis_filter = str(args.analysis_filter)
+        skip_analysis = bool(args.skip_analysis)
+
+    # Resolve and validate cases
+    resolved_cases: List[Tuple[SuiteCase, str]] = []
+    seen: set[str] = set()
+    for sc in suite_def.cases:
+        resolved, repo_id = _resolve_suite_case_for_run(sc)
+        if resolved.case.case_id in seen:
+            raise SystemExit(f"Duplicate case_id in suite: {resolved.case.case_id}")
+        seen.add(resolved.case.case_id)
+        resolved_cases.append((resolved, repo_id))
+
+    suite_dir = suite_root / safe_name(suite_id)
+    suite_dir.mkdir(parents=True, exist_ok=True)
+
+    # If user provided a YAML file, copy it into the suite folder for provenance.
+    if args.suite_file:
+        try:
+            src = Path(args.suite_file).expanduser().resolve()
+            dst = suite_dir / "suite_input.yaml"
+            if src != dst:
+                shutil.copyfile(src, dst)
+        except Exception:
+            # best-effort only
+            pass
+
+    # If suite was built interactively, optionally write a YAML plan for reruns.
+    if not args.suite_file:
+        if _prompt_yes_no("Save this suite definition to a YAML file for reruns?", default=False):
+            default_out = suite_dir / "suite_definition.yaml"
+            out_path = _prompt_text("YAML output path", default=str(default_out)).strip() or str(default_out)
+            # Dump a normalized/clean definition (resolved IDs/scanners/analysis)
+            to_write = SuiteDefinition(
+                suite_id=suite_id,
+                scanners=scanners,
+                cases=[sc for sc, _ in resolved_cases],
+                analysis=SuiteAnalysisDefaults(skip=skip_analysis, tolerance=tolerance, filter=analysis_filter),
+            )
+            try:
+                written = dump_suite_yaml(out_path, to_write)
+                print(f"  ✅ Wrote suite definition: {written}")
+            except Exception as e:
+                print(f"  ⚠️  Failed to write suite definition YAML: {e}")
+
+    print("\n🚀 Running suite")
+    print(f"  Suite id : {suite_id}")
+    print(f"  Suite dir: {suite_dir}")
+    print(f"  Cases    : {len(resolved_cases)}")
+    print(f"  Scanners : {', '.join(scanners)}")
+
+    overall = 0
+    for idx, (sc, repo_id) in enumerate(resolved_cases, start=1):
+        case = sc.case
+        print("\n" + "=" * 72)
+        print(f"🧪 Case {idx}/{len(resolved_cases)}: {case.case_id} ({case.label})")
+        if case.repo.repo_url:
+            print(f"  Repo URL : {case.repo.repo_url}")
+        if case.repo.repo_path:
+            print(f"  Repo path: {case.repo.repo_path}")
+
+        req = RunRequest(
+            invocation_mode="benchmark",
+            case=case,
+            repo_id=repo_id,
+            scanners=scanners,
+            suite_root=suite_root,
+            suite_id=suite_id,
+            use_suite=True,
+            dry_run=bool(args.dry_run),
+            quiet=bool(args.quiet),
+            skip_analysis=bool(skip_analysis),
+            tolerance=int(tolerance),
+            analysis_filter=str(analysis_filter),
+            sonar_project_key=sc.overrides.sonar_project_key or args.sonar_project_key,
+            aikido_git_ref=sc.overrides.aikido_git_ref or args.aikido_git_ref,
+            argv=list(sys.argv),
+            python_executable=sys.executable,
+        )
+
+        rc = int(run_tools(req))
+        overall = max(overall, rc)
+
+    print("\n✅ Suite complete")
+    print(f"  Suite id : {suite_id}")
+    print(f"  Suite dir: {suite_dir}")
+    return overall
+
+
+# -------------------------------------------------------------------
 # Main
 # -------------------------------------------------------------------
 
@@ -383,7 +748,9 @@ def main() -> None:
     # mode selection
     mode = args.mode
     if mode is None:
-        if args.scanner or args.repo_key or args.repo_url or args.repo_path:
+        if args.suite_file:
+            mode = "suite"
+        elif args.scanner or args.repo_key or args.repo_url or args.repo_path:
             mode = "scan"
         else:
             mode = choose_from_menu(
@@ -391,9 +758,15 @@ def main() -> None:
                 {
                     "scan": "Scan a repo with a single tool",
                     "benchmark": "Run multiple scanners on a repo",
+                    "suite": "Run a multi-case suite (optional YAML)",
                     "analyze": "Analyze existing normalized runs (metrics)",
                 },
             )
+
+    # Suite mode is a multi-case orchestrator. It does not have a single repo
+    # target, so handle it before resolve_repo(...).
+    if mode == "suite":
+        raise SystemExit(run_suite_mode(args))
 
     repo_url, repo_path, label, repo_id = resolve_repo(args)
 
