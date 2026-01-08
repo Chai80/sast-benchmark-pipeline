@@ -26,7 +26,6 @@ import re
 import subprocess
 import sys
 import time
-from sast_benchmark.io.layout import RunPaths, prepare_run_paths as _prepare_run_paths
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -35,10 +34,15 @@ from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
 # Minimal bootstrap so this file can be executed directly while using
-# clean package imports (no try/except import scaffolding).
+# clean package imports.
+#
+# IMPORTANT: This must run BEFORE importing local packages like `sast_benchmark`
+# when the script is invoked as: `python tools/scan_sonar.py ...`
 # ---------------------------------------------------------------------------
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from sast_benchmark.io.layout import RunPaths, prepare_run_paths as _prepare_run_paths
 
 from tools.core import (
     ROOT_DIR,
