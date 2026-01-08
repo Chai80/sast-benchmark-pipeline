@@ -29,7 +29,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
 
 from pipeline.models import CaseSpec, RepoSpec
 
@@ -185,6 +184,7 @@ class SuiteDefinition:
 
 def load_suite_yaml(path: str | Path) -> SuiteDefinition:
     """Load a suite definition from YAML."""
+    import yaml
     p = Path(path).expanduser().resolve()
     if not p.exists():
         raise FileNotFoundError(f"Suite definition not found: {p}")
@@ -196,6 +196,7 @@ def load_suite_yaml(path: str | Path) -> SuiteDefinition:
 
 def dump_suite_yaml(path: str | Path, suite_def: SuiteDefinition) -> Path:
     """Write a suite definition YAML to the given path."""
+    import yaml
     p = Path(path).expanduser().resolve()
     p.parent.mkdir(parents=True, exist_ok=True)
     data = suite_def.to_dict()

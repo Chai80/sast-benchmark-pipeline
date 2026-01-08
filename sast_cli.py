@@ -12,7 +12,7 @@ Modes
    - (default) run the analysis suite after scans
 3) suite
    - run multiple scanners across multiple cases (many repos / branches)
-   - suite definitions can optionally be supplied as YAML (or built interactively)
+   - suite definitions are supplied as Python (.py) (or built interactively)
 4) analyze
    - compute cross-tool metrics from existing normalized runs
 
@@ -48,8 +48,8 @@ python sast_cli.py --mode analyze --metric suite --repo-key juice_shop --suite-i
 # Legacy behavior (write directly to runs/<tool>/...)
 python sast_cli.py --mode benchmark --repo-key juice_shop --no-suite
 
-# Run a multi-case suite from a YAML definition (optional)
-python sast_cli.py --mode suite --suite-file suites/example_suite.yaml
+# Run a multi-case suite from a Python definition
+python sast_cli.py --mode suite --suite-file suites/example_suite.py
 """
 
 from __future__ import annotations
@@ -78,9 +78,9 @@ from pipeline.suite_definition import (
     SuiteCase,
     SuiteCaseOverrides,
     SuiteDefinition,
-    dump_suite_yaml,
-    load_suite_yaml,
 )
+
+from pipeline.suite_py_loader import load_suite_py
 
 
 ROOT_DIR = PIPELINE_ROOT_DIR  # repo root
@@ -564,6 +564,26 @@ def _build_suite_interactively(args: argparse.Namespace) -> SuiteDefinition:
     )
 
 
+
+def _write_suite_py(path: str | Path, suite_def: SuiteDefinition) -> Path:
+    """Write a suite definition as a Python file exporting SUITE_DEF.
+
+    This is intended for *reruns* and provenance. Runtime orchestration must not use YAML/JSON.
+    """
+    p = Path(path).expanduser().resolve()
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    raw = suite_def.to_dict()
+    # Keep this file minimal and stable.
+    content = (
+        "from pipeline.suite_definition import SuiteDefinition\n\n"
+        f"SUITE_RAW = {json.dumps(raw, indent=2, sort_keys=True)}\n\n"
+        "SUITE_DEF = SuiteDefinition.from_dict(SUITE_RAW)\n"
+    )
+    p.write_text(content, encoding="utf-8")
+    return p
+
+
 def _resolve_suite_case_for_run(sc: SuiteCase) -> Tuple[SuiteCase, str]:
     """Resolve repo_key -> repo_url and compute a stable repo_id for the run."""
     c = sc.case
@@ -624,8 +644,8 @@ def _resolve_suite_case_for_run(sc: SuiteCase) -> Tuple[SuiteCase, str]:
 def run_suite_mode(args: argparse.Namespace) -> int:
     """Run multiple cases under one suite id.
 
-    YAML is optional:
-    - If --suite-file is provided, we load it.
+    Suite definitions are Python-only at runtime:
+    - If --suite-file is provided, it must be a .py file exporting SUITE_DEF.
     - Otherwise we prompt interactively.
     """
 
@@ -636,7 +656,17 @@ def run_suite_mode(args: argparse.Namespace) -> int:
     suite_root = Path(args.bundle_root)
 
     # Load or build suite definition
-    suite_def = load_suite_yaml(args.suite_file) if args.suite_file else _build_suite_interactively(args)
+    # Load suite definition (Python only at runtime; YAML is migration-only)
+    if args.suite_file:
+        p = Path(args.suite_file).expanduser().resolve()
+        if p.suffix.lower() in (".yaml", ".yml"):
+            raise SystemExit(
+                f"YAML suite definitions are no longer allowed at runtime: {p}\n"
+                "Use scripts/migrate_suite_yaml_to_py.py to convert to a .py suite file."
+            )
+        suite_def = load_suite_py(p)
+    else:
+        suite_def = _build_suite_interactively(args)
 
     # CLI overrides
     suite_id = str(args.bundle_id) if args.bundle_id else (suite_def.suite_id or new_suite_id())
@@ -675,23 +705,23 @@ def run_suite_mode(args: argparse.Namespace) -> int:
     suite_dir = suite_root / safe_name(suite_id)
     suite_dir.mkdir(parents=True, exist_ok=True)
 
-    # If user provided a YAML file, copy it into the suite folder for provenance.
+    # If user provided a suite file, copy it into the suite folder for provenance.
     if args.suite_file:
         try:
             src = Path(args.suite_file).expanduser().resolve()
-            dst = suite_dir / "suite_input.yaml"
+            dst = suite_dir / "suite_input.py"
             if src != dst:
                 shutil.copyfile(src, dst)
         except Exception:
             # best-effort only
             pass
 
-    # If suite was built interactively, optionally write a YAML plan for reruns.
+    # If suite was built interactively, optionally write a Python suite file for reruns.
     if not args.suite_file:
-        if _prompt_yes_no("Save this suite definition to a YAML file for reruns?", default=False):
-            default_out = suite_dir / "suite_definition.yaml"
-            out_path = _prompt_text("YAML output path", default=str(default_out)).strip() or str(default_out)
-            # Dump a normalized/clean definition (resolved IDs/scanners/analysis)
+        if _prompt_yes_no("Save this suite definition to a Python file for reruns?", default=False):
+            default_out = suite_dir / "suite_definition.py"
+            out_path = _prompt_text("Python output path", default=str(default_out)).strip() or str(default_out)
+
             to_write = SuiteDefinition(
                 suite_id=suite_id,
                 scanners=scanners,
@@ -699,10 +729,10 @@ def run_suite_mode(args: argparse.Namespace) -> int:
                 analysis=SuiteAnalysisDefaults(skip=skip_analysis, tolerance=tolerance, filter=analysis_filter),
             )
             try:
-                written = dump_suite_yaml(out_path, to_write)
-                print(f"  ✅ Wrote suite definition: {written}")
+                _write_suite_py(out_path, to_write)
+                print(f"  ✅ Wrote suite definition: {out_path}")
             except Exception as e:
-                print(f"  ⚠️  Failed to write suite definition YAML: {e}")
+                print(f"  ⚠️  Failed to write suite definition .py: {e}")
 
     print("\n🚀 Running suite")
     print(f"  Suite id : {suite_id}")

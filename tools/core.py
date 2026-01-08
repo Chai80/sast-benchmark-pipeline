@@ -233,6 +233,7 @@ def get_git_commit(repo_path: Path) -> Optional[str]:
     """
     res = run_cmd(
         ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+        timeout_seconds=20,
         print_stderr=False,
         print_stdout=False,
     )
@@ -247,6 +248,7 @@ def get_git_branch(repo_path: Path) -> Optional[str]:
     """
     res = run_cmd(
         ['git', '-C', str(repo_path), 'rev-parse', '--abbrev-ref', 'HEAD'],
+        timeout_seconds=20,
         print_stderr=False,
         print_stdout=False,
     )
@@ -263,6 +265,7 @@ def get_commit_author_info(repo_path: Path, commit: str) -> Dict[str, Optional[s
     """
     res = run_cmd(
         ["git", "-C", str(repo_path), "show", "-s", "--format=%an%n%ae%n%aI", commit],
+        timeout_seconds=20,
         print_stderr=False,
         print_stdout=False,
     )

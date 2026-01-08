@@ -93,10 +93,20 @@ def anchor_under_repo_root(rel: str | Path) -> Path:
 
 
 def safe_name(value: str) -> str:
-    """Sanitize a string so it can be used as a folder segment."""
+    """Sanitize a string so it can be used as a folder segment.
+
+    Security notes:
+    - Reject dot-segments that enable traversal ('..', '.')
+    - Avoid leading dots ('.env') to reduce hidden-path surprises
+    """
     v = (value or "").strip()
     v = _SAFE_NAME.sub("_", v)
     v = re.sub(r"_+", "_", v).strip("_")
+    # Block traversal-style segments
+    if v in {".", ".."}:
+        return "unknown"
+    # Avoid hidden segments
+    v = v.lstrip(".")
     return v or "unknown"
 
 

@@ -136,6 +136,7 @@ def _detect_git_branch(repo_path: Optional[str]) -> Optional[str]:
             ["git", "-C", str(repo_path), "rev-parse", "--abbrev-ref", "HEAD"],
             stderr=subprocess.DEVNULL,
             text=True,
+            timeout=20,
         ).strip()
         if not out or out == "HEAD":
             return None
@@ -153,6 +154,7 @@ def _detect_git_commit(repo_path: Optional[str]) -> Optional[str]:
             ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
             stderr=subprocess.DEVNULL,
             text=True,
+            timeout=20,
         ).strip()
         return out or None
     except Exception:
