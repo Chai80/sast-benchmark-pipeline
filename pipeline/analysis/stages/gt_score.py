@@ -99,7 +99,7 @@ def _infer_repo_path(ctx: AnalysisContext, *, case_dir: Optional[Path] = None) -
     return Path(str(repo_path))
 
 
-def _find_gt_catalog(ctx: AnalysisContext) -> Optional[Path]:
+def _find_gt_catalog(ctx: AnalysisContext, *, repo_path: Optional[Path] = None) -> Optional[Path]:
     case_dir = _find_case_dir(ctx)
     if not case_dir:
         return None
@@ -112,15 +112,18 @@ def _find_gt_catalog(ctx: AnalysisContext) -> Optional[Path]:
             return p
 
     # 2) repo-local benchmark folder (if we can infer repo_path)
-    case_json = _load_case_json(case_dir)
-    repo_path = None
-    try:
-        repo_path = (case_json.get("repo") or {}).get("repo_path")
-    except Exception:
-        repo_path = None
+    if repo_path is None:
+        case_json = _load_case_json(case_dir)
+        rp = None
+        try:
+            rp = (case_json.get("repo") or {}).get("repo_path")
+        except Exception:
+            rp = None
+        if rp:
+            repo_path = Path(str(rp))
 
     if repo_path:
-        bench_dir = Path(str(repo_path)) / "benchmark"
+        bench_dir = Path(repo_path) / "benchmark"
         for name in ("gt_catalog.yaml", "gt_catalog.yml"):
             p = bench_dir / name
             if p.exists() and p.is_file():
@@ -207,13 +210,45 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
     gt_dir = case_dir / "gt"
     gt_dir.mkdir(parents=True, exist_ok=True)
 
+    # Load case.json for track + repo_path context. This stage should never
+    # silently degrade without leaving an audit trail.
+    case_json: Dict[str, Any] = {}
+    case_json_path = case_dir / "case.json"
+    if not case_json_path.exists():
+        store.add_warning("gt_score: missing case.json (expected in suite/case layout)")
+    else:
+        try:
+            parsed = json.loads(case_json_path.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                case_json = parsed
+            else:
+                store.add_warning("gt_score: case.json is not a JSON object")
+        except Exception as e:
+            store.add_warning(f"gt_score: failed to parse case.json: {e}")
+
+    case_block = case_json.get("case") or {}
+    tags_block = (case_block.get("tags") or {}) if isinstance(case_block, dict) else {}
+    scoring_track = (
+        str((case_block.get("track") if isinstance(case_block, dict) else None) or tags_block.get("track") or "")
+        .strip()
+        .lower()
+        or None
+    )
+
+    repo_path: Optional[Path] = None
+    try:
+        rp = (case_json.get("repo") or {}).get("repo_path")
+        if rp:
+            repo_path = Path(str(rp))
+    except Exception:
+        repo_path = None
+
     gt_path: Optional[Path] = None
     gt_items: List[Dict[str, Any]] = []
     gt_source: Optional[str] = None
     gt_path: Optional[Path] = None
 
     # 1) Marker-based GT (preferred; no YAML/JSON catalogs required)
-    repo_path = _infer_repo_path(ctx, case_dir=case_dir)
     if repo_path and repo_path.exists() and repo_path.is_dir():
         gt_items = extract_gt_markers(repo_path)
         if gt_items:
@@ -226,7 +261,7 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
 
     # 2/3) YAML gt_catalog fallback (optional)
     if not gt_items:
-        gt_path = _find_gt_catalog(ctx)
+        gt_path = _find_gt_catalog(ctx, repo_path=repo_path)
         if gt_path is None:
             store.add_warning("gt_score skipped: no GT markers or gt_catalog found")
             return {"status": "skipped", "reason": "no_gt"}
@@ -239,6 +274,32 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         gt_data = yaml_mod.safe_load(gt_path.read_text(encoding="utf-8"))
         gt_items = _parse_gt_items(gt_data)
         gt_source = str(gt_path)
+
+    # Optional: enforce case-declared track by filtering GT items.
+    filtered_out_by_track = 0
+    if scoring_track:
+        before = len(gt_items)
+        gt_items = [
+            it
+            for it in gt_items
+            if str(it.get("track") or "unknown").strip().lower() == scoring_track
+        ]
+        filtered_out_by_track = before - len(gt_items)
+        if filtered_out_by_track:
+            store.add_warning(
+                f"gt_score: filtered out {filtered_out_by_track} GT items not matching case track={scoring_track!r}"
+            )
+        if not gt_items:
+            store.add_warning(
+                f"gt_score skipped: no GT items remained after filtering by case track={scoring_track!r}"
+            )
+            return {
+                "status": "skipped",
+                "reason": "no_gt_for_track",
+                "track": scoring_track,
+                "filtered_out_by_track": filtered_out_by_track,
+                "gt_source": gt_source or "unknown",
+            }
 
     # Use shared normalized findings flattening (already filtered by ctx.mode)
     location_items = build_location_items(ctx, store)
@@ -295,6 +356,8 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         "status": "ok",
         "gt_source": gt_source or "unknown",
         "gt_catalog_path": str(gt_path) if gt_path else None,
+        "scoring_track": scoring_track,
+        "filtered_out_by_track": int(filtered_out_by_track),
         "total_gt_items": total,
         "matched_gt_items": matched_count,
         "match_rate": (matched_count / total) if total else 0.0,

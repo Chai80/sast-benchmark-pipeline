@@ -72,6 +72,10 @@ class CaseSpec:
 
     branch: Optional[str] = None
     commit: Optional[str] = None
+
+    # Optional benchmark track (e.g. "sast", "sca", "iac", "secrets").
+    # Used to scope scanner execution and GT scoring when you mix tracks.
+    track: Optional[str] = None
     tags: Dict[str, Any] = field(default_factory=dict)
 
 

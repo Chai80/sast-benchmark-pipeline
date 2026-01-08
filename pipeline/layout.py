@@ -41,7 +41,11 @@ from pipeline.bundles import (
 )
 
 
-_RUN_ID_RE = re.compile(r"^\d{10}$")  # YYYYMMDDNN
+# Run ids are directories created by tools/core.create_run_dir().
+#
+# Current:  YYYYMMDDNNHHMMSS (16 digits)
+# Legacy:   YYYYMMDDNN       (10 digits)
+_RUN_ID_RE = re.compile(r"^\d{10}(\d{6})?$")
 
 
 def new_suite_id() -> str:

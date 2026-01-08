@@ -18,11 +18,14 @@ The stable entrypoint remains :mod:`tools/scan_aikido.py`.
 from __future__ import annotations
 
 import os
+import hashlib
+import json
+import platform
 import re
 import shutil
 import traceback
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -32,6 +35,7 @@ from tools.core import (
     acquire_repo,
     build_run_metadata as build_std_run_metadata,
     create_run_dir_compat,
+    get_pipeline_git_commit,
     run_cmd,
     which_or_raise,
     write_json,
@@ -304,20 +308,42 @@ def build_cloud_run_metadata(
     trigger_http_seconds: Optional[float],
     command_str: str,
 ) -> Dict[str, Any]:
+    # Cloud mode does not have a local checkout. Keep schema compatibility with
+    # build_run_metadata() by including repo_path/repo_branch keys (set to None
+    # when unavailable).
+    branch_name = repo_obj.get("branch")
+
+    config_payload = {
+        "backend": "cloud",
+        "repo_url": repo_url,
+        "repo_name": repo_name,
+        "repo_branch": branch_name,
+        "code_repo_id": code_repo_id,
+    }
+    config_hash = hashlib.sha256(
+        json.dumps(config_payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
     return {
         "scanner": "aikido",
         "scanner_version": AIKIDO_TOOL_VERSION,
         "repo_name": repo_name,
         "repo_url": repo_url,
+        "repo_path": None,
+        "repo_branch": branch_name,
         "code_repo_id": code_repo_id,
-        "branch": repo_obj.get("branch"),
+        # legacy key kept for backwards compatibility
+        "branch": branch_name,
         "run_id": run_id,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "issues_count": issues_count,
         "trigger_http_seconds": float(trigger_http_seconds) if trigger_http_seconds is not None else None,
         "scan_time_seconds": float(trigger_http_seconds) if trigger_http_seconds is not None else None,
         "command": command_str,
         "exit_code": 0,
+        "config_hash": config_hash,
+        "pipeline_git_commit": get_pipeline_git_commit(),
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
         "repo_commit": None,
         "commit_author_name": None,
         "commit_author_email": None,

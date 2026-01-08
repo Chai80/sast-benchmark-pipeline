@@ -92,6 +92,7 @@ class SuiteDefinition:
                 "repo_path": c.repo.repo_path,
                 "branch": c.branch,
                 "commit": c.commit,
+                "track": c.track,
                 "tags": c.tags or {},
                 "overrides": {
                     "sonar_project_key": sc.overrides.sonar_project_key,
@@ -154,6 +155,9 @@ class SuiteDefinition:
             # runs_repo_name is a legacy compatibility knob; default to case_id.
             runs_repo_name = str(c_raw.get("runs_repo_name") or case_id)
 
+            tags = (c_raw.get("tags") or {}) if isinstance(c_raw.get("tags"), dict) else {}
+            track = c_raw.get("track") or tags.get("track")
+
             case = CaseSpec(
                 case_id=case_id,
                 runs_repo_name=runs_repo_name,
@@ -161,7 +165,8 @@ class SuiteDefinition:
                 repo=repo,
                 branch=c_raw.get("branch"),
                 commit=c_raw.get("commit"),
-                tags=(c_raw.get("tags") or {}) if isinstance(c_raw.get("tags"), dict) else {},
+                track=str(track).strip() if track else None,
+                tags=tags,
             )
 
             cases.append(SuiteCase(case=case, overrides=overrides))

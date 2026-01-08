@@ -8,7 +8,7 @@ Canonical utilities:
 - JSON IO
 - Command execution (no shell=True)
 - Repo acquisition (clone/reuse OR local path)
-- Run directory creation (YYYYMMDD##)
+- Run directory creation (YYYYMMDDNNHHMMSS)
 - Git commit + author metadata
 - Repo-relative path + line-content helpers
 - Common mapping loaders (CWE -> OWASP)
@@ -19,16 +19,73 @@ Tool-specific parsing stays in each scan_*.py.
 from __future__ import annotations
 
 import os
+import hashlib
+import json
+import platform
 import shutil
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from tools.io import read_json, read_line_content, write_json
+
+
+_EPHEMERAL_CONFIG_KEYS = {
+    # Common run-specific fields (do not affect scanner *configuration*)
+    "status",
+    "error",
+    "log_path",
+    "raw_results_path",
+    "repo_local_path",
+    "scan_time_seconds",
+    "issues_count",
+    "alerts_count",
+    "warnings_count",
+    "exit_code",
+}
+
+
+def _config_hash(scanner: str, scanner_version: str, extra: Optional[Dict[str, Any]]) -> str:
+    """Hash stable, config-like fields for provenance.
+
+    This intentionally excludes run-specific paths and timings.
+    """
+    cfg_extra = {
+        k: v
+        for k, v in (extra or {}).items()
+        if k not in _EPHEMERAL_CONFIG_KEYS
+    }
+    payload = {
+        "scanner": scanner,
+        "scanner_version": scanner_version,
+        "config": cfg_extra,
+    }
+    raw = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+_PIPELINE_GIT_COMMIT: Optional[str] = None
+
+
+def get_pipeline_git_commit() -> Optional[str]:
+    """Best-effort commit hash for *this* pipeline repo (not the scanned repo)."""
+    global _PIPELINE_GIT_COMMIT
+    if _PIPELINE_GIT_COMMIT is not None:
+        return _PIPELINE_GIT_COMMIT
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(ROOT_DIR), "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        _PIPELINE_GIT_COMMIT = out or None
+    except Exception:
+        _PIPELINE_GIT_COMMIT = None
+    return _PIPELINE_GIT_COMMIT
 
 
 # Repo root = parent of tools/
@@ -226,7 +283,13 @@ def get_commit_author_info(repo_path: Path, commit: str) -> Dict[str, Optional[s
 
 def create_run_dir(output_root: Path | str) -> tuple[str, Path]:
     """
-    Create a dated run directory like YYYYMMDD01, YYYYMMDD02, ... under output_root.
+    Create a dated run directory like YYYYMMDDNNHHMMSS under output_root.
+
+    - YYYYMMDD   : UTC date
+    - NN         : per-day sequence number (01,02,...) computed from existing run dirs
+    - HHMMSS     : UTC time (for readability + accidental collision resistance)
+
+    Backwards-compatible: older runs may be named YYYYMMDDNN (10 digits).
 
     If output_root is relative (e.g. 'runs/semgrep'), it is anchored under ROOT_DIR.
     """
@@ -234,26 +297,36 @@ def create_run_dir(output_root: Path | str) -> tuple[str, Path]:
     root = _anchor_under_root(root)
     root.mkdir(parents=True, exist_ok=True)
 
-    today = datetime.now().strftime("%Y%m%d")
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y%m%d")
+    hhmmss = now.strftime("%H%M%S")
 
-    existing = [
-        d.name for d in root.iterdir()
-        if d.is_dir() and d.name.startswith(today)
-    ]
-    if not existing:
-        idx = 1
-    else:
-        last = max(existing)
+    # Existing runs may be 10 digits (YYYYMMDDNN) or 16 digits (YYYYMMDDNNHHMMSS).
+    existing_idx: List[int] = []
+    for d in root.iterdir():
+        if not d.is_dir():
+            continue
+        name = d.name
+        if not name.startswith(today):
+            continue
+        if len(name) < 10:
+            continue
+        nn = name[8:10]
+        if nn.isdigit():
+            existing_idx.append(int(nn))
+
+    idx = (max(existing_idx) if existing_idx else 0) + 1
+
+    # Concurrency-safe creation: if a directory already exists (another process),
+    # increment NN and retry.
+    while True:
+        run_id = f"{today}{idx:02d}{hhmmss}"
+        run_dir = root / run_id
         try:
-            last_idx = int(last[-2:])
-        except ValueError:
-            last_idx = len(existing)
-        idx = last_idx + 1
-
-    run_id = f"{today}{idx:02d}"
-    run_dir = root / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_id, run_dir
+            run_dir.mkdir(parents=True, exist_ok=False)
+            return run_id, run_dir
+        except FileExistsError:
+            idx += 1
 
 
 def create_run_dir_compat(output_root: Union[str, Path]) -> Tuple[str, Path]:
@@ -344,6 +417,7 @@ def build_run_metadata(
     Standard metadata dict written by all scanners.
     """
     author_info = get_commit_author_info_compat(repo.repo_path, repo.commit)
+    cfg_hash = _config_hash(scanner, scanner_version, extra)
 
     data: Dict[str, Any] = {
         "scanner": scanner,
@@ -354,10 +428,14 @@ def build_run_metadata(
         "repo_branch": get_git_branch(repo.repo_path),
         "repo_commit": repo.commit,
         "run_id": run_id,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "command": command_str,
         "scan_time_seconds": scan_time_seconds,
         "exit_code": exit_code,
+        "config_hash": cfg_hash,
+        "pipeline_git_commit": get_pipeline_git_commit(),
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
         **author_info,
     }
     if extra:

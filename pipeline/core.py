@@ -37,6 +37,59 @@ SCANNER_SCRIPTS: Dict[str, str] = {
 SUPPORTED_SCANNERS = set(SCANNER_SCRIPTS.keys())
 
 
+# --------------------------
+# Track metadata (optional)
+# --------------------------
+#
+# The pipeline supports multiple *tracks* (SAST/SCA/IaC/etc.) at the benchmark
+# layer. Tools can often span more than one track, but this mapping gives the
+# orchestrator a conservative way to skip obviously-irrelevant scanners when a
+# case declares a track.
+#
+# Tracks are free-form strings, but these are the common ones:
+#   - "sast"    : source code (static analysis)
+#   - "sca"     : software composition analysis (dependencies)
+#   - "iac"     : infrastructure-as-code
+#   - "secrets" : credential/secret scanning
+
+SCANNER_TRACKS: Dict[str, set[str]] = {
+    # Semgrep supports multiple tracks depending on config; keep it permissive.
+    "semgrep": {"sast", "iac", "secrets"},
+    "sonar": {"sast"},
+    # This pipeline integrates Snyk Code (SAST). (SCA is a separate Snyk product.)
+    "snyk": {"sast"},
+    # Aikido can report multiple categories depending on backend scan types.
+    "aikido": {"sast", "sca", "iac", "secrets"},
+}
+
+
+def filter_scanners_for_track(scanners: Sequence[str], track: str) -> tuple[list[str], list[str]]:
+    """Filter a scanner list to only those that support the given track.
+
+    Returns (kept, skipped). Unknown tracks are treated as "no filter".
+    """
+
+    t = (track or "").strip().lower()
+    if not t:
+        return list(scanners), []
+
+    # If the track isn't one we recognize, do not filter (best-effort).
+    known_tracks = {x for s in SCANNER_TRACKS.values() for x in s}
+    if t not in known_tracks:
+        return list(scanners), []
+
+    kept: list[str] = []
+    skipped: list[str] = []
+    for s in scanners:
+        supported = SCANNER_TRACKS.get(str(s), {t})
+        if t in supported:
+            kept.append(str(s))
+        else:
+            skipped.append(str(s))
+
+    return kept, skipped
+
+
 def script_path(scanner: str) -> Path:
     """Return the tools/scan_*.py path for a scanner."""
     if scanner not in SUPPORTED_SCANNERS:

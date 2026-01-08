@@ -209,6 +209,16 @@ def parse_args() -> argparse.Namespace:
         help="(benchmark|suite mode) Comma-separated scanners (default: semgrep,snyk,sonar,aikido)",
     )
 
+    parser.add_argument(
+        "--track",
+        type=str,
+        default=None,
+        help=(
+            "Optional benchmark track to scope scoring/execution (e.g. sast|sca|iac|secrets). "
+            "If omitted, scoring considers all GT tracks present in the repo."
+        ),
+    )
+
     # Suite layout
     parser.add_argument(
         "--suite-root",
@@ -604,6 +614,7 @@ def _resolve_suite_case_for_run(sc: SuiteCase) -> Tuple[SuiteCase, str]:
         repo=RepoSpec(repo_key=repo_key, repo_url=repo_url, repo_path=repo_path),
         branch=c.branch,
         commit=c.commit,
+        track=c.track,
         tags=c.tags or {},
     )
 
@@ -782,7 +793,13 @@ def main() -> None:
     case_id = args.case_id or runs_repo_name
 
     repo_spec = RepoSpec(repo_key=args.repo_key, repo_url=repo_url, repo_path=repo_path)
-    case = CaseSpec(case_id=case_id, runs_repo_name=runs_repo_name, label=label, repo=repo_spec)
+    case = CaseSpec(
+        case_id=case_id,
+        runs_repo_name=runs_repo_name,
+        label=label,
+        repo=repo_spec,
+        track=str(args.track).strip() if args.track else None,
+    )
 
     suite_root = Path(args.bundle_root)
     suite_id = str(args.bundle_id) if args.bundle_id else None

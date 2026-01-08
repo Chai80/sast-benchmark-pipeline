@@ -4,7 +4,9 @@ import re
 from pathlib import Path
 from typing import Optional
 
-_RUN_ID_RE = re.compile(r"^\d{10}$")  # YYYYMMDDNN
+# Current:  YYYYMMDDNNHHMMSS (16 digits)
+# Legacy:   YYYYMMDDNN       (10 digits)
+_RUN_ID_RE = re.compile(r"^\d{10}(\d{6})?$")
 
 
 def _discover_repo_dir(tool_dir: Path, repo_name: Optional[str]) -> Optional[Path]:
