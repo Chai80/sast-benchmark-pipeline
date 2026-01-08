@@ -538,9 +538,18 @@ def run_tools(req: RunRequest) -> int:
         # Record run info (best-effort) when using suites
         if bundle is not None:
             tool_out_root = bundle.tool_runs_dir / scanner
-            repo_dir = discover_repo_dir(tool_out_root, prefer=req.case.runs_repo_name)
-            run_dir = discover_latest_run_dir(repo_dir) if repo_dir else None
+
+            # Discover the tool run root (layout v2: <output_root>/<run_id>/... or v1: <output_root>/<repo>/<run_id>/...)
+            run_root_dir = discover_repo_dir(tool_out_root, prefer=req.case.runs_repo_name)
+            run_dir = discover_latest_run_dir(run_root_dir) if run_root_dir else None
             metadata = _load_json_if_exists((run_dir / "metadata.json") if run_dir else Path("/nonexistent"))
+
+            # Prefer the scanner-captured local checkout path for downstream analysis/GT extraction.
+            scanned_repo_dir = None
+            if isinstance(metadata, dict):
+                scanned_repo_dir = metadata.get("repo_path") or metadata.get("repo_local_path")
+            if not scanned_repo_dir:
+                scanned_repo_dir = req.case.repo.repo_path
 
             if run_dir:
                 try:
@@ -566,12 +575,45 @@ def run_tools(req: RunRequest) -> int:
                 "started": tool_started,
                 "finished": tool_finished,
                 "output_root": str(tool_out_root),
-                "repo_dir": str(repo_dir) if repo_dir else None,
+                "run_root": str(run_root_dir) if run_root_dir else None,
+                "repo_dir": str(scanned_repo_dir) if scanned_repo_dir else None,
                 "run_id": run_dir.name if run_dir else None,
                 "run_dir": str(run_dir) if run_dir else None,
                 "run_json": run_json_path,
                 "metadata": metadata,
             }
+
+    # Backfill scanned repo context from tool metadata for runs where the CLI did not receive --repo-path.
+    # This is critical for GT marker extraction and context diagnostics.
+    case_repo_path = req.case.repo.repo_path
+    case_repo_commit = actual_commit
+    case_repo_branch = actual_branch
+
+    for _tool, info in tool_runs_manifest.items():
+        meta = (info or {}).get("metadata")
+        if not isinstance(meta, dict):
+            continue
+        if not case_repo_path:
+            rp = meta.get("repo_path") or meta.get("repo_local_path")
+            if rp:
+                case_repo_path = rp
+        if not case_repo_commit and meta.get("repo_commit"):
+            case_repo_commit = meta.get("repo_commit")
+        if not case_repo_branch and meta.get("repo_branch"):
+            case_repo_branch = meta.get("repo_branch")
+
+    # If we discovered a repo path but branch/commit are still missing, try git.
+    if case_repo_path and (not case_repo_commit or not case_repo_branch):
+        try:
+            from pathlib import Path as _Path
+            from tools.core import get_git_commit as _get_git_commit, get_git_branch as _get_git_branch
+            _p = _Path(case_repo_path)
+            if not case_repo_commit:
+                case_repo_commit = _get_git_commit(_p)
+            if not case_repo_branch:
+                case_repo_branch = _get_git_branch(_p)
+        except Exception:
+            pass
 
     analysis_summary: Optional[Dict[str, Any]] = None
 
@@ -622,11 +664,11 @@ def run_tools(req: RunRequest) -> int:
             "repo": {
                 "label": req.case.label,
                 "repo_url": req.case.repo.repo_url,
-                "repo_path": req.case.repo.repo_path,
+                # Prefer the scanned checkout path from tool metadata if available.
+                "repo_path": case_repo_path,
                 "runs_repo_name": req.case.runs_repo_name,
-                # Actual context is detected from the repo_path that was scanned.
-                "git_branch": actual_branch,
-                "git_commit": actual_commit,
+                "git_branch": case_repo_branch,
+                "git_commit": case_repo_commit,
             },
             "invocation": {
                 "mode": req.invocation_mode,

@@ -183,6 +183,22 @@ def get_git_commit(repo_path: Path) -> Optional[str]:
     return sha if res.exit_code == 0 and sha else None
 
 
+def get_git_branch(repo_path: Path) -> Optional[str]:
+    """Return the current branch name for the repo at repo_path.
+
+    Returns None if the repo is detached (HEAD) or git is unavailable.
+    """
+    res = run_cmd(
+        ['git', '-C', str(repo_path), 'rev-parse', '--abbrev-ref', 'HEAD'],
+        print_stderr=False,
+        print_stdout=False,
+    )
+    b = (res.stdout or '').strip()
+    if res.exit_code != 0 or not b or b == 'HEAD':
+        return None
+    return b
+
+
 def get_commit_author_info(repo_path: Path, commit: str) -> Dict[str, Optional[str]]:
     """
     Return author name/email/date for the given commit SHA in the repo.
@@ -334,6 +350,8 @@ def build_run_metadata(
         "scanner_version": scanner_version,
         "repo_name": repo.repo_name,
         "repo_url": repo.repo_url,
+        "repo_path": str(repo.repo_path),
+        "repo_branch": get_git_branch(repo.repo_path),
         "repo_commit": repo.commit,
         "run_id": run_id,
         "timestamp": datetime.now().isoformat(),
