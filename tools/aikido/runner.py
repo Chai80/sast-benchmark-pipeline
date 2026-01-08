@@ -31,10 +31,11 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from dotenv import load_dotenv
 
+from sast_benchmark.io.layout import RunPaths, prepare_run_paths as _prepare_run_paths
+
 from tools.core import (
     acquire_repo,
     build_run_metadata as build_std_run_metadata,
-    create_run_dir_compat,
     get_pipeline_git_commit,
     run_cmd,
     which_or_raise,
@@ -79,43 +80,16 @@ class AikidoConfig:
     token: str
 
 
-@dataclass(frozen=True)
-class RunPaths:
-    run_dir: Path
-    raw_results: Path
-    normalized: Path
-    metadata: Path
-
-
 LOCAL_SCANNER_DOCKER_IMAGE_DEFAULT = "aikidosecurity/local-scanner:latest"
 
 
 def prepare_run_paths(output_root: str, repo_name: str) -> Tuple[str, RunPaths]:
     """Prepare per-run output paths.
 
-    Layouts supported:
-    - v2 (suite/case): <output_root>/<run_id>/{raw.json,normalized.json,metadata.json}
-      where output_root is cases/<case>/tool_runs/<tool>
-    - v1 (legacy):     <output_root>/<repo_name>/<run_id>/{<repo>.json,<repo>.normalized.json,metadata.json}
+    Delegates to :func:`sast_benchmark.io.layout.prepare_run_paths` so the
+    filesystem contract is owned by one module.
     """
-    out_root = Path(output_root)
-    suite_mode = out_root.parent.name in {"tool_runs", "scans"}
-
-    if suite_mode:
-        run_id, run_dir = create_run_dir_compat(out_root)
-        raw = run_dir / "raw.json"
-        norm = run_dir / "normalized.json"
-    else:
-        run_id, run_dir = create_run_dir_compat(out_root / repo_name)
-        raw = run_dir / f"{repo_name}.json"
-        norm = run_dir / f"{repo_name}.normalized.json"
-
-    return run_id, RunPaths(
-        run_dir=run_dir,
-        raw_results=raw,
-        normalized=norm,
-        metadata=run_dir / "metadata.json",
-    )
+    return _prepare_run_paths(output_root, repo_name, raw_extension=".json")
 
 
 def get_aikido_config() -> AikidoConfig:

@@ -26,7 +26,6 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -35,16 +34,20 @@ from dotenv import load_dotenv
 
 # ---------------------------------------------------------------------------
 # Minimal bootstrap so this file can be executed directly while using
-# clean package imports (no try/except import scaffolding).
+# clean package imports.
+#
+# IMPORTANT: This must run BEFORE importing local packages like `sast_benchmark`
+# when the script is invoked as: `python tools/scan_sonar.py ...`
 # ---------------------------------------------------------------------------
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from sast_benchmark.io.layout import RunPaths, prepare_run_paths as _prepare_run_paths
 
 from tools.core import (
     ROOT_DIR,
     acquire_repo,
     build_run_metadata,
-    create_run_dir_compat,
     run_cmd,
     which_or_raise,
     write_json,
@@ -62,15 +65,6 @@ from tools.sonar.types import SonarConfig
 
 SONAR_HOST_DEFAULT = "https://sonarcloud.io"
 SONAR_SCANNER_FALLBACKS = ["/opt/homebrew/bin/sonar-scanner", "/usr/local/bin/sonar-scanner"]
-
-
-@dataclass(frozen=True)
-class RunPaths:
-    run_dir: Path
-    log: Path
-    raw_results: Path
-    normalized: Path
-    metadata: Path
 
 
 # ---------------------------------------------------------------------------
@@ -126,33 +120,15 @@ def get_sonar_config() -> SonarConfig:
 def prepare_run_paths(output_root: str, repo_name: str) -> Tuple[str, RunPaths]:
     """Prepare per-run output paths.
 
-    Layouts supported:
-    - v2 (suite/case): <output_root>/<run_id>/{raw.json,normalized.json,metadata.json,logs/...}
-      where output_root is cases/<case>/tool_runs/<tool>
-    - v1 (legacy):     <output_root>/<repo_name>/<run_id>/{<repo>.json,<repo>.normalized.json,metadata.json}
+    Delegates to :func:`sast_benchmark.io.layout.prepare_run_paths` so the
+    filesystem contract is owned by one module.
     """
-    out_root = Path(output_root)
-    suite_mode = out_root.parent.name in {"tool_runs", "scans"}
-
-    if suite_mode:
-        run_id, run_dir = create_run_dir_compat(out_root)
-        logs_dir = run_dir / "logs"
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        return run_id, RunPaths(
-            run_dir=run_dir,
-            log=logs_dir / "sonar_scan.log",
-            raw_results=run_dir / "raw.json",
-            normalized=run_dir / "normalized.json",
-            metadata=run_dir / "metadata.json",
-        )
-
-    run_id, run_dir = create_run_dir_compat(out_root / repo_name)
-    return run_id, RunPaths(
-        run_dir=run_dir,
-        log=run_dir / f"{repo_name}_sonar_scan.log",
-        raw_results=run_dir / f"{repo_name}.json",
-        normalized=run_dir / f"{repo_name}.normalized.json",
-        metadata=run_dir / "metadata.json",
+    return _prepare_run_paths(
+        output_root,
+        repo_name,
+        raw_extension=".json",
+        suite_log_filename="sonar_scan.log",
+        legacy_log_filename="{repo_name}_sonar_scan.log",
     )
 
 

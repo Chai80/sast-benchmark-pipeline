@@ -55,6 +55,8 @@ python sast_cli.py --mode suite --suite-file suites/example_suite.py
 from __future__ import annotations
 
 import argparse
+import csv
+import json
 import os
 import re
 import shutil
@@ -241,9 +243,36 @@ def parse_args() -> argparse.Namespace:
         "--suite-file",
         dest="suite_file",
         help=(
-            "(suite mode) Optional YAML suite definition. If omitted, you can build a suite interactively. "
-            "This YAML is a *plan* (what you intend to run), while suite.json/case.json capture what actually ran."
+            "(suite mode) Optional Python suite definition (.py exporting SUITE_DEF). If omitted, you can build a suite interactively "
+            "or use --cases-from / --worktrees-root to load many cases quickly. "
+            "suite.json/case.json/run.json are always written as the ground-truth record of what actually ran."
         ),
+    )
+
+    parser.add_argument(
+        "--cases-from",
+        dest="cases_from",
+        help=(
+            "(suite mode) Load cases from a CSV file (columns: case_id,repo_path[,label][,branch][,track][,tags_json]). "
+            "Useful for branch-per-case micro-suites and CI runs."
+        ),
+    )
+
+    parser.add_argument(
+        "--worktrees-root",
+        dest="worktrees_root",
+        help=(
+            "(suite mode) Import cases by discovering git worktrees/checkouts under this folder. "
+            "Each git checkout becomes one case. Example: repos/worktrees/durinn-owasp2021-python-micro-suite"
+        ),
+    )
+
+    parser.add_argument(
+        "--max-cases",
+        dest="max_cases",
+        type=int,
+        default=None,
+        help="(suite mode) When loading cases from --cases-from/--worktrees-root, only include the first N cases.",
     )
 
     parser.add_argument(
@@ -413,7 +442,7 @@ def resolve_repo(args: argparse.Namespace) -> Tuple[Optional[str], Optional[str]
 
 
 # -------------------------------------------------------------------
-# Suite mode (optional YAML)
+# Suite mode (Python suite file / interactive / CSV / worktrees)
 # -------------------------------------------------------------------
 
 def _prompt_text(prompt: str, default: Optional[str] = None) -> str:
@@ -445,6 +474,277 @@ def _parse_scanners_str(value: str) -> List[str]:
     if unknown:
         print(f"  ⚠️  ignoring unknown scanners: {', '.join(unknown)}")
     return scanners
+
+
+
+
+def _parse_index_selection(raw: str, *, n: int) -> List[int]:
+    """Parse a user selection like: 'all' or '1,3-5' into 0-based indices."""
+    s = (raw or '').strip().lower()
+    if not s:
+        return []
+    if s in {'all', '*'}:
+        return list(range(n))
+
+    out: set[int] = set()
+    parts = re.split(r"[\s,]+", s)
+    for part in parts:
+        if not part:
+            continue
+        if part in {'z', 'quit', 'exit'}:
+            raise SystemExit(0)
+        if '-' in part:
+            a, b = part.split('-', 1)
+            if a.isdigit() and b.isdigit():
+                lo, hi = int(a), int(b)
+                if lo > hi:
+                    lo, hi = hi, lo
+                for k in range(lo, hi + 1):
+                    if 1 <= k <= n:
+                        out.add(k - 1)
+            continue
+        if part.isdigit():
+            k = int(part)
+            if 1 <= k <= n:
+                out.add(k - 1)
+            continue
+
+    return sorted(out)
+
+
+def _discover_git_checkouts_under(root: Path) -> List[Path]:
+    """Return top-level git checkouts under a root (ignores nested submodules).
+
+    We consider any directory that contains a '.git' entry (file or dir) as a checkout.
+    We then drop any candidates that live inside another candidate (submodules).
+    """
+    root = Path(root).expanduser().resolve()
+    if not root.exists():
+        return []
+
+    candidates: set[Path] = set()
+    for git_entry in root.rglob('.git'):
+        try:
+            parent = git_entry.parent
+        except Exception:
+            continue
+        if parent == root:
+            continue
+        candidates.add(parent)
+
+    # Keep only the outermost candidates.
+    ordered = sorted(candidates, key=lambda p: len(p.parts))
+    kept: list[Path] = []
+    for c in ordered:
+        if any(parent in kept for parent in c.parents):
+            continue
+        kept.append(c)
+
+    return sorted(kept, key=lambda p: p.as_posix())
+
+
+def _case_id_from_pathlike(rel: str) -> str:
+    """Derive a stable case_id from a relative path / branch name.
+
+    We use '__' for path separators to avoid collisions between:
+      - 'a/b'  -> 'a__b'
+      - 'a_b'  -> 'a_b'
+    """
+    rel = (rel or '').strip().replace('\\\\', '/').strip('/')
+    return safe_name(rel.replace('/', '__') or 'case')
+
+
+def _suite_case_from_repo_path(
+    *,
+    case_id: str,
+    repo_path: Path,
+    label: Optional[str] = None,
+    branch: Optional[str] = None,
+    track: Optional[str] = None,
+    tags: Optional[dict] = None,
+    overrides: Optional[SuiteCaseOverrides] = None,
+) -> SuiteCase:
+    """Create a SuiteCase for a local repo path."""
+    cid = safe_name(case_id)
+    repo_path = Path(repo_path).expanduser().resolve()
+    lbl = label or cid
+    rn = safe_name(cid)
+    repo = RepoSpec(repo_key=None, repo_url=None, repo_path=str(repo_path))
+    c = CaseSpec(
+        case_id=cid,
+        runs_repo_name=rn,
+        label=lbl,
+        repo=repo,
+        branch=branch,
+        track=track,
+        tags=tags or {},
+    )
+    return SuiteCase(case=c, overrides=overrides or SuiteCaseOverrides())
+
+
+def _load_suite_cases_from_csv(csv_path: Path) -> List[SuiteCase]:
+    """Load SuiteCase entries from a CSV file.
+
+    Supported formats
+    -----------------
+    1) With header (recommended):
+         case_id,repo_path,label,branch,track,tags_json,sonar_project_key,aikido_git_ref
+
+    2) Without header (positional):
+         repo_path
+         case_id,repo_path
+         case_id,repo_path,label,branch,track,tags_json
+
+    Notes
+    -----
+    - Blank lines and lines starting with '#' are ignored.
+    - tags_json should be a JSON object like: {"set":"core"}
+    """
+    p = Path(csv_path).expanduser().resolve()
+    if not p.exists():
+        raise SystemExit(f"Cases CSV not found: {p}")
+
+    rows: list[list[str]] = []
+    with p.open('r', encoding='utf-8', newline='') as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if not row:
+                continue
+            if row and row[0].strip().startswith('#'):
+                continue
+            cleaned = [c.strip() for c in row]
+            if all(not c for c in cleaned):
+                continue
+            rows.append(cleaned)
+
+    if not rows:
+        return []
+
+    header = [c.lower() for c in rows[0]]
+    has_header = 'repo_path' in header or 'repo_url' in header or 'repo_key' in header
+
+    out: list[SuiteCase] = []
+
+    def parse_tags(raw: str) -> dict:
+        if not raw:
+            return {}
+        try:
+            v = json.loads(raw)
+            return v if isinstance(v, dict) else {}
+        except Exception:
+            return {}
+
+    if has_header:
+        keys = header
+        for r in rows[1:]:
+            d = {keys[i]: (r[i] if i < len(r) else '') for i in range(len(keys))}
+
+            case_id = d.get('case_id') or ''
+            repo_path = d.get('repo_path') or ''
+            repo_url = d.get('repo_url') or ''
+            repo_key = d.get('repo_key') or ''
+
+            label = d.get('label') or None
+            branch = d.get('branch') or None
+            commit = d.get('commit') or None
+            track = d.get('track') or None
+            tags = parse_tags(d.get('tags') or d.get('tags_json') or '')
+
+            overrides = SuiteCaseOverrides(
+                sonar_project_key=(d.get('sonar_project_key') or None),
+                aikido_git_ref=(d.get('aikido_git_ref') or None),
+            )
+
+            if repo_path:
+                rp = Path(repo_path).expanduser().resolve()
+                if not case_id:
+                    case_id = rp.name
+                sc = _suite_case_from_repo_path(
+                    case_id=case_id,
+                    repo_path=rp,
+                    label=label,
+                    branch=branch,
+                    track=track,
+                    tags=tags,
+                    overrides=overrides,
+                )
+                # Patch in commit if present
+                if commit:
+                    c = sc.case
+                    sc = SuiteCase(case=CaseSpec(**{**c.__dict__, 'commit': commit}), overrides=sc.overrides)
+                out.append(sc)
+                continue
+
+            # URL/key-based case (rare in micro-suites; supported for completeness)
+            if repo_url or repo_key:
+                if not case_id:
+                    case_id = repo_key or repo_id_from_repo_url(repo_url)
+                cid = safe_name(case_id)
+                lbl = label or cid
+                runs_repo_name = safe_name(d.get('runs_repo_name') or cid)
+                repo = RepoSpec(repo_key=repo_key or None, repo_url=repo_url or None, repo_path=None)
+                case = CaseSpec(
+                    case_id=cid,
+                    runs_repo_name=runs_repo_name,
+                    label=lbl,
+                    repo=repo,
+                    branch=branch,
+                    commit=commit,
+                    track=track,
+                    tags=tags,
+                )
+                out.append(SuiteCase(case=case, overrides=overrides))
+                continue
+
+        return out
+
+    # Positional mode (no header)
+    for r in rows:
+        if len(r) == 1:
+            repo_path = r[0]
+            rp = Path(repo_path).expanduser().resolve()
+            out.append(_suite_case_from_repo_path(case_id=rp.name, repo_path=rp, label=rp.name, branch=None))
+            continue
+
+        case_id = r[0]
+        repo_path = r[1] if len(r) > 1 else ''
+        label = r[2] if len(r) > 2 else None
+        branch = r[3] if len(r) > 3 else None
+        track = r[4] if len(r) > 4 else None
+        tags = parse_tags(r[5] if len(r) > 5 else '')
+
+        rp = Path(repo_path).expanduser().resolve()
+        out.append(_suite_case_from_repo_path(
+            case_id=case_id,
+            repo_path=rp,
+            label=label,
+            branch=branch,
+            track=track,
+            tags=tags,
+        ))
+
+    return out
+
+
+def _load_suite_cases_from_worktrees_root(worktrees_root: Path) -> List[SuiteCase]:
+    root = Path(worktrees_root).expanduser().resolve()
+    repos = _discover_git_checkouts_under(root)
+
+    out: list[SuiteCase] = []
+    for repo_dir in repos:
+        try:
+            rel = repo_dir.relative_to(root).as_posix()
+        except Exception:
+            rel = repo_dir.name
+        case_id = _case_id_from_pathlike(rel)
+        out.append(_suite_case_from_repo_path(
+            case_id=case_id,
+            repo_path=repo_dir,
+            label=rel,
+            branch=rel,
+        ))
+
+    return out
 
 
 def _resolve_repo_for_suite_case_interactive() -> Tuple[RepoSpec, str, str]:
@@ -489,7 +789,7 @@ def _resolve_repo_for_suite_case_interactive() -> Tuple[RepoSpec, str, str]:
 def _build_suite_interactively(args: argparse.Namespace) -> SuiteDefinition:
     print("\n🧩 Suite mode: run multiple cases under one suite id.")
     print("   - Use this for scanning many repos or many branches/worktrees.")
-    print("   - YAML is optional; suite.json/case.json/run.json are always written.\n")
+    print("   - Suite definition files are optional; suite.json/case.json/run.json are always written.\n")
 
     suite_id_in = _prompt_text("Suite id (press Enter to auto-generate)", default="").strip()
     suite_id = suite_id_in or new_suite_id()
@@ -517,12 +817,110 @@ def _build_suite_interactively(args: argparse.Namespace) -> SuiteDefinition:
             "Add a case:",
             {
                 "add": "Add a new case",
+                "add_worktrees": "Add cases from local worktrees",
+                "add_csv": "Add cases from CSV file",
                 "done": "Finish suite definition",
             },
         )
         if action == "done":
             break
 
+        if action == "add_worktrees":
+            # Discover git checkouts under repos/worktrees/<something> and add many cases at once.
+            base = (ROOT_DIR / "repos" / "worktrees").resolve()
+            root: Path
+            if base.exists():
+                candidates = [p for p in base.iterdir() if p.is_dir()]
+            else:
+                candidates = []
+
+            if candidates:
+                opts: Dict[str, object] = {p.name: str(p) for p in sorted(candidates, key=lambda p: p.name)}
+                opts["custom"] = "Enter a custom worktrees folder path"
+                choice = choose_from_menu("Choose a worktrees folder:", opts)
+                if choice == "custom":
+                    entered = _prompt_text("Worktrees folder path", default=str(base)).strip()
+                    root = Path(entered).expanduser().resolve()
+                else:
+                    root = (base / choice).resolve()
+            else:
+                entered = _prompt_text("Worktrees folder path", default=str(base)).strip()
+                root = Path(entered).expanduser().resolve()
+
+            discovered = _discover_git_checkouts_under(root)
+            if not discovered:
+                print(f"  ❌ No git checkouts found under: {root}")
+                continue
+
+            rels = []
+            for d in discovered:
+                try:
+                    rels.append(d.relative_to(root).as_posix())
+                except Exception:
+                    rels.append(d.name)
+
+            print("\nDiscovered worktrees:")
+            for i, rel in enumerate(rels, start=1):
+                print(f"[{i}] {rel}")
+
+            raw_sel = _prompt_text("Select worktrees by number (e.g., 1,3-5) or 'all'", default="all")
+            sel = _parse_index_selection(raw_sel, n=len(rels))
+            if not sel:
+                print("  ⚠️  No worktrees selected.")
+                continue
+
+            added = 0
+            for i in sel:
+                rel = rels[i]
+                repo_dir = discovered[i]
+
+                proposed_id = _case_id_from_pathlike(rel)
+                case_id = proposed_id
+                k = 2
+                while case_id in seen_case_ids:
+                    case_id = f"{proposed_id}_{k}"
+                    k += 1
+
+                sc = _suite_case_from_repo_path(
+                    case_id=case_id,
+                    repo_path=repo_dir,
+                    label=rel,
+                    branch=rel,
+                )
+
+                cases.append(sc)
+                seen_case_ids.add(case_id)
+                added += 1
+
+            print(f"  ✅ Added {added} case(s) from worktrees.")
+            continue
+
+        if action == "add_csv":
+            csv_in = _prompt_text("Cases CSV path", default="suites/cases.csv").strip()
+            csv_path = Path(csv_in).expanduser().resolve()
+            loaded = _load_suite_cases_from_csv(csv_path)
+            if not loaded:
+                print(f"  ⚠️  No cases loaded from: {csv_path}")
+                continue
+
+            added = 0
+            for sc in loaded:
+                cid = safe_name(sc.case.case_id)
+                if cid in seen_case_ids:
+                    print(f"  ⚠️  Skipping duplicate case_id from CSV: {cid}")
+                    continue
+                # Ensure the case_id is safe
+                c = sc.case
+                if cid != c.case_id:
+                    sc = SuiteCase(case=CaseSpec(**{**c.__dict__, 'case_id': cid}), overrides=sc.overrides)
+                cases.append(sc)
+                seen_case_ids.add(cid)
+                added += 1
+
+            print(f"  ✅ Added {added} case(s) from CSV.")
+            continue
+
+        # Default: add a single case via preset/custom/local
         repo_spec, label, _repo_id = _resolve_repo_for_suite_case_interactive()
 
         runs_repo_name = _derive_runs_repo_name(
@@ -615,17 +1013,19 @@ def _resolve_suite_case_for_run(sc: SuiteCase) -> Tuple[SuiteCase, str]:
     if not runs_repo_name or runs_repo_name == c.case_id:
         runs_repo_name = derived_runs_name
 
+
+    case_id = safe_name(c.case_id)
+    if case_id != c.case_id:
+        print(f"  ⚠️  case_id '{c.case_id}' sanitized to '{case_id}'")
+
     # Compute repo_id (used for Sonar project key derivation).
     if repo_key:
         repo_id = repo_key
     elif repo_url:
         repo_id = repo_id_from_repo_url(repo_url)
     else:
-        repo_id = sanitize_sonar_key_fragment(Path(repo_path).resolve().name)
-
-    case_id = safe_name(c.case_id)
-    if case_id != c.case_id:
-        print(f"  ⚠️  case_id '{c.case_id}' sanitized to '{case_id}'")
+        # In suite mode, repo_id should be unique per case to avoid Sonar project key collisions.
+        repo_id = sanitize_sonar_key_fragment(case_id)
 
     resolved = CaseSpec(
         case_id=case_id,
@@ -639,6 +1039,68 @@ def _resolve_suite_case_for_run(sc: SuiteCase) -> Tuple[SuiteCase, str]:
     )
 
     return SuiteCase(case=resolved, overrides=sc.overrides), repo_id
+
+
+
+
+def _build_suite_from_sources(args: argparse.Namespace) -> SuiteDefinition:
+    """Build a suite definition without interactive prompts.
+
+    Sources:
+      - --cases-from CSV
+      - --worktrees-root folder
+
+    This is meant for prototype automation and CI.
+    """
+    suite_id = str(args.bundle_id) if args.bundle_id else new_suite_id()
+
+    scanners_csv = args.scanners or "semgrep,snyk,sonar,aikido"
+    scanners = _parse_scanners_str(scanners_csv)
+    if not scanners:
+        raise SystemExit("No valid scanners selected.")
+
+    analysis = SuiteAnalysisDefaults(
+        skip=bool(args.skip_analysis),
+        tolerance=int(args.tolerance),
+        filter=str(args.analysis_filter),
+    )
+
+    cases: list[SuiteCase] = []
+    seen: set[str] = set()
+
+    if args.cases_from:
+        loaded = _load_suite_cases_from_csv(Path(args.cases_from))
+        for sc in loaded:
+            cid = safe_name(sc.case.case_id)
+            if cid in seen:
+                continue
+            c = sc.case
+            if cid != c.case_id:
+                sc = SuiteCase(case=CaseSpec(**{**c.__dict__, 'case_id': cid}), overrides=sc.overrides)
+            cases.append(sc)
+            seen.add(cid)
+
+    if args.worktrees_root:
+        loaded = _load_suite_cases_from_worktrees_root(Path(args.worktrees_root))
+        for sc in loaded:
+            cid = safe_name(sc.case.case_id)
+            if cid in seen:
+                continue
+            cases.append(sc)
+            seen.add(cid)
+
+    if args.max_cases is not None:
+        cases = cases[: int(args.max_cases)]
+
+    if not cases:
+        raise SystemExit("Suite mode requires at least one case (no cases loaded).")
+
+    return SuiteDefinition(
+        suite_id=suite_id,
+        scanners=scanners,
+        cases=cases,
+        analysis=analysis,
+    )
 
 
 def run_suite_mode(args: argparse.Namespace) -> int:
@@ -666,7 +1128,10 @@ def run_suite_mode(args: argparse.Namespace) -> int:
             )
         suite_def = load_suite_py(p)
     else:
-        suite_def = _build_suite_interactively(args)
+        if args.cases_from or args.worktrees_root:
+            suite_def = _build_suite_from_sources(args)
+        else:
+            suite_def = _build_suite_interactively(args)
 
     # CLI overrides
     suite_id = str(args.bundle_id) if args.bundle_id else (suite_def.suite_id or new_suite_id())

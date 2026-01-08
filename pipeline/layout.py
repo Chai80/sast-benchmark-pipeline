@@ -26,9 +26,13 @@ Notes
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Optional, Union
+
+from sast_benchmark.io.layout import (
+    discover_latest_run_dir as _discover_latest_run_dir,
+    discover_repo_dir as _discover_repo_dir,
+)
 
 from pipeline.bundles import (
     BundlePaths as SuitePaths,
@@ -39,13 +43,6 @@ from pipeline.bundles import (
     update_suite_artifacts,
     write_latest_pointer as write_latest_suite_pointer,
 )
-
-
-# Run ids are directories created by tools/core.create_run_dir().
-#
-# Current:  YYYYMMDDNNHHMMSS (16 digits)
-# Legacy:   YYYYMMDDNN       (10 digits)
-_RUN_ID_RE = re.compile(r"^\d{10}(\d{6})?$")
 
 
 def new_suite_id() -> str:
@@ -77,61 +74,10 @@ def resolve_case_dir(
 
 
 def discover_repo_dir(output_root: Path, prefer: Optional[str] = None) -> Optional[Path]:
-    """Discover the per-tool *run root* directory inside a case.
-
-    Supports two layouts (historical compatibility):
-
-    v2 (preferred):
-      <output_root>/<run_id>/...
-
-    v1 (legacy):
-      <output_root>/<repo_name>/<run_id>/...
-
-    Parameters
-    ----------
-    output_root:
-        The tool output directory for a given case, e.g.:
-          <case_dir>/tool_runs/semgrep
-    prefer:
-        If the legacy layout contains multiple repo folders, prefer this name.
-
-    Returns
-    -------
-    Path | None
-        The directory under which run_id folders exist.
-    """
-    if not output_root.exists() or not output_root.is_dir():
-        return None
-
-    # v2: output_root contains run_id directories directly.
-    run_dirs = [d for d in output_root.iterdir() if d.is_dir() and _RUN_ID_RE.match(d.name)]
-    if run_dirs:
-        return output_root
-
-    # v1: output_root contains repo folder(s); prefer an exact match if provided.
-    if prefer:
-        p = output_root / prefer
-        if p.exists() and p.is_dir():
-            return p
-
-    dirs = [d for d in output_root.iterdir() if d.is_dir()]
-    if len(dirs) == 1:
-        return dirs[0]
-
-    # If multiple, try to find a case-insensitive match
-    if prefer:
-        for d in dirs:
-            if d.name.lower() == prefer.lower():
-                return d
-
-    return None
+    """Backwards-compatible wrapper for :func:`sast_benchmark.io.layout.discover_repo_dir`."""
+    return _discover_repo_dir(output_root, prefer)
 
 
 def discover_latest_run_dir(repo_dir: Path) -> Optional[Path]:
-    """Return the latest run directory (YYYYMMDDNN) under repo_dir."""
-    if not repo_dir.exists() or not repo_dir.is_dir():
-        return None
-    run_dirs = [d for d in repo_dir.iterdir() if d.is_dir() and _RUN_ID_RE.match(d.name)]
-    if not run_dirs:
-        return None
-    return max(run_dirs, key=lambda p: p.name)
+    """Backwards-compatible wrapper for :func:`sast_benchmark.io.layout.discover_latest_run_dir`."""
+    return _discover_latest_run_dir(repo_dir)
