@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -118,6 +119,49 @@ def _detect_git_branch(repo_path: Optional[str]) -> Optional[str]:
     except Exception:
         return None
 
+
+
+
+def _capture_optional_benchmark_yaml(repo_path: Optional[str], case_dir: Path) -> None:
+    """Best-effort capture of benchmark YAML inputs for a case.
+
+    Some suites (e.g. Durinn micro-suites) contain benchmark metadata like:
+      benchmark/gt_catalog.yaml
+      benchmark/suite_sets.yaml
+
+    Many targets (e.g. Juice Shop) will not have these files.
+
+    This function is intentionally no-break:
+    - If repo_path is missing or files don't exist, it does nothing.
+    - Any exception is swallowed so scans are never blocked by capture.
+
+    Captured files are copied to:
+      <case_dir>/gt/
+
+    This makes each case directory self-contained for later DB ingestion.
+    """
+    if not repo_path:
+        return
+    try:
+        bench = Path(repo_path) / 'benchmark'
+        if not bench.exists():
+            return
+
+        gt_dir = Path(case_dir) / 'gt'
+        gt_dir.mkdir(parents=True, exist_ok=True)
+
+        candidates = [
+            'gt_catalog.yaml',
+            'gt_catalog.yml',
+            'suite_sets.yaml',
+            'suite_sets.yml',
+        ]
+        for name in candidates:
+            src = bench / name
+            if src.exists() and src.is_file():
+                shutil.copy2(src, gt_dir / name)
+    except Exception:
+        return
 
 def _sonar_extra_args(*, repo_id: str, sonar_project_key: Optional[str]) -> Dict[str, str]:
     _require_env("SONAR_ORG")
@@ -378,6 +422,8 @@ def run_tools(req: RunRequest) -> int:
         bundle = get_suite_paths(case_id=req.case.case_id, suite_id=sid, suite_root=req.suite_root)
         ensure_suite_dirs(bundle)
         write_latest_suite_pointer(bundle)
+        # Optional: capture suite GT YAML into the case folder for reproducibility
+        _capture_optional_benchmark_yaml(req.case.repo.repo_path, bundle.case_dir)
 
     # Print header
     if req.invocation_mode == "scan":

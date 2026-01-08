@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+import argparse
+import json
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence
+
+from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
+from pipeline.analysis.io.write_artifacts import write_csv, write_json
+
+from tools.normalize.classification import resolve_owasp_and_cwe
+
+from ._shared import load_findings_by_tool
+
+
+def _repo_root() -> Path:
+    # .../pipeline/analysis/stages/taxonomy.py -> repo root is parents[3]
+    return Path(__file__).resolve().parents[3]
+
+
+def _load_cwe_to_owasp_map() -> Dict[str, Any]:
+    p = _repo_root() / "mappings" / "cwe_to_owasp_top10_mitre.json"
+    data = json.loads(p.read_text(encoding="utf-8"))
+    m = data.get("cwe_to_owasp") or {}
+    if not isinstance(m, dict):
+        return {}
+    return m
+
+
+def _extract_tags(finding: Dict[str, Any]) -> List[str]:
+    tags: List[str] = []
+    raw = (finding.get("vendor") or {}).get("raw_result") or {}
+    if isinstance(raw, dict):
+        # Semgrep: extra.metadata.owasp is a list of strings.
+        extra = raw.get("extra") or {}
+        if isinstance(extra, dict):
+            meta = extra.get("metadata") or {}
+            if isinstance(meta, dict):
+                o = meta.get("owasp")
+                if isinstance(o, list):
+                    tags.extend([str(x) for x in o if x is not None])
+                cwe = meta.get("cwe")
+                if isinstance(cwe, list):
+                    tags.extend([str(x) for x in cwe if x is not None])
+
+        # Sonar: raw_result.tags is a list of strings (not OWASP codes, but still useful)
+        rt = raw.get("tags")
+        if isinstance(rt, list):
+            tags.extend([str(x) for x in rt if x is not None])
+
+    # Also include normalized title/rule_id as weak tags (sometimes include CWE/OWASP fragments)
+    if finding.get("rule_id"):
+        tags.append(str(finding.get("rule_id")))
+    if finding.get("title"):
+        tags.append(str(finding.get("title")))
+    return tags
+
+
+def _extract_cwe_candidates(finding: Dict[str, Any]) -> List[Any]:
+    cwe: List[Any] = []
+    if finding.get("cwe_id"):
+        cwe.append(finding.get("cwe_id"))
+    raw = (finding.get("vendor") or {}).get("raw_result") or {}
+    if isinstance(raw, dict):
+        extra = raw.get("extra") or {}
+        if isinstance(extra, dict):
+            meta = extra.get("metadata") or {}
+            if isinstance(meta, dict):
+                c = meta.get("cwe")
+                if c is not None:
+                    cwe.append(c)
+    return cwe
+
+
+def _choose_codes(resolved: Dict[str, Any], *, prefer: str = "canonical") -> List[str]:
+    block = None
+    if prefer == "vendor":
+        block = resolved.get("owasp_top_10_2021_vendor") or resolved.get("owasp_top_10_2021")
+    else:
+        block = resolved.get("owasp_top_10_2021_canonical") or resolved.get("owasp_top_10_2021")
+    if isinstance(block, dict):
+        codes = block.get("codes") or []
+        if isinstance(codes, list):
+            return [str(c) for c in codes if c is not None]
+    return []
+
+
+@register_stage(
+    "taxonomy",
+    kind="analysis",
+    description="Derive OWASP Top10 categories (canonical via CWE) and write taxonomy counts.",
+)
+def stage_taxonomy(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
+    fb = load_findings_by_tool(ctx, store)
+
+    cwe_map = store.get("cwe_to_owasp_map")
+    if not isinstance(cwe_map, dict) or not cwe_map:
+        cwe_map = _load_cwe_to_owasp_map()
+        store.put("cwe_to_owasp_map", cwe_map)
+
+    counts: Dict[str, Counter] = defaultdict(Counter)
+    total: Dict[str, int] = defaultdict(int)
+
+    for tool, findings in fb.items():
+        for f in findings:
+            if not isinstance(f, dict):
+                continue
+            tags = _extract_tags(f)
+            cwe_candidates = _extract_cwe_candidates(f)
+
+            resolved = resolve_owasp_and_cwe(
+                tags=tags,
+                cwe_candidates=cwe_candidates,
+                cwe_to_owasp_map=cwe_map,
+            )
+            codes = _choose_codes(resolved, prefer="canonical")  # apples-to-apples
+            if not codes:
+                counts[tool]["UNCLASSIFIED"] += 1
+            else:
+                for code in codes:
+                    counts[tool][code] += 1
+            total[tool] += 1
+
+    rows: List[Dict[str, Any]] = []
+    for tool in sorted(counts.keys()):
+        for code, n in counts[tool].most_common():
+            rows.append(
+                {
+                    "tool": tool,
+                    "owasp_2021_code": code,
+                    "count": int(n),
+                    "tool_total_findings": int(total.get(tool, 0)),
+                }
+            )
+
+    store.put("taxonomy_rows", rows)
+
+    out_csv = Path(ctx.out_dir) / "taxonomy_analysis.csv"
+    out_json = Path(ctx.out_dir) / "taxonomy_analysis.json"
+    if "csv" in ctx.formats:
+        write_csv(out_csv, rows, fieldnames=["tool", "owasp_2021_code", "count", "tool_total_findings"])
+        store.add_artifact("taxonomy_analysis_csv", out_csv)
+    if "json" in ctx.formats:
+        write_json(out_json, rows)
+        store.add_artifact("taxonomy_analysis_json", out_json)
+
+    return {"rows": len(rows)}
+
+
+def main(argv: List[str] | None = None) -> None:  # pragma: no cover
+    ap = argparse.ArgumentParser(description="Taxonomy analysis (wrapper around analysis suite).")
+    ap.add_argument("--repo-name", required=True)
+    ap.add_argument("--runs-dir", default="runs")
+    ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--tools", default="semgrep,snyk,sonar,aikido")
+    ap.add_argument("--tolerance", type=int, default=3)
+    ap.add_argument("--mode", choices=["security", "all"], default="security")
+    args = ap.parse_args(argv)
+
+    from pipeline.analysis.runner import run_suite
+
+    tools = [t.strip() for t in str(args.tools).split(",") if t.strip()]
+    out_dir = Path(args.out_dir) if args.out_dir else (Path(args.runs_dir) / "analysis" / args.repo_name)
+    run_suite(
+        repo_name=args.repo_name,
+        tools=tools,
+        runs_dir=Path(args.runs_dir),
+        out_dir=out_dir,
+        tolerance=args.tolerance,
+        mode=args.mode,
+        formats=["json", "csv"],
+    )

@@ -4,6 +4,7 @@
 - Move **tool-specific logic** into isolated packages under `tools/<tool>/`.
 - Treat **normalized JSON** as the cross-tool contract consumed by all analysis code.
 - Write results in a **suite/case layout** by default so data is easier to browse and ingest into a database later.
+- For system-level diagrams (end-to-end flow + analysis internals), see `docs/SYSTEM_DIAGRAMS.md`.
 
 The primary goal is to enforce clear ownership,
 one-way dependencies, and a single source of truth for shared logic.
