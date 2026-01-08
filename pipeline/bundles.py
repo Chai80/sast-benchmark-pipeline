@@ -56,7 +56,28 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
+
+
+def _append_suite_warning(paths: "BundlePaths", message: str) -> None:
+    """Persist a suite-level warning (best-effort).
+
+    This module is intentionally best-effort and should never crash scans.
+    However, *silent* failures make it impossible to trust summary artifacts.
+
+    We write a human-readable warning log at:
+      <suite_dir>/suite_warnings.log
+    """
+    try:
+        ts = datetime.now(timezone.utc).isoformat()
+        p = paths.suite_dir / "suite_warnings.log"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {message}\n")
+    except Exception:
+        # Never raise from diagnostics logging.
+        return
+
 
 from pipeline.core import ROOT_DIR as REPO_ROOT_DIR
 
@@ -229,12 +250,18 @@ NOTE: These repos are intentionally vulnerable. Keep them private if possible.
 
 def update_suite_artifacts(paths: BundlePaths, case_manifest: Dict[str, Any]) -> None:
     """Update suite-level README / suite.json / summary.csv (best-effort)."""
+    import traceback
+
+    def warn(msg: str) -> None:
+        _append_suite_warning(paths, msg)
+
     try:
         _ensure_suite_readme(paths)
-        _update_suite_json(paths, case_manifest)
-        _write_suite_summary(paths)
-    except Exception:
+        _update_suite_json(paths, case_manifest, warn=warn)
+        _write_suite_summary(paths, warn=warn)
+    except Exception as e:
         # Never fail the scan/analysis run because summary writing had an issue.
+        warn(f"update_suite_artifacts failed: {e}\n{traceback.format_exc()}")
         return
 
 
@@ -257,17 +284,29 @@ def _ensure_suite_json(paths: BundlePaths) -> None:
     paths.suite_json_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def _load_json(path: Path) -> Dict[str, Any]:
+def _load_json(path: Path, *, warn: Optional[Callable[[str], None]] = None) -> Optional[Dict[str, Any]]:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            if warn:
+                warn(f"JSON at {path} did not parse to an object; got {type(data).__name__}. Ignoring.")
+            return None
+        return data
+    except Exception as e:
+        if warn:
+            warn(f"Failed to parse JSON at {path}: {e}. Ignoring.")
+        return None
 
 
-def _update_suite_json(paths: BundlePaths, case_manifest: Dict[str, Any]) -> None:
+def _update_suite_json(
+    paths: BundlePaths,
+    case_manifest: Dict[str, Any],
+    *,
+    warn: Optional[Callable[[str], None]] = None,
+) -> None:
     paths.suite_dir.mkdir(parents=True, exist_ok=True)
 
-    data = _load_json(paths.suite_json_path) if paths.suite_json_path.exists() else {}
+    data = _load_json(paths.suite_json_path, warn=warn) if paths.suite_json_path.exists() else None
     if not data:
         now = datetime.now(timezone.utc).isoformat()
         data = {"suite_id": paths.bundle_id, "created_at": now, "updated_at": now, "cases": {}}
@@ -310,7 +349,7 @@ def _update_suite_json(paths: BundlePaths, case_manifest: Dict[str, Any]) -> Non
     paths.suite_json_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def _write_suite_summary(paths: BundlePaths) -> None:
+def _write_suite_summary(paths: BundlePaths, *, warn: Optional[Callable[[str], None]] = None) -> None:
     """Write suite_dir/summary.csv with one row per case (best-effort)."""
     rows = []
     if not paths.cases_dir.exists():
@@ -325,7 +364,9 @@ def _write_suite_summary(paths: BundlePaths) -> None:
         if not mpath.exists():
             continue
 
-        m = _load_json(mpath)
+        m = _load_json(mpath, warn=warn)
+        if not m:
+            continue
         # Prefer the explicit case id so summary rows remain unique in
         # branch-per-case micro-suites.
         case_id = (m.get("case") or {}).get("id") or case_dir.name

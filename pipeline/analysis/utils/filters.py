@@ -9,25 +9,20 @@ def is_security_finding(tool: str, finding: Dict[str, Any]) -> bool:
     This is primarily important for Sonar, which reports many CODE_SMELL issues.
     """
     t = (tool or "").lower()
+
+    # Prefer normalized fields so analysis doesn't need to parse vendor objects.
+    issue_type = str(finding.get("issue_type") or "").upper().strip()
+
     if t == "sonar":
-        raw = (finding.get("vendor") or {}).get("raw_result") or {}
-        if isinstance(raw, dict):
-            issue_type = str(raw.get("type") or "").upper()
-            return issue_type in {"VULNERABILITY", "SECURITY_HOTSPOT"}
-        return False
+        # Sonar emits many CODE_SMELL issues. Keep only security-relevant types.
+        return issue_type in {"VULNERABILITY", "SECURITY_HOTSPOT"}
 
     if t == "semgrep":
-        raw = (finding.get("vendor") or {}).get("raw_result") or {}
-        if isinstance(raw, dict):
-            extra = raw.get("extra") or {}
-            if isinstance(extra, dict):
-                meta = extra.get("metadata") or {}
-                if isinstance(meta, dict):
-                    cat = str(meta.get("category") or "").lower()
-                    if cat:
-                        return cat == "security"
-        # If Semgrep didn't provide category metadata, treat it as security.
-        return True
+        # Semgrep normalization sets issue_type from metadata.category when present.
+        # If missing, Semgrep findings are treated as security-by-default.
+        if not issue_type:
+            return True
+        return issue_type == "SECURITY"
 
     # Snyk / Aikido / others are security-by-design in this repo.
     return True

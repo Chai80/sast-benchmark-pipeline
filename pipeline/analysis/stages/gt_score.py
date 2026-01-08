@@ -13,11 +13,13 @@ When a GT catalog is present, this stage writes:
   <case_dir>/gt/gt_score.json
   <case_dir>/gt/gt_score.csv
 
-GT catalog discovery order
---------------------------
-1) Captured suite artifacts (preferred):
+GT discovery order
+------------------
+1) In-repo marker comments (preferred; no YAML/JSON required):
+     # DURINN_GT id=... track=sast set=core
+2) Captured suite artifacts:
      <case_dir>/gt/gt_catalog.(yaml|yml)
-2) Repo-local benchmark folder (best-effort):
+3) Repo-local benchmark folder (best-effort):
      <repo_path>/benchmark/gt_catalog.(yaml|yml)
 
 The stage tries to infer <repo_path> from <case_dir>/case.json when available.
@@ -53,6 +55,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
 from pipeline.analysis.utils.path_norm import normalize_file_path
+from pipeline.scoring.gt_markers import extract_gt_markers
 
 from ._shared import build_location_items
 
@@ -82,6 +85,18 @@ def _load_case_json(case_dir: Path) -> Dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _infer_repo_path(ctx: AnalysisContext, *, case_dir: Optional[Path] = None) -> Optional[Path]:
+    """Infer the local repo_path from case.json (suite mode)."""
+    case_dir = case_dir or _find_case_dir(ctx)
+    if not case_dir:
+        return None
+    case_json = _load_case_json(case_dir)
+    repo_path = (case_json.get("repo") or {}).get("repo_path")
+    if not repo_path:
+        return None
+    return Path(str(repo_path))
 
 
 def _find_gt_catalog(ctx: AnalysisContext) -> Optional[Path]:
@@ -181,7 +196,7 @@ def _match_tools_for_gt(
 @register_stage(
     "gt_score",
     kind="analysis",
-    description="Optional GT scoring against gt_catalog.yaml when present.",
+    description="Optional GT scoring against in-repo markers or gt_catalog.yaml when present.",
 )
 def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     case_dir = _find_case_dir(ctx)
@@ -189,22 +204,41 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         # Not running in v2 case layout
         return {"status": "skipped", "reason": "not_case_layout"}
 
-    gt_path = _find_gt_catalog(ctx)
-    if gt_path is None:
-        # No GT catalog for this case; treat GT scoring as optional.
-        store.add_warning("gt_score skipped: gt_catalog not found")
-        return {"status": "skipped", "reason": "gt_catalog_not_found"}
-
-    yaml_mod, yaml_err = _try_import_yaml()
-    if yaml_mod is None:
-        store.add_warning("gt_score skipped: PyYAML not installed")
-        return {"status": "skipped", "reason": "pyyaml_not_installed", "error": yaml_err}
-
     gt_dir = case_dir / "gt"
     gt_dir.mkdir(parents=True, exist_ok=True)
 
-    gt_data = yaml_mod.safe_load(gt_path.read_text(encoding="utf-8"))
-    gt_items = _parse_gt_items(gt_data)
+    gt_path: Optional[Path] = None
+    gt_items: List[Dict[str, Any]] = []
+    gt_source: Optional[str] = None
+    gt_path: Optional[Path] = None
+
+    # 1) Marker-based GT (preferred; no YAML/JSON catalogs required)
+    repo_path = _infer_repo_path(ctx, case_dir=case_dir)
+    if repo_path and repo_path.exists() and repo_path.is_dir():
+        gt_items = extract_gt_markers(repo_path)
+        if gt_items:
+            gt_source = "markers"
+            out_markers = write_json(
+                gt_dir / "gt_markers.json",
+                {"source": gt_source, "repo_path": str(repo_path), "items": gt_items},
+            )
+            store.add_artifact("gt_markers_json", out_markers)
+
+    # 2/3) YAML gt_catalog fallback (optional)
+    if not gt_items:
+        gt_path = _find_gt_catalog(ctx)
+        if gt_path is None:
+            store.add_warning("gt_score skipped: no GT markers or gt_catalog found")
+            return {"status": "skipped", "reason": "no_gt"}
+
+        yaml_mod, yaml_err = _try_import_yaml()
+        if yaml_mod is None:
+            store.add_warning("gt_score skipped: PyYAML not installed (needed for gt_catalog)")
+            return {"status": "skipped", "reason": "pyyaml_not_installed", "error": yaml_err}
+
+        gt_data = yaml_mod.safe_load(gt_path.read_text(encoding="utf-8"))
+        gt_items = _parse_gt_items(gt_data)
+        gt_source = str(gt_path)
 
     # Use shared normalized findings flattening (already filtered by ctx.mode)
     location_items = build_location_items(ctx, store)
@@ -259,7 +293,8 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
     total = len(rows)
     summary: Dict[str, Any] = {
         "status": "ok",
-        "gt_catalog_path": str(gt_path),
+        "gt_source": gt_source or "unknown",
+        "gt_catalog_path": str(gt_path) if gt_path else None,
         "total_gt_items": total,
         "matched_gt_items": matched_count,
         "match_rate": (matched_count / total) if total else 0.0,

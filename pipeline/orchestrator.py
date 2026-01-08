@@ -120,9 +120,29 @@ def _detect_git_branch(repo_path: Optional[str]) -> Optional[str]:
         return None
 
 
+def _detect_git_commit(repo_path: Optional[str]) -> Optional[str]:
+    """Best-effort detect current git commit SHA for a local repo checkout."""
+    if not repo_path:
+        return None
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return out or None
+    except Exception:
+        return None
 
 
-def _capture_optional_benchmark_yaml(repo_path: Optional[str], case_dir: Path) -> None:
+
+
+def _capture_optional_benchmark_yaml(
+    repo_path: Optional[str],
+    case_dir: Path,
+    *,
+    warnings: Optional[List[str]] = None,
+) -> None:
     """Best-effort capture of benchmark YAML inputs for a case.
 
     Some suites (e.g. Durinn micro-suites) contain benchmark metadata like:
@@ -160,7 +180,9 @@ def _capture_optional_benchmark_yaml(repo_path: Optional[str], case_dir: Path) -
             src = bench / name
             if src.exists() and src.is_file():
                 shutil.copy2(src, gt_dir / name)
-    except Exception:
+    except Exception as e:
+        if warnings is not None:
+            warnings.append(f"benchmark_yaml_capture_failed: {e}")
         return
 
 def _sonar_extra_args(*, repo_id: str, sonar_project_key: Optional[str]) -> Dict[str, str]:
@@ -414,6 +436,9 @@ def run_tools(req: RunRequest) -> int:
     if req.invocation_mode not in ("scan", "benchmark"):
         raise SystemExit(f"Invalid invocation_mode: {req.invocation_mode}")
 
+    # Collected non-fatal issues for this case run.
+    case_warnings: List[str] = []
+
     # Suite handling
     bundle: Optional[SuitePaths] = None
     sid: Optional[str] = None
@@ -423,7 +448,7 @@ def run_tools(req: RunRequest) -> int:
         ensure_suite_dirs(bundle)
         write_latest_suite_pointer(bundle)
         # Optional: capture suite GT YAML into the case folder for reproducibility
-        _capture_optional_benchmark_yaml(req.case.repo.repo_path, bundle.case_dir)
+        _capture_optional_benchmark_yaml(req.case.repo.repo_path, bundle.case_dir, warnings=case_warnings)
 
     # Print header
     if req.invocation_mode == "scan":
@@ -442,6 +467,29 @@ def run_tools(req: RunRequest) -> int:
 
     started = _now_iso()
 
+    # Capture git context early so the case manifest can be trusted even if
+    # downstream tools write zero findings.
+    actual_branch = _detect_git_branch(req.case.repo.repo_path)
+    actual_commit = _detect_git_commit(req.case.repo.repo_path)
+
+    # Record obvious mismatches immediately (still non-fatal).
+    if req.case.branch and actual_branch and req.case.branch != actual_branch:
+        case_warnings.append(
+            f"case_context_branch_mismatch: expected={req.case.branch} actual={actual_branch}"
+        )
+    if req.case.branch and not actual_branch:
+        case_warnings.append(
+            f"case_context_branch_unknown: expected={req.case.branch} actual=None"
+        )
+    if req.case.commit and actual_commit and req.case.commit != actual_commit:
+        case_warnings.append(
+            f"case_context_commit_mismatch: expected={req.case.commit} actual={actual_commit}"
+        )
+    if req.case.commit and not actual_commit:
+        case_warnings.append(
+            f"case_context_commit_unknown: expected={req.case.commit} actual=None"
+        )
+
     tool_runs_manifest: Dict[str, Any] = {}
     overall = 0
 
@@ -458,9 +506,9 @@ def run_tools(req: RunRequest) -> int:
             print(f"  Sonar project key : {extra_args.get('project-key')}")
 
         if scanner == "aikido":
-            b = _detect_git_branch(req.case.repo.repo_path)
-            if b:
-                extra_args = _merge_dicts(extra_args, {"branch": b})
+            # Prefer the captured case context branch (stable for the whole run).
+            if actual_branch:
+                extra_args = _merge_dicts(extra_args, {"branch": actual_branch})
 
         if scanner == "aikido" and req.aikido_git_ref:
             extra_args = _merge_dicts(extra_args, {"git-ref": req.aikido_git_ref})
@@ -507,8 +555,8 @@ def run_tools(req: RunRequest) -> int:
                         started=tool_started,
                         finished=tool_finished,
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    case_warnings.append(f"write_run_json_failed:{scanner}:{run_dir}: {e}")
 
             run_json_path = str(run_dir / "run.json") if run_dir else None
 
@@ -564,12 +612,21 @@ def run_tools(req: RunRequest) -> int:
     if bundle is not None:
         manifest: Dict[str, Any] = {
             "suite": {"id": bundle.bundle_id, "suite_dir": str(bundle.suite_dir)},
-            "case": {"id": bundle.target, "case_dir": str(bundle.case_dir)},
+            "case": {
+                "id": bundle.target,
+                "case_dir": str(bundle.case_dir),
+                # Expected context comes from the CaseSpec (often micro-suites).
+                "expected_branch": req.case.branch,
+                "expected_commit": req.case.commit,
+            },
             "repo": {
                 "label": req.case.label,
                 "repo_url": req.case.repo.repo_url,
                 "repo_path": req.case.repo.repo_path,
                 "runs_repo_name": req.case.runs_repo_name,
+                # Actual context is detected from the repo_path that was scanned.
+                "git_branch": actual_branch,
+                "git_commit": actual_commit,
             },
             "invocation": {
                 "mode": req.invocation_mode,
@@ -581,6 +638,7 @@ def run_tools(req: RunRequest) -> int:
             "scanners_requested": list(scanners),
             "tool_runs": tool_runs_manifest,
             "analysis": analysis_summary,
+            "warnings": list(case_warnings),
         }
 
         _write_json(bundle.case_json_path, manifest)

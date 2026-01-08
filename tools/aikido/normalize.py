@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from tools.core import load_cwe_to_owasp_map
+from tools.core import finalize_normalized_findings, load_cwe_to_owasp_map
 from tools.io import read_json, write_json
 from tools.normalize.classification import resolve_owasp_and_cwe
 from tools.normalize.common import build_per_finding_metadata, build_scan_info, build_target_repo
@@ -105,6 +105,7 @@ def _build_finding(
         "rule_id": rule_id,
         "title": title,
         "severity": severity,
+        "issue_type": "VULNERABILITY",
         "file_path": file_path,
         "line_number": line,
         "end_line_number": end_line,
@@ -206,6 +207,7 @@ def normalize_aikido_results(raw_results_path: Path, metadata: Dict[str, Any], n
                     "rule_id": _extract_rule_id(issue),
                     "title": _extract_title(issue, issue.get("id")) or "Aikido issue (parse_error)",
                     "severity": map_severity(_extract_raw_severity(issue), tool="aikido"),
+                    "issue_type": "VULNERABILITY",
                     "file_path": None,
                     "line_number": None,
                     "end_line_number": None,
@@ -221,6 +223,8 @@ def normalize_aikido_results(raw_results_path: Path, metadata: Dict[str, Any], n
                     "vendor": {"raw_result": issue, "parse_error": str(e)},
                 }
             )
+
+    findings = finalize_normalized_findings(findings)
 
     write_json(
         normalized_path,

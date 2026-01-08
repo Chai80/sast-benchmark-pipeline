@@ -30,30 +30,36 @@ def _load_cwe_to_owasp_map() -> Dict[str, Any]:
 
 def _extract_tags(finding: Dict[str, Any]) -> List[str]:
     tags: List[str] = []
-    raw = (finding.get("vendor") or {}).get("raw_result") or {}
-    if isinstance(raw, dict):
-        # Semgrep: extra.metadata.owasp is a list of strings.
-        extra = raw.get("extra") or {}
-        if isinstance(extra, dict):
-            meta = extra.get("metadata") or {}
-            if isinstance(meta, dict):
-                o = meta.get("owasp")
-                if isinstance(o, list):
-                    tags.extend([str(x) for x in o if x is not None])
-                cwe = meta.get("cwe")
-                if isinstance(cwe, list):
-                    tags.extend([str(x) for x in cwe if x is not None])
+    # Prefer normalized fields so analysis doesn't need to parse vendor objects.
+    #
+    # Include existing OWASP blocks (resolved/vendor/canonical). Their "categories"
+    # strings contain year markers which allows the resolver to treat them as tags.
+    for k in (
+        "owasp_top_10_2017",
+        "owasp_top_10_2021",
+        "owasp_top_10_2017_vendor",
+        "owasp_top_10_2021_vendor",
+    ):
+        block = finding.get(k)
+        if isinstance(block, dict):
+            cats = block.get("categories")
+            if isinstance(cats, list):
+                tags.extend([str(x) for x in cats if x is not None])
 
-        # Sonar: raw_result.tags is a list of strings (not OWASP codes, but still useful)
-        rt = raw.get("tags")
-        if isinstance(rt, list):
-            tags.extend([str(x) for x in rt if x is not None])
+    # CWE ids are useful as tags too (resolver will normalize).
+    if finding.get("cwe_id"):
+        tags.append(str(finding.get("cwe_id")))
+    cwe_ids = finding.get("cwe_ids")
+    if isinstance(cwe_ids, list):
+        tags.extend([str(x) for x in cwe_ids if x is not None])
 
-    # Also include normalized title/rule_id as weak tags (sometimes include CWE/OWASP fragments)
+    # Also include normalized title/rule_id/vuln_class as weak tags
     if finding.get("rule_id"):
         tags.append(str(finding.get("rule_id")))
     if finding.get("title"):
         tags.append(str(finding.get("title")))
+    if finding.get("vuln_class"):
+        tags.append(str(finding.get("vuln_class")))
     return tags
 
 
@@ -61,15 +67,9 @@ def _extract_cwe_candidates(finding: Dict[str, Any]) -> List[Any]:
     cwe: List[Any] = []
     if finding.get("cwe_id"):
         cwe.append(finding.get("cwe_id"))
-    raw = (finding.get("vendor") or {}).get("raw_result") or {}
-    if isinstance(raw, dict):
-        extra = raw.get("extra") or {}
-        if isinstance(extra, dict):
-            meta = extra.get("metadata") or {}
-            if isinstance(meta, dict):
-                c = meta.get("cwe")
-                if c is not None:
-                    cwe.append(c)
+    ids = finding.get("cwe_ids")
+    if isinstance(ids, list):
+        cwe.extend([x for x in ids if x is not None])
     return cwe
 
 

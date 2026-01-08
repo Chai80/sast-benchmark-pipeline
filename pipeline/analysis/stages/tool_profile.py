@@ -29,12 +29,14 @@ def stage_tool_profile(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, 
             fp = str(f.get("file_path") or "")
             if fp:
                 files.add(fp)
-        # Sonar issue types (if present)
+        # Issue types (normalized field)
         types = Counter()
         for f in findings:
-            raw = (f.get("vendor") or {}).get("raw_result") or {}
-            if isinstance(raw, dict) and raw.get("type"):
-                types[str(raw.get("type"))] += 1
+            if not isinstance(f, dict):
+                continue
+            it = f.get("issue_type")
+            if isinstance(it, str) and it.strip():
+                types[it.strip().upper()] += 1
 
         rows.append(
             {

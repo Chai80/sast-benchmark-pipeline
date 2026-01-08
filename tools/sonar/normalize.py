@@ -20,6 +20,8 @@ from tools.normalize_common import (
     write_json,
 )
 
+from tools.core import finalize_normalized_findings
+
 from .api import fetch_rule_show
 from .rules import parse_rule_classification
 from .types import SonarConfig
@@ -60,6 +62,10 @@ def normalize_one_issue_base(
     title = issue.get("message")
     severity = map_sonar_severity(issue.get("severity"))
 
+    # Sonar issue type is important for filtering CODE_SMELL vs security.
+    issue_type_raw = issue.get("type")
+    issue_type = str(issue_type_raw).upper().strip() if isinstance(issue_type_raw, str) else None
+
     file_path, line, end_line = extract_location(issue)
 
     return {
@@ -70,6 +76,7 @@ def normalize_one_issue_base(
         "rule_id": rule_id,
         "title": title,
         "severity": severity,
+        "issue_type": issue_type,
         "file_path": file_path,
         "line_number": line,
         "end_line_number": end_line,
@@ -183,6 +190,8 @@ def normalize_sonar_results(
         if cls:
             enriched_count += 1
         findings.append(apply_rule_enrichment(finding=base, classification=cls))
+
+    findings = finalize_normalized_findings(findings)
 
     write_json(
         normalized_path,

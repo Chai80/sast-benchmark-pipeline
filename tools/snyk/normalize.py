@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-from tools.core import load_cwe_to_owasp_map, read_json, write_json
+from tools.core import finalize_normalized_findings, load_cwe_to_owasp_map, read_json, write_json
 from tools.normalize.common import build_per_finding_metadata, build_scan_info, build_target_repo
 from tools.normalize.classification import resolve_owasp_and_cwe
 
@@ -99,6 +99,7 @@ def normalize_sarif(
                 "rule_id": rid,
                 "title": title,
                 "severity": sev,
+                "issue_type": "VULNERABILITY",
                 "file_path": fp,
                 "line_number": start,
                 "end_line_number": end,
@@ -108,6 +109,8 @@ def normalize_sarif(
                 "vendor": {"raw_result": res},
             }
         )
+
+    findings = finalize_normalized_findings(findings)
 
     write_json(
         normalized_path,

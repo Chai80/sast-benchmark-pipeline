@@ -57,7 +57,19 @@ def read_line_content(
         if n <= 0:
             return None
 
-        abs_path = (repo_path / file_path).resolve()
+        repo_root = repo_path.resolve()
+        p = Path(file_path)
+
+        # If the tool reports an absolute path, only allow it if it lives under
+        # repo_root. If it's relative, resolve it relative to repo_root.
+        abs_path = p.resolve() if p.is_absolute() else (repo_root / p).resolve()
+
+        # Enforce that the resolved path stays within the repo root.
+        try:
+            abs_path.relative_to(repo_root)
+        except ValueError:
+            return None
+
         if not abs_path.exists() or not abs_path.is_file():
             return None
 

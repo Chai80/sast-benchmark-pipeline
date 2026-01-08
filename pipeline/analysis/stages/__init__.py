@@ -15,6 +15,7 @@ from . import taxonomy  # noqa: F401
 from . import triage  # noqa: F401
 from . import gt_score  # noqa: F401
 from . import diagnostics  # noqa: F401
+from . import case_context  # noqa: F401
 
 __all__ = [
     "overview",
@@ -26,4 +27,5 @@ __all__ = [
     "triage",
     "gt_score",
     "diagnostics",
+    "case_context",
 ]

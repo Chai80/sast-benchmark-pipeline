@@ -495,6 +495,10 @@ def _run_local_scanner_binary(
 ) -> Tuple[int, float, str, str, str]:
     """Run local scanner via installed binary."""
 
+    # Use a per-run tmp directory under the run output folder (never write into the repo).
+    tmp_dir = gating_output_host.parent / ".tmp" / "aikido"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
     cmd: List[str] = [
         scanner_bin,
         "scan",
@@ -504,7 +508,7 @@ def _run_local_scanner_binary(
         "--branchname",
         branchname,
         "--tmpdirectory",
-        str(repo_path / ".aikidotmp"),
+        str(tmp_dir),
         "--fail-on",
         fail_on,
         "--gating-mode",

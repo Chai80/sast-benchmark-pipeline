@@ -11,6 +11,7 @@ from pathlib import Path
 
 from tools.core import (
     load_cwe_to_owasp_map,
+    finalize_normalized_findings,
     normalize_repo_relative_path,
     read_json,
     read_line_content,
@@ -116,6 +117,19 @@ def normalize_semgrep_results(
             if not isinstance(meta, dict):
                 meta = {}
 
+        # Normalized issue type used by analysis filtering.
+        # Semgrep rules sometimes tag findings with metadata.category=security.
+        # If category is missing, treat Semgrep as security-by-default.
+        cat_raw = meta.get("category")
+        cat: Optional[str] = None
+        if isinstance(cat_raw, str):
+            cat = cat_raw.strip()
+        elif isinstance(cat_raw, list) and cat_raw:
+            first = cat_raw[0]
+            if isinstance(first, str):
+                cat = first.strip()
+        issue_type = cat.upper() if cat else "SECURITY"
+
         semgrep_owasp_tags = _as_list(meta.get("owasp")) or _as_list(meta.get("owasp_top_10"))
         vuln_class_list = _as_list(meta.get("vulnerability_class"))
         vuln_class = str(vuln_class_list[0]) if vuln_class_list else None
@@ -146,6 +160,7 @@ def normalize_semgrep_results(
                 "rule_id": rule_id,
                 "title": title,
                 "severity": sev,
+                "issue_type": issue_type,
                 "file_path": file_path,
                 "line_number": line,
                 "end_line_number": end_line,
@@ -155,6 +170,8 @@ def normalize_semgrep_results(
                 "vendor": {"raw_result": res},
             }
         )
+
+    findings = finalize_normalized_findings(findings)
 
     write_json(
         normalized_path,

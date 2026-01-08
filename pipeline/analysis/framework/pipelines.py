@@ -20,6 +20,7 @@ from typing import Dict, List
 PIPELINES: Dict[str, List[str]] = {
     # Core cross-tool benchmark analysis
     "benchmark": [
+        "diagnostics_case_context",
         "overview",
         "tool_profile",
         "location_matrix",
@@ -31,6 +32,7 @@ PIPELINES: Dict[str, List[str]] = {
 
     # Optional diagnostics (not run by default)
     "diagnostics": [
+        "diagnostics_case_context",
         "diagnostics_schema",
         "diagnostics_empty_runs",
     ],
