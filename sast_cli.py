@@ -70,7 +70,7 @@ from pipeline.core import (
     repo_id_from_repo_url,
     sanitize_sonar_key_fragment,
 )
-from pipeline.bundles import safe_name
+from pipeline.bundles import anchor_under_repo_root, safe_name
 from pipeline.layout import new_suite_id
 from pipeline.models import RepoSpec, CaseSpec
 from pipeline.orchestrator import AnalyzeRequest, RunRequest
@@ -85,6 +85,8 @@ from pipeline.suite_definition import (
 )
 
 from pipeline.suite_py_loader import load_suite_py
+
+from pipeline.suite_resolver import SuiteInputProvenance, resolve_suite_run
 
 
 ROOT_DIR = PIPELINE_ROOT_DIR  # repo root
@@ -953,62 +955,15 @@ def _write_suite_py(path: str | Path, suite_def: SuiteDefinition) -> Path:
 
 
 def _resolve_suite_case_for_run(sc: SuiteCase) -> Tuple[SuiteCase, str]:
-    """Resolve repo_key -> repo_url and compute a stable repo_id for the run."""
-    c = sc.case
-    repo_key = c.repo.repo_key
-    repo_url = c.repo.repo_url
-    repo_path = c.repo.repo_path
-    label = c.label
+    """Legacy shim.
 
-    # Resolve repo_key -> repo_url via presets (for now). In the future this
-    # will use a repos registry file.
-    if repo_key and not repo_url and not repo_path:
-        if repo_key not in REPOS:
-            raise SystemExit(
-                f"Suite case '{c.case_id}' uses repo_key='{repo_key}' but it isn't known. "
-                "Use repo_url/repo_path or add the key to REPOS."
-            )
-        entry = REPOS[repo_key]
-        repo_url = entry.get("repo_url")
-        label = entry.get("label", label)
+    Suite-mode resolution now happens through the explicit resolver boundary
+    (:func:`pipeline.suite_resolver.resolve_suite_run`). This helper remains as
+    a thin adapter for older codepaths/experiments.
+    """
+    from pipeline.suite_resolver import resolve_suite_case
 
-    if not repo_url and not repo_path:
-        raise SystemExit(
-            f"Suite case '{c.case_id}' must specify one of repo_url, repo_path, or a resolvable repo_key."
-        )
-
-    # Improve runs_repo_name if YAML omitted it (common).
-    derived_runs_name = _derive_runs_repo_name(repo_url=repo_url, repo_path=repo_path, fallback=c.case_id)
-    runs_repo_name = c.runs_repo_name
-    if not runs_repo_name or runs_repo_name == c.case_id:
-        runs_repo_name = derived_runs_name
-
-
-    case_id = safe_name(c.case_id)
-    if case_id != c.case_id:
-        print(f"  ⚠️  case_id '{c.case_id}' sanitized to '{case_id}'")
-
-    # Compute repo_id (used for Sonar project key derivation).
-    if repo_key:
-        repo_id = repo_key
-    elif repo_url:
-        repo_id = repo_id_from_repo_url(repo_url)
-    else:
-        # In suite mode, repo_id should be unique per case to avoid Sonar project key collisions.
-        repo_id = sanitize_sonar_key_fragment(case_id)
-
-    resolved = CaseSpec(
-        case_id=case_id,
-        runs_repo_name=runs_repo_name,
-        label=label,
-        repo=RepoSpec(repo_key=repo_key, repo_url=repo_url, repo_path=repo_path),
-        branch=c.branch,
-        commit=c.commit,
-        track=c.track,
-        tags=c.tags or {},
-    )
-
-    return SuiteCase(case=resolved, overrides=sc.overrides), repo_id
+    return resolve_suite_case(sc, repo_registry=REPOS)
 
 
 
@@ -1085,7 +1040,10 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline) ->
         print("❌ Suite mode requires suite layout (do not use --no-suite).")
         return 2
 
-    suite_root = Path(args.bundle_root)
+    # Keep suite_root anchored under the repo root unless the user passed an
+    # absolute path. This prevents "worked on my laptop" path drift when the
+    # CLI is invoked from different working directories.
+    suite_root = anchor_under_repo_root(Path(args.bundle_root).expanduser())
 
     # Load or build suite definition
     # Load suite definition (Python only at runtime; YAML is migration-only)
@@ -1127,29 +1085,62 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline) ->
         analysis_filter = str(args.analysis_filter)
         skip_analysis = bool(args.skip_analysis)
 
-    # Resolve and validate cases
-    resolved_cases: List[Tuple[SuiteCase, str]] = []
-    seen: set[str] = set()
-    for sc in suite_def.cases:
-        resolved, repo_id = _resolve_suite_case_for_run(sc)
-        if resolved.case.case_id in seen:
-            raise SystemExit(f"Duplicate case_id in suite: {resolved.case.case_id}")
-        seen.add(resolved.case.case_id)
-        resolved_cases.append((resolved, repo_id))
-
-    suite_dir = suite_root / safe_name(suite_id)
+    # -----------------------------------------------------------------
+    # Resolver boundary (NEW)
+    # -----------------------------------------------------------------
+    # Turn whatever "suite input" we used (suite file / CSV / worktrees / interactive)
+    # into a canonical suite run manifest under runs/suites/<suite_id>/suite.json.
+    #
+    # After this call, downstream execution should rely on the resolved
+    # cases + suite.json, not on re-deriving IDs from inputs.
+    suite_dir = (suite_root / safe_name(suite_id)).resolve()
     suite_dir.mkdir(parents=True, exist_ok=True)
 
-    # If user provided a suite file, copy it into the suite folder for provenance.
+    # If user provided a suite file, copy it into the suite folder for provenance
+    # *before* writing suite.json so the run folder is self-contained.
+    suite_input_copy: Optional[str] = None
     if args.suite_file:
         try:
             src = Path(args.suite_file).expanduser().resolve()
             dst = suite_dir / "suite_input.py"
             if src != dst:
                 shutil.copyfile(src, dst)
+            suite_input_copy = dst.name
         except Exception:
             # best-effort only
-            pass
+            suite_input_copy = None
+
+    prov = SuiteInputProvenance(
+        suite_file=suite_input_copy,
+        cases_from_csv=(Path(args.cases_from).name if args.cases_from else None),
+        worktrees_root=(Path(args.worktrees_root).name if args.worktrees_root else None),
+        built_interactively=bool(
+            (not args.suite_file)
+            and (not args.cases_from)
+            and (not args.worktrees_root)
+        ),
+    )
+
+    analysis_defaults = SuiteAnalysisDefaults(
+        skip=bool(skip_analysis),
+        tolerance=int(tolerance),
+        filter=str(analysis_filter),
+    )
+
+    resolved_run = resolve_suite_run(
+        suite_def=suite_def,
+        suite_id=suite_id,
+        suite_root=suite_root,
+        scanners=scanners,
+        analysis=analysis_defaults,
+        provenance=prov,
+        repo_registry=REPOS,
+        ensure_dirs=True,
+    )
+
+    # Use the canonical, sanitized identifiers from the resolver.
+    suite_id = resolved_run.suite_id
+    suite_dir = resolved_run.suite_dir
 
     # If suite was built interactively, optionally write a Python suite file for reruns.
     if not args.suite_file:
@@ -1160,8 +1151,8 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline) ->
             to_write = SuiteDefinition(
                 suite_id=suite_id,
                 scanners=scanners,
-                cases=[sc for sc, _ in resolved_cases],
-                analysis=SuiteAnalysisDefaults(skip=skip_analysis, tolerance=tolerance, filter=analysis_filter),
+                cases=[rc.suite_case for rc in resolved_run.cases],
+                analysis=analysis_defaults,
             )
             try:
                 _write_suite_py(out_path, to_write)
@@ -1172,14 +1163,16 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline) ->
     print("\n🚀 Running suite")
     print(f"  Suite id : {suite_id}")
     print(f"  Suite dir: {suite_dir}")
-    print(f"  Cases    : {len(resolved_cases)}")
+    print(f"  Cases    : {len(resolved_run.cases)}")
     print(f"  Scanners : {', '.join(scanners)}")
 
     overall = 0
-    for idx, (sc, repo_id) in enumerate(resolved_cases, start=1):
+    for idx, rc in enumerate(resolved_run.cases, start=1):
+        sc = rc.suite_case
+        repo_id = rc.repo_id
         case = sc.case
         print("\n" + "=" * 72)
-        print(f"🧪 Case {idx}/{len(resolved_cases)}: {case.case_id} ({case.label})")
+        print(f"🧪 Case {idx}/{len(resolved_run.cases)}: {case.case_id} ({case.label})")
         if case.repo.repo_url:
             print(f"  Repo URL : {case.repo.repo_url}")
         if case.repo.repo_path:
