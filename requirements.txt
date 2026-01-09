@@ -1,5 +1,12 @@
-# Core Python deps for the SAST benchmark pipeline (scan_* scripts)
+# Core runtime deps for the SAST benchmark pipeline (sast_cli.py + tools/scan_* scripts)
+
 python-dotenv>=1.0.0
 requests>=2.31.0
-semgrep>=1.0.0
 pyyaml>=6.0
+
+# Scanner CLI (Semgrep)
+# NOTE: Semgrep is invoked as a CLI. Installing via pip is the simplest dev setup.
+semgrep>=1.0.0
+
+# Dev / test (optional)
+pytest>=7.0.0

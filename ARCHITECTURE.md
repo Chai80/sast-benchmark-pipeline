@@ -1,9 +1,11 @@
-# Architecture 
+# Architecture
 
 - Keep **stable script entrypoints** (`tools/scan_*.py`) so the pipeline can shell out reliably.
 - Move **tool-specific logic** into isolated packages under `tools/<tool>/`.
 - Treat **normalized JSON** as the cross-tool contract consumed by all analysis code.
+- Centralize **domain types** (e.g., the normalized Finding) and **run layout logic** so the filesystem/data contract is owned by one place.
 - Write results in a **suite/case layout** by default so data is easier to browse and ingest into a database later.
+- Provide an optional **warehouse export** step that emits stable JSONL tables for ingestion (e.g., BigQuery).
 - For system-level diagrams (end-to-end flow + analysis internals), see `docs/SYSTEM_DIAGRAMS.md`.
 
 The primary goal is to enforce clear ownership,
@@ -11,18 +13,27 @@ one-way dependencies, and a single source of truth for shared logic.
 
 ---
 
-## Repository Structure (Layered)
+## Repository Structure
 
 ```text
 repo_root/
 ├─ sast_cli.py
+├─ sast_benchmark/
+│  ├─ domain/
+│  │  └─ finding.py              # normalized Finding dataclass/schema
+│  └─ io/
+│     └─ layout.py               # canonical run path/layout helpers (RunPaths)
+│
 ├─ pipeline/
 │  ├─ core.py
-│  ├─ bundles.py                # suite/case output layout helpers
+│  ├─ bundles.py                 # suite/case bundle layout + IDs + safe_name
+│  ├─ export/
+│  │  ├─ __init__.py
+│  │  └─ bq_export.py            # suite -> JSONL table exports for BigQuery (optional)
 │  └─ analysis/
-│     ├─ run_discovery.py       # finds “latest run per tool” (supports v1 + v2 layouts)
-│     ├─ analyze_suite.py       # cross-tool suite metrics (location/taxonomy agreement)
-│     ├─ gt_scorer.py           # GT scoring (writes gt/gt_score.* when used)
+│     ├─ run_discovery.py        # finds “latest run per tool” (supports v1 + v2 layouts)
+│     ├─ analyze_suite.py        # cross-tool suite metrics (location/taxonomy agreement)
+│     ├─ gt_scorer.py            # GT scoring (writes gt/gt_score.* when used)
 │     ├─ unique_overview.py
 │     └─ path_normalization.py
 │
@@ -35,14 +46,14 @@ repo_root/
 │  └─ scan_aikido.py
 │  │
 │  │  Shared platform helpers (no tool-specific parsing here)
-│  ├─ io.py                     # canonical JSON + file IO helpers
-│  └─ core.py                   # orchestration helpers / legacy re-exports
+│  ├─ io.py                      # canonical JSON + file IO helpers
+│  └─ core.py                    # orchestration helpers / legacy re-exports
 │  │
 │  │  Canonical shared normalization layer
 │  ├─ normalize/
-│  │  ├─ common.py              # schema builders (repo, scan metadata)
-│  │  ├─ extractors.py          # shared extraction (location, tags, CWE, text)
-│  │  └─ classification.py      # CWE / OWASP resolution and mapping logic
+│  │  ├─ common.py               # schema builders (repo, scan metadata)
+│  │  ├─ extractors.py           # shared extraction (location, tags, CWE, text)
+│  │  └─ classification.py       # CWE / OWASP resolution and mapping logic
 │  │
 │  │  Compatibility shims (forwarding modules only)
 │  │  - kept so older imports don’t break after refactors
@@ -52,29 +63,24 @@ repo_root/
 │  │
 │  │  Tool-specific packages (each tool isolated)
 │  ├─ semgrep/
-│  │  ├─ __init__.py            # execute(...)
-│  │  ├─ runner.py              # runs semgrep; writes raw artifacts
-│  │  └─ normalize.py           # raw -> normalized (uses tools/normalize/*)
-│  │
+│  │  ├─ __init__.py             # execute(...)
+│  │  ├─ runner.py               # runs semgrep; writes raw artifacts
+│  │  └─ normalize.py            # raw -> normalized (uses tools/normalize/*)
 │  ├─ snyk/
-│  │  ├─ __init__.py
-│  │  ├─ runner.py
-│  │  ├─ sarif.py
-│  │  ├─ vendor_rules.py
-│  │  └─ normalize.py
-│  │
 │  ├─ sonar/
-│  │  ├─ __init__.py
-│  │  ├─ api.py
-│  │  ├─ rules.py
-│  │  ├─ types.py
-│  │  └─ normalize.py
-│  │
 │  └─ aikido/
-│     ├─ __init__.py
-│     ├─ runner.py
-│     ├─ normalize.py
-│     └─ client.py
+│
+├─ schemas/
+│  └─ bq/
+│     └─ v1/                     # BigQuery table schema JSON (used by export mode)
+│        ├─ suites.schema.json
+│        ├─ cases.schema.json
+│        ├─ tool_runs.schema.json
+│        └─ findings.schema.json
+│
+├─ scripts/
+│  ├─ make_worktrees.sh          # create git worktrees for branch-per-case suites
+│  └─ smoke_micro_suite.sh       # smoke test helper for micro-suite suites
 │
 └─ mappings/
    ├─ cwe_to_owasp_top10_mitre.json
@@ -83,9 +89,24 @@ repo_root/
 
 ---
 
+## Input Layout (cache)
+
+The pipeline uses local folders as **inputs**:
+
+```text
+repos/<repo_name>/                 # base clones (URL scans)
+repos/worktrees/<repo_name>/<br>/  # worktree checkouts (branch-per-case suites)
+```
+
+These are caches. They are safe to delete and should never be committed.
+
+The CLI does **not** automatically generate worktrees. Use `scripts/make_worktrees.sh` (or your own tooling) to prepare them.
+
+---
+
 ## Filesystem Layout (Outputs)
 
-This repo supports **two output layouts**:
+This repo supports **two output layouts** for scan results:
 
 ### v2 (suite/case layout, preferred)
 
@@ -106,10 +127,16 @@ runs/
         logs/...
       analysis/...
       gt/gt_score.(json|csv)    # if GT scorer is used
+    export/<schema_version>/    # optional: JSONL tables for warehouse ingestion
+      suites.jsonl
+      cases.jsonl
+      tool_runs.jsonl
+      findings.jsonl
+      export_manifest.json
 ```
 
 **Why v2 exists:** it’s easier to browse, and it’s much easier to ingest into a DB because
-`suite.json`, `case.json`, and `run.json` provide stable pointers and IDs.
+`suite.json`, `case.json`, and `run.json` provide stable IDs and pointers.
 
 ### v1 (legacy)
 
@@ -124,12 +151,30 @@ runs/<tool>/<repo_name>/<run_id>/
 
 ---
 
+## Data layers (Bronze / Silver / Gold)
+
+This repo intentionally separates “raw truth” from “curated” outputs:
+
+- **Bronze (raw):** `raw.json` / `raw.sarif`, scanner logs, `metadata.json`, and `run.json`  
+  (These are immutable snapshots of what happened.)
+
+- **Silver (normalized):** `normalized.json`  
+  (Typed, standardized, cross-tool contract used by analysis and export.)
+
+- **Gold (analytics):** `analysis/` and `gt/` outputs  
+  (Derived metrics, joins, aggregations, and scoring.)
+
+- **Warehouse export (optional):** `export/<schema_version>/*.jsonl`  
+  (Append-only, stable table-shaped views of the suite for ingestion.)
+
+---
+
 ## Process Flow (End-to-End)
 
 ```text
                  +--------------------------+
                  |        sast_cli.py       |
-                 |  (choose repo/tool/suite)|
+                 |  (choose mode & inputs)  |
                  +------------+-------------+
                               |
                               v
@@ -152,7 +197,7 @@ runs/<tool>/<repo_name>/<run_id>/
           | calls                | calls                 | calls               | calls
           v                      v                       v                     v
 +-------------------+  +-------------------+   +-------------------+  +-------------------+
-| tools/snyk/        |  | tools/semgrep/    |   | tools/sonar/       |  | tools/aikido/     |
+| tools/<tool>/      |  | tools/<tool>/     |   | tools/<tool>/      |  | tools/<tool>/     |
 | execute(...)       |  | execute(...)      |   | execute(...)       |  | execute(...)      |
 +---------+---------+  +---------+---------+   +---------+---------+  +---------+---------+
           |                      |                       |                     |
@@ -175,9 +220,16 @@ runs/<tool>/<repo_name>/<run_id>/
                  | v2: runs/suites/<suite_id>/cases/<case_id>/        |
                  |       tool_runs/<tool>/<run_id>/normalized.json    |
                  |       + raw + metadata + run.json                  |
-                 |     + case.json + suite.json for DB ingestion      |
-                 | v1: runs/<tool>/<repo>/<run_id>/<repo>.normalized  |
+                 |     + case.json + suite.json for lineage/joins     |
                  +---------------------------+---------------------- +
+                                             |
+                           (optional) export |
+                                             v
+                 +--------------------------------------------------+
+                 |              pipeline/export/*                     |
+                 | - reads suite/case/run/normalized artifacts        |
+                 | - emits JSONL tables under export/<schema_version> |
+                 +--------------------------------------------------+
                                              |
                                              v
                  +--------------------------------------------------+
@@ -218,26 +270,3 @@ These files are treated as **ground truth inside this system**, but they are int
 in exactly one place:
 
 - `tools/normalize/classification.py`
-
-**Rule:** tool normalizers must NOT load mapping files directly.
-
----
-
-## Design Rules (Anti-Spaghetti Constraints)
-
-1. **Stable contract**
-   - The pipeline depends only on `tools/scan_*.py` paths.
-
-2. **Tool isolation**
-   - Tool packages (`tools/<tool>/`) must not import other tools.
-
-3. **Single source of truth**
-   - File/JSON IO lives in `tools/io.py`.
-   - Shared normalization logic lives in `tools/normalize/*`.
-
-4. **Dependency direction**
-   - `tools/<tool>/*` → may import `tools.normalize.*`, `tools.io`
-   - `tools/normalize/*` → must NOT import `tools/<tool>/*`
-
-5. **Normalized JSON is the contract**
-   - Analysis code must not parse vendor raw formats.

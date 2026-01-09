@@ -41,17 +41,39 @@ Both layouts produce the **same normalized JSON schema**. The difference is only
 
 ---
 
-## Versioning
+## Versioning & schema evolution rules
 
 - `schema_version` is a string.
-- **Current emitted by scripts**: `1.1` (historical runs may be `"1.1"`).
-- **Documented here**: `1.2` (documentation + backwards-compatible clarifications):
-  - Clarifies **file path semantics** and recommended normalization for comparisons.
-  - Clarifies **vendor vs canonical** classification fields (OWASP Top 10).
-  - Treats `run_metadata` as a first-class convenience field (it already exists in some outputs).
-  - Clarifies that per-finding `metadata` is optional/denormalized.
+- **Current emitted by scripts:** `1.1`
 
-No changes described here should break consumers that already parse `1.1` outputs.
+### Backwards-compatibility contract
+
+To keep downstream analysis and warehouse ingestion stable:
+
+**Non-breaking changes (allowed in a minor bump):**
+- adding a new optional top-level field
+- adding a new optional field inside a finding
+- expanding allowed enum values when handled as “unknown / other” by consumers
+
+**Breaking changes (require a major bump):**
+- renaming/removing fields
+- changing types (e.g., `line_number` from int → string)
+- changing meaning/semantics of an existing field
+
+### Relationship to warehouse export schemas
+
+The normalized JSON is a nested artifact optimized for traceability and comparisons.
+
+For ingestion into BigQuery (or other warehouses), use:
+
+```bash
+python sast_cli.py --mode export --suite-id <suite_id|latest>
+```
+
+Export mode emits JSONL tables under `runs/suites/<suite_id>/export/v1/`
+and publishes their BigQuery table schemas under `schemas/bq/v1/`.
+
+Those warehouse table schemas are versioned separately from this normalized schema.
 
 ---
 
@@ -63,7 +85,7 @@ Top-level shape:
 
 ```json
 {
-  "schema_version": "1.2",
+  "schema_version": "1.1",
   "tool": "sonar",
   "tool_version": "SonarScanner CLI 7.3.0.5189",
 
@@ -125,24 +147,24 @@ Describes **how and when you scanned**:
 
 ```json
 "scan": {
-  "run_id": "2025122201",
-  "scan_date": "2025-12-22T17:13:29.903427",
-  "command": "sonar-scanner ...",
+  "run_id": "2026010901012903",
+  "scan_date": "2026-01-09T01:29:09.768696+00:00",
+  "command": "semgrep --json --config auto ...",
 
   "raw_results_path": "raw.json",
   "metadata_path": "metadata.json",
 
-  "scan_time_seconds": 342.2597,
-  "exit_code": 3
+  "scan_time_seconds": 5.2453,
+  "exit_code": 0
 }
 ```
 
 | Field | Type | Required | Notes |
 |---|---:|:---:|---|
-| `run_id` | string | ✅ | Run directory ID (`YYYYMMDDNN`). |
-| `scan_date` | string | ✅ | Timestamp when the run was executed/recorded. |
+| `run_id` | string | ✅ | Run directory ID. Current format is typically `YYYYMMDDNNHHMMSS` (16 digits). Older runs may use shorter legacy forms. |
+| `scan_date` | string | ✅ | Timestamp when the run was executed/recorded (ISO 8601). |
 | `command` | string\|null | ⭕️ | Command used to invoke the scanner (reproducibility). |
-| `raw_results_path` | string | ✅ | Raw vendor output filename or path for this run. In suite layout this is usually `raw.json` or `raw.sarif`. In legacy layout it may be `<repo>.json` or `<repo>.sarif`. |
+| `raw_results_path` | string | ✅ | Raw vendor output filename or path for this run. In suite layout this is usually `raw.json` or `raw.sarif`. Some tools may record an absolute local path for debugging; for stable filenames prefer `run.json.artifacts.raw`. |
 | `scan_time_seconds` | number\|null | ⭕️ | Runtime of scan command (if measured). |
 | `exit_code` | integer\|null | ⭕️ | Exit code from the scan command (tool-specific). |
 | `metadata_path` | string | ✅ | Relative path to `metadata.json` inside the run directory. |
@@ -154,17 +176,20 @@ Describes **how and when you scanned**:
 
 ---
 
-## Run pointer file (`run.json`) for DB ingestion (v2 layout)
+## Run pointer file (`run.json`) for lineage and ingestion (v2 layout)
 
-In the suite layout, each tool run directory may contain a small `run.json` file:
+In the suite layout, each tool run directory contains a small `run.json` file:
 
 ```json
 {
-  "suite_id": "20260107T120000Z",
-  "case_id": "juice-shop",
+  "suite_id": "one_case_injection_3tools",
+  "case_id": "owasp2021-a03-injection",
   "tool": "semgrep",
-  "run_id": "2026010701",
+  "run_id": "2026010901012903",
+  "started": "2026-01-09T01:29:03.645427+00:00",
+  "finished": "2026-01-09T01:29:09.798598+00:00",
   "exit_code": 0,
+  "command": "python tools/scan_semgrep.py ...",
   "artifacts": {
     "normalized": "normalized.json",
     "raw": "raw.json",
@@ -205,12 +230,20 @@ This file is **not required for normalized schema consumers**, but it makes inge
 | `finding_id` | string | ✅ | Stable-ish identifier. Convention: `<tool>:<rule_id>:<file_path>:<line>`. |
 | `rule_id` | string\|null | ✅ | Vendor rule identifier (Semgrep `check_id`, Sonar rule key, Snyk `ruleId`, etc.). |
 | `title` | string\|null | ✅ | Human-readable message/title. |
-| `severity` | string\|null | ⭕️ | Normalized severity (`HIGH`, `MEDIUM`, `LOW`) or `null`. |
+| `severity` | string\|null | ⭕️ | Normalized severity (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`) or `null`. |
 | `file_path` | string\|null | ⭕️ | Best-effort path to the file within the repo (see “File path semantics”). |
 | `line_number` | integer\|null | ⭕️ | Start line (1-indexed). |
 | `end_line_number` | integer\|null | ⭕️ | End line (1-indexed). |
 | `line_content` | string\|null | ⭕️ | Best-effort snippet (usually the start line). |
 | `vendor` | object\|null | ⭕️ | Tool-specific details (see below). |
+
+### Domain type location in code
+
+The normalized finding shape is represented in code by:
+
+- `sast_benchmark/domain/finding.py`
+
+Downstream code should prefer importing that type (or its `to_dict()` representation) rather than hand-rolling slightly different “finding” dictionaries.
 
 ---
 
@@ -328,7 +361,7 @@ Some outputs include a `metadata` object inside each finding:
 }
 ```
 
-This duplicates top-level fields. In schema v1.2:
+This duplicates top-level fields. In schema v1.1:
 
 - Consumers should treat `finding.metadata` as **optional**.
 - Producers may keep it for convenience, but it is not required.
