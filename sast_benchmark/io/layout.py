@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence, Tuple, Union
 
-from tools.core import create_run_dir_compat
+from .run_dir import create_run_dir_compat
 
 
 # Current:  YYYYMMDDNNHHMMSS (16 digits)

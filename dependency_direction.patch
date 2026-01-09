@@ -1,0 +1,258 @@
+diff --git a/sast_benchmark/io/layout.py b/sast_benchmark/io/layout.py
+index ffd9cce..1497461 100644
+--- a/sast_benchmark/io/layout.py
++++ b/sast_benchmark/io/layout.py
+@@ -20,7 +20,7 @@ from dataclasses import dataclass
+ from pathlib import Path
+ from typing import Optional, Sequence, Tuple, Union
+ 
+-from tools.core import create_run_dir_compat
++from .run_dir import create_run_dir_compat
+ 
+ 
+ # Current:  YYYYMMDDNNHHMMSS (16 digits)
+diff --git a/sast_benchmark/io/run_dir.py b/sast_benchmark/io/run_dir.py
+new file mode 100644
+index 0000000..88bb8f7
+--- /dev/null
++++ b/sast_benchmark/io/run_dir.py
+@@ -0,0 +1,83 @@
++"""sast_benchmark.io.run_dir
++
++Run directory / run-id helpers that are part of the **filesystem contract**.
++
++Why this module exists
++----------------------
++We intentionally keep the canonical "how do we create a new run directory?" logic
++in the *contracts* layer (sast_benchmark), so that:
++
++- tools/* (scanner adapters) can depend on it
++- pipeline/* (orchestration) can depend on it
++- but contracts do NOT depend on tools or pipeline (prevents cycles)
++
++This is one of the key guardrails for keeping the repo non-spaghetti.
++"""
++
++from __future__ import annotations
++
++from datetime import datetime, timezone
++from pathlib import Path
++from typing import List, Tuple, Union
++
++
++# Repo root = parent of sast_benchmark/
++ROOT_DIR = Path(__file__).resolve().parents[2]
++
++
++def _anchor_under_root(path: Path) -> Path:
++    """Anchor a relative path under the project root."""
++    return path if path.is_absolute() else (ROOT_DIR / path)
++
++
++def create_run_dir(output_root: Path | str) -> tuple[str, Path]:
++    """Create a dated run directory like YYYYMMDDNNHHMMSS under output_root.
++
++    - YYYYMMDD   : UTC date
++    - NN         : per-day sequence number (01,02,...) computed from existing run dirs
++    - HHMMSS     : UTC time (for readability + accidental collision resistance)
++
++    Backwards-compatible: older runs may be named YYYYMMDDNN (10 digits).
++
++    If output_root is relative (e.g. 'runs/semgrep'), it is anchored under ROOT_DIR.
++    """
++    root = output_root if isinstance(output_root, Path) else Path(output_root)
++    root = _anchor_under_root(root)
++    root.mkdir(parents=True, exist_ok=True)
++
++    now = datetime.now(timezone.utc)
++    today = now.strftime("%Y%m%d")
++    hhmmss = now.strftime("%H%M%S")
++
++    # Existing runs may be 10 digits (YYYYMMDDNN) or 16 digits (YYYYMMDDNNHHMMSS).
++    existing_idx: List[int] = []
++    for d in root.iterdir():
++        if not d.is_dir():
++            continue
++        name = d.name
++        if not name.startswith(today):
++            continue
++        if len(name) < 10:
++            continue
++        nn = name[8:10]
++        if nn.isdigit():
++            existing_idx.append(int(nn))
++
++    idx = (max(existing_idx) if existing_idx else 0) + 1
++
++    # Concurrency-safe creation: if a directory already exists (another process),
++    # increment NN and retry.
++    while True:
++        run_id = f"{today}{idx:02d}{hhmmss}"
++        run_dir = root / run_id
++        try:
++            run_dir.mkdir(parents=True, exist_ok=False)
++            return run_id, run_dir
++        except FileExistsError:
++            idx += 1
++
++
++def create_run_dir_compat(output_root: Union[str, Path]) -> Tuple[str, Path]:
++    """Backwards-compatible alias (historical name used by older code)."""
++    run_id, run_dir = create_run_dir(output_root)
++    return run_id, run_dir
+diff --git a/tests/test_dependency_boundaries.py b/tests/test_dependency_boundaries.py
+new file mode 100644
+index 0000000..b64bc5b
+--- /dev/null
++++ b/tests/test_dependency_boundaries.py
+@@ -0,0 +1,71 @@
++import ast
++import unittest
++from pathlib import Path
++from typing import Iterable, List, Tuple
++
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++
++# Dependency rules (kept intentionally small and explicit):
++# - contracts (sast_benchmark/) must not depend on tools/ or pipeline/
++# - tools/ must not depend on pipeline/
++FORBIDDEN_IMPORTS = {
++    "sast_benchmark": ("tools", "pipeline"),
++    "tools": ("pipeline",),
++}
++
++
++def iter_py_files(package_dir: Path) -> Iterable[Path]:
++    for p in package_dir.rglob("*.py"):
++        # Skip cache/hidden dirs if present
++        if any(part.startswith(".") for part in p.parts):
++            continue
++        if "__pycache__" in p.parts:
++            continue
++        yield p
++
++
++def find_forbidden_imports(py_file: Path, forbidden_roots: Tuple[str, ...]) -> List[str]:
++    src = py_file.read_text(encoding="utf-8", errors="ignore")
++    tree = ast.parse(src, filename=str(py_file))
++
++    violations: List[str] = []
++
++    for node in ast.walk(tree):
++        if isinstance(node, ast.Import):
++            for alias in node.names:
++                root = alias.name.split(".", 1)[0]
++                if root in forbidden_roots:
++                    violations.append(alias.name)
++
++        elif isinstance(node, ast.ImportFrom):
++            # Only enforce absolute imports; relative imports are within-package by definition.
++            if node.level != 0:
++                continue
++            if not node.module:
++                continue
++            root = node.module.split(".", 1)[0]
++            if root in forbidden_roots:
++                violations.append(node.module)
++
++    return violations
++
++
++class TestDependencyBoundaries(unittest.TestCase):
++    def test_dependency_direction_is_enforced(self) -> None:
++        problems: List[str] = []
++
++        for pkg, forbidden in FORBIDDEN_IMPORTS.items():
++            pkg_dir = REPO_ROOT / pkg
++            if not pkg_dir.exists():
++                continue
++
++            for py_file in iter_py_files(pkg_dir):
++                bad = find_forbidden_imports(py_file, forbidden)
++                if bad:
++                    rel = py_file.relative_to(REPO_ROOT)
++                    problems.append(f"{rel} imports forbidden modules: {bad}")
++
++        if problems:
++            msg = "Forbidden imports detected (violates dependency direction):\n" + "\n".join(problems)
++            self.fail(msg)
+diff --git a/tools/core.py b/tools/core.py
+index ebaca1c..b0c998e 100644
+--- a/tools/core.py
++++ b/tools/core.py
+@@ -33,6 +33,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
+ 
+ from tools.io import read_json, read_line_content, write_json
+ 
++from sast_benchmark.io.run_dir import create_run_dir, create_run_dir_compat
++
++
+ 
+ _EPHEMERAL_CONFIG_KEYS = {
+     # Common run-specific fields (do not affect scanner *configuration*)
+@@ -284,61 +287,9 @@ def get_commit_author_info(repo_path: Path, commit: str) -> Dict[str, Optional[s
+ # Run directory
+ # -------------------------
+ 
+-def create_run_dir(output_root: Path | str) -> tuple[str, Path]:
+-    """
+-    Create a dated run directory like YYYYMMDDNNHHMMSS under output_root.
+-
+-    - YYYYMMDD   : UTC date
+-    - NN         : per-day sequence number (01,02,...) computed from existing run dirs
+-    - HHMMSS     : UTC time (for readability + accidental collision resistance)
+-
+-    Backwards-compatible: older runs may be named YYYYMMDDNN (10 digits).
+-
+-    If output_root is relative (e.g. 'runs/semgrep'), it is anchored under ROOT_DIR.
+-    """
+-    root = output_root if isinstance(output_root, Path) else Path(output_root)
+-    root = _anchor_under_root(root)
+-    root.mkdir(parents=True, exist_ok=True)
+-
+-    now = datetime.now(timezone.utc)
+-    today = now.strftime("%Y%m%d")
+-    hhmmss = now.strftime("%H%M%S")
+-
+-    # Existing runs may be 10 digits (YYYYMMDDNN) or 16 digits (YYYYMMDDNNHHMMSS).
+-    existing_idx: List[int] = []
+-    for d in root.iterdir():
+-        if not d.is_dir():
+-            continue
+-        name = d.name
+-        if not name.startswith(today):
+-            continue
+-        if len(name) < 10:
+-            continue
+-        nn = name[8:10]
+-        if nn.isdigit():
+-            existing_idx.append(int(nn))
+-
+-    idx = (max(existing_idx) if existing_idx else 0) + 1
+-
+-    # Concurrency-safe creation: if a directory already exists (another process),
+-    # increment NN and retry.
+-    while True:
+-        run_id = f"{today}{idx:02d}{hhmmss}"
+-        run_dir = root / run_id
+-        try:
+-            run_dir.mkdir(parents=True, exist_ok=False)
+-            return run_id, run_dir
+-        except FileExistsError:
+-            idx += 1
+-
+-
+-def create_run_dir_compat(output_root: Union[str, Path]) -> Tuple[str, Path]:
+-    """
+-    Backwards-compatible alias kept so scan scripts can keep calling create_run_dir_compat().
+-    """
+-    run_id, run_dir = create_run_dir(output_root)
+-    return run_id, run_dir
+-
++# Run directory helpers are part of the filesystem contract and live in:
++#   sast_benchmark.io.run_dir
++# They are imported (re-exported) in this module for backwards compatibility.
+ 
+ # -------------------------
+ # Repo acquisition + metadata
