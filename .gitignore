@@ -30,3 +30,6 @@ venv/
 Thumbs.db
 node_modules/
 sample_runs/
+
+# Generated / machine-specific suite inputs
+suites/*.csv
