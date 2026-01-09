@@ -1,272 +1,155 @@
-# Architecture
+# Durinn SAST Benchmark Pipeline — Architecture
 
-- Keep **stable script entrypoints** (`tools/scan_*.py`) so the pipeline can shell out reliably.
-- Move **tool-specific logic** into isolated packages under `tools/<tool>/`.
-- Treat **normalized JSON** as the cross-tool contract consumed by all analysis code.
-- Centralize **domain types** (e.g., the normalized Finding) and **run layout logic** so the filesystem/data contract is owned by one place.
-- Write results in a **suite/case layout** by default so data is easier to browse and ingest into a database later.
-- Provide an optional **warehouse export** step that emits stable JSONL tables for ingestion (e.g., BigQuery).
-- For system-level diagrams (end-to-end flow + analysis internals), see `docs/SYSTEM_DIAGRAMS.md`.
+Durinn is a **filesystem-first benchmark pipeline**: it runs multiple static/security scanners across one or many codebases, writes **raw tool outputs**, converts them into a **single normalized findings contract**, and then runs **cross-tool analysis** (agreement/hotspots/taxonomy/triage + optional GT scoring).
 
-The primary goal is to enforce clear ownership,
-one-way dependencies, and a single source of truth for shared logic.
+The design goal is **clean, non-spaghetti automation**:
+- **Stable subprocess entrypoints** (`tools/scan_*.py`) so orchestration doesn’t depend on tool internals.
+- **Tool adapters are isolated** (`tools/<tool>/…`) so adding/changing a scanner is localized.
+- **Normalized JSON is the cross-tool contract** consumed by analysis (tools do parsing; pipeline orchestrates).
+- **Manifests + canonical layout helpers** provide reproducibility and “where did this come from?” traceability.
 
 ---
 
-## Repository Structure
+## Start here (reading order)
+
+1. `sast_cli.py` — CLI + UX (modes + inputs)
+2. `pipeline/orchestrator.py` — high-level coordinator (cases/tools, manifests, errors)
+3. `pipeline/core.py` — scanner registry + builds the subprocess commands
+4. `sast_benchmark/io/layout.py` + `pipeline/bundles.py` — canonical output paths + suite/case manifests
+5. `pipeline/analysis/runner.py` + `pipeline/analysis/framework/*` — stage engine for analysis
+6. `tools/scan_semgrep.py` → `tools/semgrep/*` — representative scanner adapter pattern
+
+---
+
+## Architecture at a glance
+
+### Layers / dependency direction
 
 ```text
-repo_root/
-├─ sast_cli.py
-├─ sast_benchmark/
-│  ├─ domain/
-│  │  └─ finding.py              # normalized Finding dataclass/schema
-│  └─ io/
-│     └─ layout.py               # canonical run path/layout helpers (RunPaths)
-│
-├─ pipeline/
-│  ├─ core.py
-│  ├─ bundles.py                 # suite/case bundle layout + IDs + safe_name
-│  ├─ export/
-│  │  ├─ __init__.py
-│  │  └─ bq_export.py            # suite -> JSONL table exports for BigQuery (optional)
-│  └─ analysis/
-│     ├─ run_discovery.py        # finds “latest run per tool” (supports v1 + v2 layouts)
-│     ├─ analyze_suite.py        # cross-tool suite metrics (location/taxonomy agreement)
-│     ├─ gt_scorer.py            # GT scoring (writes gt/gt_score.* when used)
-│     ├─ unique_overview.py
-│     └─ path_normalization.py
-│
-├─ tools/
-│  │
-│  │  Stable entrypoints (subprocess contract)
-│  ├─ scan_semgrep.py
-│  ├─ scan_snyk.py
-│  ├─ scan_sonar.py
-│  └─ scan_aikido.py
-│  │
-│  │  Shared platform helpers (no tool-specific parsing here)
-│  ├─ io.py                      # canonical JSON + file IO helpers
-│  └─ core.py                    # orchestration helpers / legacy re-exports
-│  │
-│  │  Canonical shared normalization layer
-│  ├─ normalize/
-│  │  ├─ common.py               # schema builders (repo, scan metadata)
-│  │  ├─ extractors.py           # shared extraction (location, tags, CWE, text)
-│  │  └─ classification.py       # CWE / OWASP resolution and mapping logic
-│  │
-│  │  Compatibility shims (forwarding modules only)
-│  │  - kept so older imports don’t break after refactors
-│  ├─ normalize_common.py
-│  ├─ normalize_extractors.py
-│  └─ classification_resolver.py
-│  │
-│  │  Tool-specific packages (each tool isolated)
-│  ├─ semgrep/
-│  │  ├─ __init__.py             # execute(...)
-│  │  ├─ runner.py               # runs semgrep; writes raw artifacts
-│  │  └─ normalize.py            # raw -> normalized (uses tools/normalize/*)
-│  ├─ snyk/
-│  ├─ sonar/
-│  └─ aikido/
-│
-├─ schemas/
-│  └─ bq/
-│     └─ v1/                     # BigQuery table schema JSON (used by export mode)
-│        ├─ suites.schema.json
-│        ├─ cases.schema.json
-│        ├─ tool_runs.schema.json
-│        └─ findings.schema.json
-│
-├─ scripts/
-│  ├─ make_worktrees.sh          # create git worktrees for branch-per-case suites
-│  └─ smoke_micro_suite.sh       # smoke test helper for micro-suite suites
-│
-└─ mappings/
-   ├─ cwe_to_owasp_top10_mitre.json
-   └─ snyk_rule_to_owasp_2021.json
+CLI (sast_cli.py)
+   |
+   v
+Orchestration (pipeline/*)  --->  Contracts (sast_benchmark/*)
+   |
+   | stable subprocess contract: python tools/scan_<tool>.py ...
+   v
+Tool entrypoints (tools/scan_*.py)  --->  Tool adapters (tools/<tool>/*)
+```
+
+Dependency intent (to keep boundaries clear):
+- `sast_benchmark/` is foundational (types + layout). It should not depend on `pipeline/` or `tools/`.
+- `tools/` may depend on `sast_benchmark/`.
+- `pipeline/` may depend on `tools/` + `sast_benchmark/`.
+- CLI can depend on everything.
+
+> Known cleanup item: there is still a small legacy import that makes `sast_benchmark` depend on `tools` for run-dir compatibility. Long-term, move that run-id/run-dir helper into `sast_benchmark.io` (or a tiny shared module) to fully enforce the rule above.
+
+### End-to-end flow (suite/benchmark run)
+
+```text
+sast_cli.py
+  -> pipeline/orchestrator.py
+    -> pipeline/core.py (tool -> scan script, build cmd)
+      -> tools/scan_<tool>.py (thin shim)
+        -> tools/<tool>/execute(): runner writes raw + normalize writes normalized
+          -> runs/suites/<suite_id>/cases/<case_id>/tool_runs/<tool>/<run_id>/
+    -> (optional) pipeline/analysis/runner.py -> runs/suites/<suite_id>/cases/<case_id>/analysis/*
 ```
 
 ---
 
-## Input Layout (cache)
+## Outputs and contracts
 
-The pipeline uses local folders as **inputs**:
-
-```text
-repos/<repo_name>/                 # base clones (URL scans)
-repos/worktrees/<repo_name>/<br>/  # worktree checkouts (branch-per-case suites)
-```
-
-These are caches. They are safe to delete and should never be committed.
-
-The CLI does **not** automatically generate worktrees. Use `scripts/make_worktrees.sh` (or your own tooling) to prepare them.
-
----
-
-## Filesystem Layout (Outputs)
-
-This repo supports **two output layouts** for scan results:
-
-### v2 (suite/case layout, preferred)
-
-This is the default when running via `sast_cli.py` (unless you pass `--no-suite`).
+### Data lifecycle (Bronze / Silver / Gold)
 
 ```text
-runs/
-  suites/<suite_id>/
-    suite.json
-    summary.csv
-    cases/<case_id>/
-      case.json
-      tool_runs/<tool>/<run_id>/
-        run.json
-        normalized.json
-        raw.(json|sarif)
-        metadata.json
-        logs/...
-      analysis/...
-      gt/gt_score.(json|csv)    # if GT scorer is used
-    export/<schema_version>/    # optional: JSONL tables for warehouse ingestion
-      suites.jsonl
-      cases.jsonl
-      tool_runs.jsonl
-      findings.jsonl
-      export_manifest.json
+Bronze: raw.(json|sarif) + logs + metadata.json + run.json   (immutable)
+   |
+   v
+Silver: normalized.json (schema_version: 1.1)               (cross-tool contract)
+   |
+   v
+Gold: analysis/* + gt/*                                     (derived metrics)
 ```
 
-**Why v2 exists:** it’s easier to browse, and it’s much easier to ingest into a DB because
-`suite.json`, `case.json`, and `run.json` provide stable IDs and pointers.
-
-### v1 (legacy)
-
-Used when running scanners directly with `--output-root runs/<tool>` or when you pass `--no-suite`.
+### Preferred output layout (v2 suite/case)
 
 ```text
-runs/<tool>/<repo_name>/<run_id>/
-  <repo_name>.normalized.json
-  <repo_name>.json | <repo_name>.sarif
-  metadata.json
+runs/suites/<suite_id>/
+  suite.json            # suite index
+  summary.csv           # one row per case (human-friendly entry point)
+  cases/<case_id>/
+    case.json           # “ground truth” manifest for this case
+    tool_runs/<tool>/<run_id>/
+      run.json
+      raw.(json|sarif)
+      normalized.json
+      metadata.json
+      logs/...
+    analysis/...
+    gt/...              # optional scoring artifacts
 ```
 
----
+(v1 legacy layout still exists for compat when running tools directly; analysis supports both.)
 
-## Data layers (Bronze / Silver / Gold)
+### Normalized findings contract (schema v1.1)
 
-This repo intentionally separates “raw truth” from “curated” outputs:
+Every scanner adapter writes `normalized.json` with a consistent structure:
+- run metadata (tool + target + command + timestamps + exit code)
+- `findings`: list of normalized findings
 
-- **Bronze (raw):** `raw.json` / `raw.sarif`, scanner logs, `metadata.json`, and `run.json`  
-  (These are immutable snapshots of what happened.)
+Each finding includes at minimum:
+- `finding_id` (deterministic within a run)
+- `rule_id`
+- `title`
 
-- **Silver (normalized):** `normalized.json`  
-  (Typed, standardized, cross-tool contract used by analysis and export.)
+Common fields used by analysis:
+- severity (`HIGH|MEDIUM|LOW` when possible)
+- `file_path`, `line_number` (and optional range/text)
+- CWE / OWASP classification:
+  - vendor view (what tool says)
+  - canonical view (derived uniformly from CWE via `mappings/`)
 
-- **Gold (analytics):** `analysis/` and `gt/` outputs  
-  (Derived metrics, joins, aggregations, and scoring.)
-
-- **Warehouse export (optional):** `export/<schema_version>/*.jsonl`  
-  (Append-only, stable table-shaped views of the suite for ingestion.)
-
----
-
-## Process Flow (End-to-End)
-
-```text
-                 +--------------------------+
-                 |        sast_cli.py       |
-                 |  (choose mode & inputs)  |
-                 +------------+-------------+
-                              |
-                              v
-                 +--------------------------+
-                 |     pipeline/core.py     |
-                 |  (orchestrates scans)    |
-                 +------------+-------------+
-                              |
-                              | stable subprocess contract:
-                              | python tools/scan_<tool>.py <args...>
-                              v
-        +---------------------+-----------------------+---------------------+
-        |                     |                       |                     |
-        v                     v                       v                     v
-+-------------------+  +-------------------+   +-------------------+  +-------------------+
-| tools/scan_snyk.py |  | tools/scan_semgrep|   | tools/scan_sonar.py|  | tools/scan_aikido |
-| (thin shim)        |  | .py (thin shim)   |   | (thin shim)        |  | .py (thin shim)  |
-+---------+---------+  +---------+---------+   +---------+---------+  +---------+---------+
-          |                      |                       |                     |
-          | calls                | calls                 | calls               | calls
-          v                      v                       v                     v
-+-------------------+  +-------------------+   +-------------------+  +-------------------+
-| tools/<tool>/      |  | tools/<tool>/     |   | tools/<tool>/      |  | tools/<tool>/     |
-| execute(...)       |  | execute(...)      |   | execute(...)       |  | execute(...)      |
-+---------+---------+  +---------+---------+   +---------+---------+  +---------+---------+
-          |                      |                       |                     |
-          | runner -> raw output | runner -> raw output  | runner/api -> raw   | runner -> raw output
-          | normalize ->         | normalize ->          | normalize ->        | normalize ->
-          | normalized JSON      | normalized JSON       | normalized JSON     | normalized JSON
-          v                      v                       v                     v
-
-                 +--------------------------------------------------+
-                 |              SHARED NORMALIZATION                 |
-                 | tools/normalize/common.py  (schema builders)      |
-                 | tools/normalize/extractors.py (location/tags/CWE) |
-                 | tools/normalize/classification.py (CWE->OWASP)    |
-                 | tools/io.py (read/write JSON, read_line_content)  |
-                 +---------------------------+---------------------- +
-                                             |
-                                             v
-                 +--------------------------------------------------+
-                 |                   OUTPUTS                         |
-                 | v2: runs/suites/<suite_id>/cases/<case_id>/        |
-                 |       tool_runs/<tool>/<run_id>/normalized.json    |
-                 |       + raw + metadata + run.json                  |
-                 |     + case.json + suite.json for lineage/joins     |
-                 +---------------------------+---------------------- +
-                                             |
-                           (optional) export |
-                                             v
-                 +--------------------------------------------------+
-                 |              pipeline/export/*                     |
-                 | - reads suite/case/run/normalized artifacts        |
-                 | - emits JSONL tables under export/<schema_version> |
-                 +--------------------------------------------------+
-                                             |
-                                             v
-                 +--------------------------------------------------+
-                 |              pipeline/analysis/*                   |
-                 | - discovers latest normalized runs                 |
-                 | - computes convergence metrics                     |
-                 | - writes derived reports (analysis/)               |
-                 | - optionally runs GT scoring (gt/)                 |
-                 +--------------------------------------------------+
-```
+Normalization helpers live in `tools/normalize/*` and are designed for stable diffs (sorted outputs).
 
 ---
 
-## Compatibility Shims (Plain English)
+## Analysis model (stage pipeline)
 
-The modules:
-- `tools/normalize_common.py`
-- `tools/normalize_extractors.py`
-- `tools/classification_resolver.py`
+Analysis is a **stage pipeline** to keep metrics modular:
+- `AnalysisContext` is the immutable job packet.
+- `ArtifactStore` is the shared output registry/scratchpad.
+- Stages register via `@register_stage("name")`.
+- Pipelines are ordered lists of stage names.
+- Entry point: `pipeline/analysis/runner.run_suite(...)`.
 
-exist only to keep **old import paths working** after shared normalization code was
-moved into the canonical package `tools/normalize/`.
-
-They must contain **no real logic** and only re-export symbols from the canonical modules.
-
-**Rule:** new code should import from `tools/normalize/*` directly.
+Stages write artifacts under each case’s `analysis/` folder and record outputs in an `analysis_manifest.json`.
 
 ---
 
-## Mappings (Ground Truth Reference Data)
+## Extending the system
 
-The `mappings/` directory contains **data-only reference tables**, such as:
+### Add a new scanner adapter
 
-- CWE → OWASP Top 10 mappings
-- Vendor rule ID → OWASP mappings (e.g., Snyk)
+1. Add a stable entrypoint: `tools/scan_<tool>.py` (thin argparse wrapper).
+2. Implement `tools/<tool>/`:
+   - `runner.py` executes the tool and writes raw output
+   - `normalize.py` converts raw → `normalized.json` (schema v1.1)
+3. Use canonical layout helpers (`sast_benchmark.io.layout.prepare_run_paths(...)`).
+4. Register tool in `pipeline/core.py` (tool name -> entrypoint).
 
-These files are treated as **ground truth inside this system**, but they are interpreted
-in exactly one place:
+### Add a new analysis metric
 
-- `tools/normalize/classification.py`
+1. Add a stage in `pipeline/analysis/stages/<name>.py` and register it.
+2. Write artifacts + register them in `ArtifactStore`.
+3. Add stage to a pipeline list in `pipeline/analysis/framework/pipelines.py`.
+
+---
+
+## Guardrails 
+
+- Pipeline orchestrates; **tools parse/normalize**. No raw tool parsing in `pipeline/`.
+- **Stable entrypoints** are the integration boundary: `pipeline` shells out to `tools/scan_*.py`.
+- **Layouts are centralized**: don’t hardcode paths; use the layout helpers/manifests.
+- **Manifests are ground truth**: downstream jobs should follow `suite.json` / `case.json` / `run.json`.
+- Prefer typed dataclasses for cross-module payloads to avoid “dict soup”.
