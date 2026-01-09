@@ -73,7 +73,9 @@ from pipeline.core import (
 from pipeline.bundles import safe_name
 from pipeline.layout import new_suite_id
 from pipeline.models import RepoSpec, CaseSpec
-from pipeline.orchestrator import AnalyzeRequest, RunRequest, run_analyze, run_tools
+from pipeline.orchestrator import AnalyzeRequest, RunRequest
+from pipeline.pipeline import SASTBenchmarkPipeline
+from pipeline.wiring import build_pipeline
 
 from pipeline.suite_definition import (
     SuiteAnalysisDefaults,
@@ -86,7 +88,6 @@ from pipeline.suite_py_loader import load_suite_py
 
 
 ROOT_DIR = PIPELINE_ROOT_DIR  # repo root
-ENV_PATH = ROOT_DIR / ".env"
 
 # Replace/add your preset repos here
 REPOS: Dict[str, Dict[str, str]] = {
@@ -102,37 +103,6 @@ SCANNER_LABELS: Dict[str, str] = {
     "snyk": "Snyk Code",
     "aikido": "Aikido",
 }
-
-
-# -------------------------------------------------------------------
-# .env loader (no dependency)
-# -------------------------------------------------------------------
-
-def load_dotenv_if_present(dotenv_path: Path) -> None:
-    """Minimal .env loader. Loads KEY=VALUE into os.environ if not already set."""
-    if not dotenv_path.exists():
-        return
-
-    for raw in dotenv_path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-
-        key, val = line.split("=", 1)
-        key = key.strip()
-        raw_val = val.strip()
-
-        # Quoted value
-        if (raw_val.startswith('"') and raw_val.endswith('"')) or (raw_val.startswith("'") and raw_val.endswith("'")):
-            parsed_val = raw_val[1:-1]
-        else:
-            # Strip inline comments only when preceded by whitespace: "VALUE   # comment"
-            parsed_val = re.split(r"\s+#", raw_val, maxsplit=1)[0].strip()
-            parsed_val = parsed_val.strip('"').strip("'")
-
-        parsed_val = parsed_val.replace("\r", "")
-        if key and key not in os.environ:
-            os.environ[key] = parsed_val
 
 
 # -------------------------------------------------------------------
@@ -1103,7 +1073,7 @@ def _build_suite_from_sources(args: argparse.Namespace) -> SuiteDefinition:
     )
 
 
-def run_suite_mode(args: argparse.Namespace) -> int:
+def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline) -> int:
     """Run multiple cases under one suite id.
 
     Suite definitions are Python-only at runtime:
@@ -1234,7 +1204,7 @@ def run_suite_mode(args: argparse.Namespace) -> int:
             python_executable=sys.executable,
         )
 
-        rc = int(run_tools(req))
+        rc = int(pipeline.run(req))
         overall = max(overall, rc)
 
     print("\n✅ Suite complete")
@@ -1248,8 +1218,10 @@ def run_suite_mode(args: argparse.Namespace) -> int:
 # -------------------------------------------------------------------
 
 def main() -> None:
-    load_dotenv_if_present(ENV_PATH)
     args = parse_args()
+
+    # Build the pipeline facade (also loads .env by default).
+    pipeline = build_pipeline(load_dotenv=True)
 
     # mode selection
     mode = args.mode
@@ -1272,7 +1244,7 @@ def main() -> None:
     # Suite mode is a multi-case orchestrator. It does not have a single repo
     # target, so handle it before resolve_repo(...).
     if mode == "suite":
-        raise SystemExit(run_suite_mode(args))
+        raise SystemExit(run_suite_mode(args, pipeline))
 
     repo_url, repo_path, label, repo_id = resolve_repo(args)
 
@@ -1321,7 +1293,7 @@ def main() -> None:
             analysis_filter=str(args.analysis_filter),
             max_unique=int(args.max_unique),
         )
-        raise SystemExit(run_analyze(req))
+        raise SystemExit(pipeline.analyze(req))
 
     # --------------------- SCAN MODE ---------------------
     if mode == "scan":
@@ -1351,7 +1323,7 @@ def main() -> None:
             argv=list(sys.argv),
             python_executable=sys.executable,
         )
-        raise SystemExit(run_tools(req))
+        raise SystemExit(pipeline.run(req))
 
     # ------------------- BENCHMARK MODE ------------------
     scanners_arg = args.scanners or "semgrep,snyk,sonar,aikido"
@@ -1378,7 +1350,7 @@ def main() -> None:
         python_executable=sys.executable,
     )
 
-    raise SystemExit(run_tools(req))
+    raise SystemExit(pipeline.run(req))
 
 
 if __name__ == "__main__":
