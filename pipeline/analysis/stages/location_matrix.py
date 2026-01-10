@@ -9,6 +9,8 @@ from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
 from pipeline.analysis.utils.signatures import cluster_locations
 
+from pipeline.scanners import DEFAULT_SCANNERS_CSV
+
 from ._shared import build_location_items, max_severity
 
 
@@ -75,7 +77,7 @@ def main(argv: List[str] | None = None) -> None:  # pragma: no cover
     ap.add_argument("--repo-name", required=True)
     ap.add_argument("--runs-dir", default="runs")
     ap.add_argument("--out-dir", default=None)
-    ap.add_argument("--tools", default="semgrep,snyk,sonar,aikido")
+    ap.add_argument("--tools", default=DEFAULT_SCANNERS_CSV)
     ap.add_argument("--tolerance", type=int, default=3)
     ap.add_argument("--mode", choices=["security", "all"], default="security")
     args = ap.parse_args(argv)

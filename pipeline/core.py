@@ -18,6 +18,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
+from pipeline.scanners import SCANNER_SCRIPTS, SCANNER_TRACKS, SUPPORTED_SCANNERS
+
 
 # Use the same interpreter that imports this module (CLI inherits it).
 PYTHON: str = sys.executable or "python"
@@ -26,41 +28,8 @@ PYTHON: str = sys.executable or "python"
 ROOT_DIR: Path = Path(__file__).resolve().parents[1]
 TOOLS_DIR: Path = ROOT_DIR / "tools"
 
-# Scanner -> entrypoint script under tools/
-SCANNER_SCRIPTS: Dict[str, str] = {
-    "semgrep": "scan_semgrep.py",
-    "sonar": "scan_sonar.py",
-    "snyk": "scan_snyk.py",
-    "aikido": "scan_aikido.py",
-}
-
-SUPPORTED_SCANNERS = set(SCANNER_SCRIPTS.keys())
-
-
-# --------------------------
-# Track metadata (optional)
-# --------------------------
-#
-# The pipeline supports multiple *tracks* (SAST/SCA/IaC/etc.) at the benchmark
-# layer. Tools can often span more than one track, but this mapping gives the
-# orchestrator a conservative way to skip obviously-irrelevant scanners when a
-# case declares a track.
-#
-# Tracks are free-form strings, but these are the common ones:
-#   - "sast"    : source code (static analysis)
-#   - "sca"     : software composition analysis (dependencies)
-#   - "iac"     : infrastructure-as-code
-#   - "secrets" : credential/secret scanning
-
-SCANNER_TRACKS: Dict[str, set[str]] = {
-    # Semgrep supports multiple tracks depending on config; keep it permissive.
-    "semgrep": {"sast", "iac", "secrets"},
-    "sonar": {"sast"},
-    # This pipeline integrates Snyk Code (SAST). (SCA is a separate Snyk product.)
-    "snyk": {"sast"},
-    # Aikido can report multiple categories depending on backend scan types.
-    "aikido": {"sast", "sca", "iac", "secrets"},
-}
+# Scanner metadata (supported scanners, runner scripts, and track capabilities) is
+# centralized in :mod:`pipeline.scanners` to avoid drift across CLI/execution/analysis.
 
 
 def filter_scanners_for_track(scanners: Sequence[str], track: str) -> tuple[list[str], list[str]]:

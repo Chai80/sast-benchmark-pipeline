@@ -29,8 +29,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from pipeline.scanners import SUPPORTED_SCANNERS
 from pipeline.core import (
-    SUPPORTED_SCANNERS,
     build_scan_command,
     derive_sonar_project_key,
     filter_scanners_for_track,

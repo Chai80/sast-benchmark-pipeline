@@ -66,10 +66,10 @@ from typing import Dict, List, Optional, Tuple
 
 from pipeline.core import (
     ROOT_DIR as PIPELINE_ROOT_DIR,
-    SUPPORTED_SCANNERS,
     repo_id_from_repo_url,
     sanitize_sonar_key_fragment,
 )
+from pipeline.scanners import DEFAULT_SCANNERS_CSV, SCANNER_LABELS, SUPPORTED_SCANNERS
 from pipeline.bundles import anchor_under_repo_root, safe_name
 from pipeline.layout import new_suite_id
 from pipeline.models import RepoSpec, CaseSpec
@@ -97,13 +97,6 @@ REPOS: Dict[str, Dict[str, str]] = {
     "webgoat": {"label": "WebGoat", "repo_url": "https://github.com/WebGoat/WebGoat.git"},
     "dvwa": {"label": "DVWA", "repo_url": "https://github.com/digininja/DVWA.git"},
     "owasp_benchmark": {"label": "OWASP BenchmarkJava", "repo_url": "https://github.com/OWASP/BenchmarkJava.git"},
-}
-
-SCANNER_LABELS: Dict[str, str] = {
-    "semgrep": "Semgrep",
-    "sonar": "SonarCloud",
-    "snyk": "Snyk Code",
-    "aikido": "Aikido",
 }
 
 
@@ -180,7 +173,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--scanners",
-        help="(benchmark|suite mode) Comma-separated scanners (default: semgrep,snyk,sonar,aikido)",
+        help=f"(benchmark|suite mode) Comma-separated scanners (default: {DEFAULT_SCANNERS_CSV})",
     )
 
     parser.add_argument(
@@ -282,7 +275,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--tools",
-        help="(analyze mode) Comma-separated tools to include (default: semgrep,snyk,sonar,aikido)",
+        help=f"(analyze mode) Comma-separated tools to include (default: {DEFAULT_SCANNERS_CSV})",
     )
     parser.add_argument(
         "--runs-dir",
@@ -766,7 +759,7 @@ def _build_suite_interactively(args: argparse.Namespace) -> SuiteDefinition:
     suite_id_in = _prompt_text("Suite id (press Enter to auto-generate)", default="").strip()
     suite_id = suite_id_in or new_suite_id()
 
-    default_scanners_csv = args.scanners or "semgrep,snyk,sonar,aikido"
+    default_scanners_csv = args.scanners or DEFAULT_SCANNERS_CSV
     scanners_csv = _prompt_text("Scanners to run (comma-separated)", default=default_scanners_csv)
     scanners = _parse_scanners_str(scanners_csv)
     if not scanners:
@@ -979,7 +972,7 @@ def _build_suite_from_sources(args: argparse.Namespace) -> SuiteDefinition:
     """
     suite_id = str(args.bundle_id) if args.bundle_id else new_suite_id()
 
-    scanners_csv = args.scanners or "semgrep,snyk,sonar,aikido"
+    scanners_csv = args.scanners or DEFAULT_SCANNERS_CSV
     scanners = _parse_scanners_str(scanners_csv)
     if not scanners:
         raise SystemExit("No valid scanners selected.")
@@ -1268,7 +1261,7 @@ def main() -> None:
     if mode == "analyze":
         metric = args.metric or "hotspots"
 
-        tools_csv = args.tools or "snyk,semgrep,sonar,aikido"
+        tools_csv = args.tools or DEFAULT_SCANNERS_CSV
         tools = [t for t in _parse_csv(tools_csv) if t in SUPPORTED_SCANNERS]
 
         req = AnalyzeRequest(
@@ -1319,7 +1312,7 @@ def main() -> None:
         raise SystemExit(pipeline.run(req))
 
     # ------------------- BENCHMARK MODE ------------------
-    scanners_arg = args.scanners or "semgrep,snyk,sonar,aikido"
+    scanners_arg = args.scanners or DEFAULT_SCANNERS_CSV
     scanners = [s for s in _parse_csv(scanners_arg) if s in SUPPORTED_SCANNERS]
     if not scanners:
         raise SystemExit("No valid scanners specified for benchmark mode.")

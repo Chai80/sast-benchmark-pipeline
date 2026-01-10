@@ -11,6 +11,8 @@ from pipeline.analysis.io.write_artifacts import write_json
 from pipeline.analysis.utils.filters import filter_findings
 from pipeline.analysis.utils.path_norm import normalize_file_path
 
+from pipeline.scanners import DEFAULT_SCANNERS_CSV
+
 from ._shared import load_normalized_json
 
 
@@ -132,7 +134,7 @@ def main(argv: List[str] | None = None) -> None:  # pragma: no cover
     ap = argparse.ArgumentParser(description="Compute latest hotspots-by-file overlap report.")
     ap.add_argument("--repo-name", required=True)
     ap.add_argument("--runs-dir", default="runs")
-    ap.add_argument("--tools", default="semgrep,snyk,sonar,aikido")
+    ap.add_argument("--tools", default=DEFAULT_SCANNERS_CSV)
     ap.add_argument("--mode", choices=["security", "all"], default="security")
     ap.add_argument("--out", help="Optional output JSON path")
     ap.add_argument("--max-unique", type=int, default=25)

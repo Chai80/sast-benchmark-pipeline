@@ -17,6 +17,8 @@ from typing import List
 
 from pipeline.analysis.runner import run_suite
 
+from pipeline.scanners import DEFAULT_SCANNERS, DEFAULT_SCANNERS_CSV
+
 
 def _parse_tools_csv(raw: str | None) -> List[str]:
     if not raw:
@@ -30,13 +32,13 @@ def main() -> None:
     ap.add_argument("--repo-name", required=True, help="Repo name as used under runs/<tool>/<repo_name>/...")
     ap.add_argument("--runs-dir", default=str(Path(__file__).resolve().parents[2] / "runs"), help="Base runs directory (default: <repo_root>/runs)")
     ap.add_argument("--out-dir", help="Output directory (default: runs/analysis/<repo-name>/)")
-    ap.add_argument("--tools", help="Comma-separated tools (default: semgrep,snyk,sonar,aikido)")
+    ap.add_argument("--tools", help=f"Comma-separated tools (default: {DEFAULT_SCANNERS_CSV})")
     ap.add_argument("--tolerance", type=int, default=3, help="Line clustering tolerance (default: 3)")
     ap.add_argument("--mode", choices=["security", "all"], default="security", help="Filtering mode (default: security)")
     ap.add_argument("--formats", default="json,csv", help="Comma-separated formats to write (json,csv)")
 
     args = ap.parse_args()
-    tools = _parse_tools_csv(args.tools) or ["semgrep", "snyk", "sonar", "aikido"]
+    tools = _parse_tools_csv(args.tools) or list(DEFAULT_SCANNERS)
     runs_dir = Path(args.runs_dir)
     out_dir = Path(args.out_dir) if args.out_dir else (runs_dir / "analysis" / args.repo_name)
     formats = [f.strip() for f in str(args.formats).split(",") if f.strip()]
