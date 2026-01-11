@@ -3,16 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from cli.common import parse_csv
 from pipeline.models import CaseSpec
 from pipeline.orchestrator import AnalyzeRequest
 from pipeline.pipeline import SASTBenchmarkPipeline
 from pipeline.scanners import DEFAULT_SCANNERS_CSV, SUPPORTED_SCANNERS
-
-
-def _parse_csv(raw: Optional[str]) -> list[str]:
-    if not raw:
-        return []
-    return [x.strip() for x in raw.split(",") if x.strip()]
 
 
 def run_analyze(
@@ -26,7 +21,7 @@ def run_analyze(
     metric = args.metric or "hotspots"
 
     tools_csv = args.tools or DEFAULT_SCANNERS_CSV
-    tools = [t for t in _parse_csv(tools_csv) if t in SUPPORTED_SCANNERS]
+    tools = [t for t in parse_csv(tools_csv) if t in SUPPORTED_SCANNERS]
 
     req = AnalyzeRequest(
         metric=metric,

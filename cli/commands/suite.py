@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from cli.common import derive_runs_repo_name, parse_csv
 from cli.ui import choose_from_menu, _parse_index_selection, _prompt_text, _prompt_yes_no
 from cli.suite_sources import (
     _case_id_from_pathlike,
@@ -35,29 +36,13 @@ from pipeline.suite_resolver import SuiteInputProvenance, resolve_suite_run
 ROOT_DIR = PIPELINE_ROOT_DIR
 
 
-def _parse_csv(raw: Optional[str]) -> List[str]:
-    if not raw:
-        return []
-    return [x.strip() for x in raw.split(",") if x.strip()]
-
-
 def _parse_scanners_str(value: str) -> List[str]:
-    raw = _parse_csv(value)
+    raw = parse_csv(value)
     scanners = [t for t in raw if t in SUPPORTED_SCANNERS]
     unknown = [t for t in raw if t not in SUPPORTED_SCANNERS]
     if unknown:
         print(f"  ⚠️  ignoring unknown scanners: {', '.join(unknown)}")
     return scanners
-
-
-def _derive_runs_repo_name(*, repo_url: Optional[str], repo_path: Optional[str], fallback: str) -> str:
-    """Best-effort repo name used by scanners under runs/<tool>/<repo_name>/..."""
-    if repo_url:
-        last = repo_url.rstrip("/").split("/")[-1]
-        return last[:-4] if last.endswith(".git") else last
-    if repo_path:
-        return Path(repo_path).resolve().name
-    return fallback
 
 
 def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[str, Dict[str, str]]) -> SuiteDefinition:
@@ -197,7 +182,7 @@ def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[
         # Default: add a single case via preset/custom/local
         repo_spec, label, _repo_id = _resolve_repo_for_suite_case_interactive(repo_registry=repo_registry)
 
-        runs_repo_name = _derive_runs_repo_name(
+        runs_repo_name = derive_runs_repo_name(
             repo_url=repo_spec.repo_url,
             repo_path=repo_spec.repo_path,
             fallback=label,

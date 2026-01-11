@@ -4,16 +4,11 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from cli.common import parse_csv
 from pipeline.models import CaseSpec
 from pipeline.orchestrator import RunRequest
 from pipeline.pipeline import SASTBenchmarkPipeline
 from pipeline.scanners import DEFAULT_SCANNERS_CSV, SUPPORTED_SCANNERS
-
-
-def _parse_csv(raw: Optional[str]) -> list[str]:
-    if not raw:
-        return []
-    return [x.strip() for x in raw.split(",") if x.strip()]
 
 
 def run_benchmark(
@@ -26,7 +21,7 @@ def run_benchmark(
     suite_id: Optional[str],
 ) -> int:
     scanners_arg = args.scanners or DEFAULT_SCANNERS_CSV
-    scanners = [s for s in _parse_csv(scanners_arg) if s in SUPPORTED_SCANNERS]
+    scanners = [s for s in parse_csv(scanners_arg) if s in SUPPORTED_SCANNERS]
     if not scanners:
         raise SystemExit("No valid scanners specified for benchmark mode.")
 

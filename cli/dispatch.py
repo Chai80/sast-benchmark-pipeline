@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from cli.common import derive_runs_repo_name
 from cli.ui import choose_from_menu
 from cli.commands.analyze import run_analyze
 from cli.commands.benchmark import run_benchmark
@@ -13,16 +14,6 @@ from cli.commands.suite import run_suite_mode
 from pipeline.core import repo_id_from_repo_url, sanitize_sonar_key_fragment
 from pipeline.models import CaseSpec, RepoSpec
 from pipeline.pipeline import SASTBenchmarkPipeline
-
-
-def _derive_runs_repo_name(*, repo_url: Optional[str], repo_path: Optional[str], fallback: str) -> str:
-    """Best-effort repo name used by scanners under runs/<tool>/<repo_name>/..."""
-    if repo_url:
-        last = repo_url.rstrip("/").split("/")[-1]
-        return last[:-4] if last.endswith(".git") else last
-    if repo_path:
-        return Path(repo_path).resolve().name
-    return fallback
 
 
 def resolve_repo(
@@ -108,7 +99,7 @@ def dispatch(
     repo_url, repo_path, label, repo_id = resolve_repo(args, repo_registry=repo_registry)
 
     # Derive the repo folder name used under runs/<tool>/<repo_name>/
-    runs_repo_name = args.runs_repo_name or _derive_runs_repo_name(
+    runs_repo_name = args.runs_repo_name or derive_runs_repo_name(
         repo_url=repo_url,
         repo_path=repo_path,
         fallback=label,
