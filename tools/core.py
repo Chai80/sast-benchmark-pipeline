@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from tools.io import read_json, read_line_content, write_json
 
 from sast_benchmark.io.run_dir import create_run_dir, create_run_dir_compat
+from sast_benchmark.domain.finding import FindingNormalized
 
 
 
@@ -460,6 +461,12 @@ def finalize_normalized_findings(findings: List[Dict[str, Any]]) -> List[Dict[st
     It mutates dictionaries in-place (for efficiency) and returns the sorted
     list.
     """
+    # Optional lightweight schema validation (non-fatal by default).
+    # Enable with: SAST_VALIDATE_NORMALIZED=1
+    validate = os.environ.get("SAST_VALIDATE_NORMALIZED", "").strip().lower() in {"1", "true", "yes", "y"}
+    strict = os.environ.get("SAST_VALIDATE_NORMALIZED_STRICT", "").strip().lower() in {"1", "true", "yes", "y"}
+    validation_errors: List[str] = []
+
 
     def _safe_int(x: Any) -> int:
         try:
@@ -491,6 +498,14 @@ def finalize_normalized_findings(findings: List[Dict[str, Any]]) -> List[Dict[st
         if not isinstance(f, dict):
             continue
 
+        if validate:
+            problems = FindingNormalized.validate_dict(f)
+            if problems:
+                where = f"{f.get('file_path') or '<no-file>'}:{f.get('line_number') or '?'}"
+                validation_errors.append(
+                    f"normalized finding invalid at {where} (finding_id={f.get('finding_id')!r}): {', '.join(problems)}"
+                )
+
         _sort_list_field(f, "cwe_ids")
 
         # OWASP blocks (compat + explicit vendor/canonical views)
@@ -505,6 +520,15 @@ def finalize_normalized_findings(findings: List[Dict[str, Any]]) -> List[Dict[st
             _sort_owasp_block(f, k)
 
         cleaned.append(f)
+
+    if validate and validation_errors:
+        head = validation_errors[:25]
+        msg = "\n".join(["[WARN] Normalized finding schema issues detected:"] + [f"  - {x}" for x in head])
+        if len(validation_errors) > 25:
+            msg += f"\n  ... ({len(validation_errors) - 25} more)"
+        print(msg, file=sys.stderr)
+        if strict:
+            raise ValueError(f"Normalized findings failed validation ({len(validation_errors)} issues).")
 
     def _key(f: Dict[str, Any]) -> tuple:
         return (
