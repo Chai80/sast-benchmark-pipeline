@@ -14,6 +14,7 @@ It is intentionally conservative:
 
 """
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -21,6 +22,7 @@ from pipeline.analysis.framework import AnalysisContext, ArtifactStore
 from pipeline.analysis.framework.pipelines import PIPELINES
 from pipeline.analysis.framework.runner import run_pipeline, write_analysis_manifest
 from pipeline.analysis.io.discovery import find_latest_normalized_json
+from pipeline.analysis.io.organize_outputs import organize_analysis_outputs
 
 
 def run_suite(
@@ -110,6 +112,27 @@ def run_suite(
     stage_results += run_pipeline(ctx, stage_names=PIPELINES["reporting"], store=store, continue_on_error=True)
     if run_diagnostics:
         stage_results += run_pipeline(ctx, stage_names=PIPELINES["diagnostics"], store=store, continue_on_error=True)
+
+    # Plan A: reorganize output files for human UX.
+    #
+    # We intentionally do this *after* stages run (so they can keep writing to
+    # ctx.out_dir) but *before* the manifest is written, so manifest artifact
+    # paths reflect the reorganized layout.
+    organize_analysis_outputs(out_dir, store=store)
+
+    # benchmark_pack.json embeds an "artifacts" index. Because we reorganize
+    # files after the reporting stages run, rewrite the pack with the updated
+    # artifact paths so the pack stays internally consistent.
+    pack_path = Path(out_dir) / "benchmark_pack.json"
+    if pack_path.exists():
+        try:
+            parsed = json.loads(pack_path.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                parsed["artifacts"] = store.artifact_paths_rel(Path(out_dir))
+                pack_path.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
+        except Exception:
+            # Non-fatal: the pack remains usable even if the artifacts index is stale.
+            pass
 
     manifest_path = write_analysis_manifest(ctx, stage_results=stage_results, store=store)
 
