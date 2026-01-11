@@ -37,3 +37,5 @@ inputs/suite_inputs/*.csv
 
 # Legacy: older setups stored generated case CSVs under suites/
 suites/*.csv
+
+.DS_Store
