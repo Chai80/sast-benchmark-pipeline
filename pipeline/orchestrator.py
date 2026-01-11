@@ -12,8 +12,8 @@ As the codebase grew, this file became a large "composition root" mixing many
 responsibilities. To keep behavior identical while improving navigability, the
 implementations were split into focused modules:
 
-- :mod:`pipeline.run_case` (case execution)
-- :mod:`pipeline.analyze_mode` (analysis mode)
+- :mod:`pipeline.execution.run_case` (case execution)
+- :mod:`pipeline.execution.analyze_mode` (analysis mode)
 
 This module intentionally re-exports the public API so existing imports keep
 working:
@@ -25,8 +25,8 @@ working:
 
 from __future__ import annotations
 
-from pipeline.analyze_mode import AnalyzeRequest, run_analyze
-from pipeline.run_case import RunRequest, run_tools
+from pipeline.execution.analyze_mode import AnalyzeRequest, run_analyze
+from pipeline.execution.run_case import RunRequest, run_tools
 
 __all__ = [
     "AnalyzeRequest",
