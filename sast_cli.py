@@ -49,7 +49,7 @@ python sast_cli.py --mode analyze --metric suite --repo-key juice_shop --suite-i
 python sast_cli.py --mode benchmark --repo-key juice_shop --no-suite
 
 # Run a multi-case suite from a Python definition
-python sast_cli.py --mode suite --suite-file suites/example_suite.py
+python sast_cli.py --mode suite --suite-file examples/suite_inputs/example_suite.py
 """
 
 from __future__ import annotations
@@ -219,7 +219,8 @@ def parse_args() -> argparse.Namespace:
         dest="cases_from",
         help=(
             "(suite mode) Load cases from a CSV file (columns: case_id,repo_path[,label][,branch][,track][,tags_json]). "
-            "Useful for branch-per-case micro-suites and CI runs."
+            "Recommended locations: examples/suite_inputs/ (portable) or inputs/suite_inputs/ (local, ignored). "
+            "Useful for CI runs or when you need an explicit case list."
         ),
     )
 
@@ -227,7 +228,7 @@ def parse_args() -> argparse.Namespace:
         "--worktrees-root",
         dest="worktrees_root",
         help=(
-            "(suite mode) Import cases by discovering git worktrees/checkouts under this folder. "
+            "(suite mode) Import cases by discovering git worktrees/checkouts under this folder (recommended for branch-per-case suites). "
             "Each git checkout becomes one case. Example: repos/worktrees/durinn-owasp2021-python-micro-suite"
         ),
     )
@@ -783,7 +784,7 @@ def _build_suite_interactively(args: argparse.Namespace) -> SuiteDefinition:
             {
                 "add": "Add a new case",
                 "add_worktrees": "Add cases from local worktrees",
-                "add_csv": "Add cases from CSV file",
+                "add_csv": "Add cases from CSV file (legacy / CI)",
                 "done": "Finish suite definition",
             },
         )
@@ -861,7 +862,7 @@ def _build_suite_interactively(args: argparse.Namespace) -> SuiteDefinition:
             continue
 
         if action == "add_csv":
-            csv_in = _prompt_text("Cases CSV path", default="suites/cases.csv").strip()
+            csv_in = _prompt_text("Cases CSV path", default="inputs/suite_inputs/cases.csv").strip()
             csv_path = Path(csv_in).expanduser().resolve()
             loaded = _load_suite_cases_from_csv(csv_path)
             if not loaded:
@@ -1063,7 +1064,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline) ->
     elif suite_def.scanners:
         scanners = [t for t in suite_def.scanners if t in SUPPORTED_SCANNERS]
     else:
-        scanners = ["semgrep", "snyk", "sonar", "aikido"]
+        scanners = _parse_scanners_str(DEFAULT_SCANNERS_CSV)
 
     if not scanners:
         raise SystemExit("No valid scanners specified for suite mode.")

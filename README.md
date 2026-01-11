@@ -78,7 +78,7 @@ and compute cross-tool analysis (agreement/hotspots/taxonomy/triage + optional G
 ### Add a new scanner
 - Create `tools/scan_<tool>.py` entrypoint
 - Implement `tools/<tool>/runner.py` + `normalize.py`
-- Register in `pipeline/core.py`
+- Register in `pipeline/scanners.py`
 - Required artifacts: raw + normalized + metadata + run.json
 ### Add a new analysis metric
 - Add stage under `pipeline/analysis/stages/`

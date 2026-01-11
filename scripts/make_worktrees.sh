@@ -12,9 +12,14 @@ set -euo pipefail
 # Example (Durinn micro-suite):
 #   scripts/make_worktrees.sh https://github.com/Chai80/durinn-owasp2021-python-micro-suite.git
 #
-# After this completes, you can run:
+# After this completes, the recommended way to run a micro-suite is:
 #   python sast_cli.py --mode suite --suite-id owaspTest --scanners semgrep,snyk,sonar \
-#     --cases-from suites/<repo_name>_cases.csv
+#     --worktrees-root repos/worktrees/<repo_name>
+#
+# This script also writes a CSV work order by default (useful for CI and for
+# the legacy --cases-from flow):
+#   inputs/suite_inputs/<repo_name>_cases.csv
+# You can override the output path via the 4th argument.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -30,7 +35,7 @@ REPO_NAME="${REPO_NAME%.git}"
 
 BASE_REPO_DIR="${2:-${ROOT_DIR}/repos/${REPO_NAME}}"
 WORKTREES_ROOT="${3:-${ROOT_DIR}/repos/worktrees/${REPO_NAME}}"
-CASES_CSV="${4:-${ROOT_DIR}/suites/${REPO_NAME}_cases.csv}"
+CASES_CSV="${4:-${ROOT_DIR}/inputs/suite_inputs/${REPO_NAME}_cases.csv}"
 
 mkdir -p "$(dirname "${BASE_REPO_DIR}")" "$(dirname "${WORKTREES_ROOT}")" "$(dirname "${CASES_CSV}")"
 
@@ -102,5 +107,8 @@ echo "🧾 Writing cases CSV: ${CASES_CSV}" >&2
 echo "✅ Done." >&2
 
 echo "" >&2
-echo "Next:" >&2
+echo "Next (recommended):" >&2
+echo "  python sast_cli.py --mode suite --suite-id owaspTest --scanners semgrep,snyk,sonar --worktrees-root ${WORKTREES_ROOT}" >&2
+echo "" >&2
+echo "Next (optional CSV work order):" >&2
 echo "  python sast_cli.py --mode suite --suite-id owaspTest --scanners semgrep,snyk,sonar --cases-from ${CASES_CSV}" >&2

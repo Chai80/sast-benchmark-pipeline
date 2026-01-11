@@ -14,10 +14,12 @@ The design goal is **clean, non-spaghetti automation**:
 
 1. `sast_cli.py` — CLI + UX (modes + inputs)
 2. `pipeline/orchestrator.py` — high-level coordinator (cases/tools, manifests, errors)
-3. `pipeline/core.py` — scanner registry + builds the subprocess commands
-4. `sast_benchmark/io/layout.py` + `pipeline/bundles.py` — canonical output paths + suite/case manifests
-5. `pipeline/analysis/runner.py` + `pipeline/analysis/framework/*` — stage engine for analysis
-6. `tools/scan_semgrep.py` → `tools/semgrep/*` — representative scanner adapter pattern
+3. `pipeline/scanners.py` — scanner registry (supported tools, labels, scripts, tracks)
+4. `pipeline/core.py` — builds the subprocess commands (`tools/scan_*.py` invocations)
+5. `sast_benchmark/io/layout.py` + `pipeline/bundles.py` — canonical output paths + suite/case manifests
+6. `pipeline/analysis/runner.py` + `pipeline/analysis/framework/*` — stage engine for analysis
+7. `tools/scan_semgrep.py` → `tools/semgrep/*` — representative scanner adapter pattern
+
 
 ---
 
@@ -136,7 +138,7 @@ Stages write artifacts under each case’s `analysis/` folder and record outputs
    - `runner.py` executes the tool and writes raw output
    - `normalize.py` converts raw → `normalized.json` (schema v1.1)
 3. Use canonical layout helpers (`sast_benchmark.io.layout.prepare_run_paths(...)`).
-4. Register tool in `pipeline/core.py` (tool name -> entrypoint).
+4. Register tool in `pipeline/scanners.py` (tool name -> entrypoint + metadata).
 
 ### Add a new analysis metric
 

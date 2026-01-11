@@ -31,5 +31,9 @@ Thumbs.db
 node_modules/
 sample_runs/
 
-# Generated / machine-specific suite inputs
+
+# Suite inputs (do not commit machine-specific work orders)
+inputs/suite_inputs/*.csv
+
+# Legacy: older setups stored generated case CSVs under suites/
 suites/*.csv

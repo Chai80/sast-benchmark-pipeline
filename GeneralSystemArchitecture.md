@@ -15,7 +15,7 @@ The key idea is simple:
 
 The system effectively had **two competing sources of truth**:
 
-* **Suite inputs** (CSV files, suite `.py` files, worktrees discovery)
+* **Suite inputs** (CSV work orders, suite `.py` files, worktrees discovery)
 * **Suite outputs** (`runs/suites/<suite_id>/...`)
 
 Because the pipeline didn't have a single “resolution boundary”, different layers
@@ -23,7 +23,7 @@ re-derived IDs and paths.
 
 ```text
             (portable-ish)               (machine-specific)
-    suites/<workload>.py          suites/*.csv / worktrees root
+  examples/suite_inputs/<workload>.py      inputs/suite_inputs/*.csv / worktrees root
               |                         |
               |                         |
               +-----------+-------------+
