@@ -1,0 +1,47 @@
+flowchart TD
+  %% SAST Benchmark Pipeline — Mega Flow (Mermaid)
+  %% Paste into any Mermaid renderer (GitHub, Mermaid Live Editor)
+
+  subgraph CLI["CLI boundary (sast_cli.py)"]
+    A[Parse args & env] --> B{Mode}
+    B -->|scan| C1[Build single-case RunRequest]
+    B -->|benchmark| C2[Build single-case RunRequest (tools=N)]
+    B -->|suite| C3[Build SuiteDefinition (suite-file / worktrees-root / csv / prompts)]
+    B -->|analyze| C4[Resolve case dir + run analysis]
+  end
+
+  subgraph Pipeline["Pipeline boundary (pipeline/*)"]
+    P0[Build Pipeline (wiring.py)]
+    P1[Resolve suite inputs -> suite.json (suite_resolver.py)]
+    P2[Run tools (orchestrator.py)]
+    P3[Build scan cmd (core.py)]
+    P4[Resolve case dir (layout.py)]
+  end
+
+  subgraph Tools["Tools boundary (tools/*)"]
+    T1[tools/scan_<tool>.py] --> T2[tools/<tool> runner + normalize]
+  end
+
+  subgraph Analysis["Analysis boundary (pipeline/analysis/*)"]
+    AN1[Read normalized.json] --> AN2[Run stages/*] --> AN3[Write analysis/*]
+  end
+
+  subgraph FS["Filesystem (contracts)"]
+    F1[(runs/suites/<suite_id>/suite.json)]
+    F2[(.../cases/<case_id>/tool_runs/<tool>/<run_id>/raw.*)]
+    F3[(.../normalized.json)]
+    F4[(.../analysis/*)]
+  end
+
+  A --> P0
+  C1 --> P1
+  C2 --> P1
+  C3 --> P1
+
+  P1 --> F1
+  P1 --> P2
+  P2 --> P3 --> T1 --> T2 --> F2 --> F3
+  P2 --> AN1
+  AN3 --> F4
+
+  C4 --> P4 --> AN1
