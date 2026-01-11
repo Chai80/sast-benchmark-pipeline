@@ -1,0 +1,46 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+from pipeline.models import CaseSpec
+from pipeline.orchestrator import AnalyzeRequest
+from pipeline.pipeline import SASTBenchmarkPipeline
+from pipeline.scanners import DEFAULT_SCANNERS_CSV, SUPPORTED_SCANNERS
+
+
+def _parse_csv(raw: Optional[str]) -> list[str]:
+    if not raw:
+        return []
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+def run_analyze(
+    args,
+    pipeline: SASTBenchmarkPipeline,
+    *,
+    case: CaseSpec,
+    suite_root: Path,
+    suite_id: Optional[str],
+) -> int:
+    metric = args.metric or "hotspots"
+
+    tools_csv = args.tools or DEFAULT_SCANNERS_CSV
+    tools = [t for t in _parse_csv(tools_csv) if t in SUPPORTED_SCANNERS]
+
+    req = AnalyzeRequest(
+        metric=metric,
+        case=case,
+        suite_root=suite_root,
+        suite_id=suite_id,
+        case_path=args.bundle_path,
+        runs_dir=Path(args.runs_dir),
+        tools=tools,
+        output_format=str(args.format),
+        out=args.out,
+        analysis_out_dir=args.analysis_out_dir,
+        tolerance=int(args.tolerance),
+        analysis_filter=str(args.analysis_filter),
+        max_unique=int(args.max_unique),
+    )
+    return int(pipeline.analyze(req))
