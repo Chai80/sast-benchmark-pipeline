@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 
-from pipeline.layout import resolve_case_dir
+from pipeline.suites.layout import resolve_case_dir
 
 
 class TestCaseDirResolver(unittest.TestCase):

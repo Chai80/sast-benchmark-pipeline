@@ -17,21 +17,21 @@ from cli.suite_sources import (
     _resolve_repo_for_suite_case_interactive,
     _suite_case_from_repo_path,
 )
-from pipeline.bundles import anchor_under_repo_root, safe_name
+from pipeline.suites.bundles import anchor_under_repo_root, safe_name
 from pipeline.core import ROOT_DIR as PIPELINE_ROOT_DIR
-from pipeline.layout import new_suite_id
+from pipeline.suites.layout import new_suite_id
 from pipeline.models import CaseSpec
 from pipeline.orchestrator import RunRequest
 from pipeline.pipeline import SASTBenchmarkPipeline
 from pipeline.scanners import DEFAULT_SCANNERS_CSV, SUPPORTED_SCANNERS
-from pipeline.suite_definition import (
+from pipeline.suites.suite_definition import (
     SuiteAnalysisDefaults,
     SuiteCase,
     SuiteCaseOverrides,
     SuiteDefinition,
 )
-from pipeline.suite_py_loader import load_suite_py
-from pipeline.suite_resolver import SuiteInputProvenance, resolve_suite_run
+from pipeline.suites.suite_py_loader import load_suite_py
+from pipeline.suites.suite_resolver import SuiteInputProvenance, resolve_suite_run
 
 ROOT_DIR = PIPELINE_ROOT_DIR
 
@@ -232,7 +232,7 @@ def _write_suite_py(path: str | Path, suite_def: SuiteDefinition) -> Path:
     raw = suite_def.to_dict()
     # Keep this file minimal and stable.
     content = (
-        "from pipeline.suite_definition import SuiteDefinition\n\n"
+        "from pipeline.suites.suite_definition import SuiteDefinition\n\n"
         f"SUITE_RAW = {json.dumps(raw, indent=2, sort_keys=True)}\n\n"
         "SUITE_DEF = SuiteDefinition.from_dict(SUITE_RAW)\n"
     )
@@ -244,10 +244,10 @@ def _resolve_suite_case_for_run(sc: SuiteCase, *, repo_registry: Dict[str, Dict[
     """Legacy shim.
 
     Suite-mode resolution now happens through the explicit resolver boundary
-    (:func:`pipeline.suite_resolver.resolve_suite_run`). This helper remains as
+    (:func:`pipeline.suites.suite_resolver.resolve_suite_run`). This helper remains as
     a thin adapter for older codepaths/experiments.
     """
-    from pipeline.suite_resolver import resolve_suite_case
+    from pipeline.suites.suite_resolver import resolve_suite_case
 
     return resolve_suite_case(sc, repo_registry=repo_registry)
 

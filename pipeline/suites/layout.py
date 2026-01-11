@@ -2,7 +2,7 @@
 
 Filesystem layout helpers.
 
-This module is a thin wrapper around :mod:`pipeline.bundles` (the suite/case
+This module is a thin wrapper around :mod:`pipeline.suites.bundles` (the suite/case
 layout implementation) plus a small set of helper functions used by the CLI and
 analysis code.
 
@@ -19,7 +19,7 @@ Phase 1 of the CLI refactor moves:
 
 Notes
 -----
-- We keep the underlying implementation in pipeline.bundles for backwards
+- We keep the underlying implementation in pipeline.suites.bundles for backwards
   compatibility (some older patches and docs still refer to "bundles").
 - New code should prefer the "suite" terminology exposed here.
 """

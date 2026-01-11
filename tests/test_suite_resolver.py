@@ -5,8 +5,8 @@ from pathlib import Path
 
 
 from pipeline.models import CaseSpec, RepoSpec
-from pipeline.suite_definition import SuiteAnalysisDefaults, SuiteCase, SuiteDefinition
-from pipeline.suite_resolver import SuiteInputProvenance, resolve_suite_run
+from pipeline.suites.suite_definition import SuiteAnalysisDefaults, SuiteCase, SuiteDefinition
+from pipeline.suites.suite_resolver import SuiteInputProvenance, resolve_suite_run
 
 
 class TestSuiteResolver(unittest.TestCase):

@@ -14,7 +14,7 @@ import json
 import sys
 from pathlib import Path
 
-from pipeline.suite_definition import SuiteDefinition, load_suite_yaml
+from pipeline.suites.suite_definition import SuiteDefinition, load_suite_yaml
 
 
 def main(argv: list[str]) -> int:
@@ -39,7 +39,7 @@ def main(argv: list[str]) -> int:
     raw = suite_def.to_dict()
     dst.parent.mkdir(parents=True, exist_ok=True)
     content = (
-        "from pipeline.suite_definition import SuiteDefinition\n\n"
+        "from pipeline.suites.suite_definition import SuiteDefinition\n\n"
         f"SUITE_RAW = {json.dumps(raw, indent=2, sort_keys=True)}\n\n"
         "SUITE_DEF = SuiteDefinition.from_dict(SUITE_RAW)\n"
     )

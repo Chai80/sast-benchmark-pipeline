@@ -1,4 +1,4 @@
-from pipeline.suite_definition import SuiteDefinition
+from pipeline.suites.suite_definition import SuiteDefinition
 
 SUITE_RAW = {
   "analysis": {

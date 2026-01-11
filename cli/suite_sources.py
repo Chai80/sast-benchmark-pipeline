@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from cli.ui import choose_from_menu
-from pipeline.bundles import safe_name
+from pipeline.suites.bundles import safe_name
 from pipeline.core import repo_id_from_repo_url, sanitize_sonar_key_fragment
 from pipeline.models import CaseSpec, RepoSpec
-from pipeline.suite_definition import SuiteCase, SuiteCaseOverrides
+from pipeline.suites.suite_definition import SuiteCase, SuiteCaseOverrides
 
 
 def _discover_git_checkouts_under(root: Path) -> List[Path]:
