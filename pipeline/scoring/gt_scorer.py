@@ -32,6 +32,7 @@ For tolerance-based scoring, add clustering upstream (future work).
 
 """
 
+import argparse
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -96,3 +97,40 @@ def score_from_files(
                 ground_truth.append((str(row.get("file_path") or ""), row.get("line_number")))
 
     return score_locations(predicted=predicted, ground_truth=ground_truth, repo_name=repo_name)
+
+
+def main(argv: List[str] | None = None) -> None:  # pragma: no cover
+    """CLI entrypoint for quick GT scoring experiments.
+
+    This is intentionally small and filesystem-first: it reads a tool's
+    normalized.json output and a simple GT JSON catalog, then prints a score
+    report (or writes it to --out).
+    """
+    ap = argparse.ArgumentParser(
+        description="Score normalized findings against a GT JSON catalog (location-based)."
+    )
+    ap.add_argument("normalized_json", help="Path to normalized.json produced by a tool run")
+    ap.add_argument("gt_json", help="Path to GT JSON catalog (list of {file_path,line_number})")
+    ap.add_argument("--repo-name", help="Optional repo name used for file-path normalization")
+    ap.add_argument("--out", help="Optional output JSON path. If omitted, prints to stdout.")
+    args = ap.parse_args(argv)
+
+    norm_p = Path(args.normalized_json).expanduser()
+    gt_p = Path(args.gt_json).expanduser()
+    if not norm_p.exists():
+        raise SystemExit(f"normalized.json not found: {norm_p}")
+    if not gt_p.exists():
+        raise SystemExit(f"GT catalog not found: {gt_p}")
+
+    result = score_from_files(normalized_json=norm_p, gt_json=gt_p, repo_name=args.repo_name)
+    out = json.dumps(result, indent=2, sort_keys=True)
+    if args.out:
+        out_path = Path(args.out).expanduser()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(out + "\n", encoding="utf-8")
+    else:
+        print(out)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

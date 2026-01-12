@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pprint
 import shutil
 import sys
 from pathlib import Path
@@ -225,14 +226,16 @@ def _write_suite_py(path: str | Path, suite_def: SuiteDefinition) -> Path:
     """Write a suite definition as a Python file exporting SUITE_DEF.
 
     This is intended for *reruns* and provenance. Runtime orchestration must not use YAML/JSON.
+    Note: this file must be valid Python (True/False/None), so we use pprint not json.
     """
     p = Path(path).expanduser().resolve()
     p.parent.mkdir(parents=True, exist_ok=True)
 
     raw = suite_def.to_dict()
+    raw_py = pprint.pformat(raw, indent=2, sort_dicts=True)
     # Keep this file minimal and stable.
     content = (
-        "from pipeline.suites.suite_definition import SuiteDefinition\n\n"
+        f"SUITE_RAW = {raw_py}\n\n"
         f"SUITE_RAW = {json.dumps(raw, indent=2, sort_keys=True)}\n\n"
         "SUITE_DEF = SuiteDefinition.from_dict(SUITE_RAW)\n"
     )
