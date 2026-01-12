@@ -127,7 +127,10 @@ def build_scan_command(
     py = python_executable or PYTHON
     script = script_path(scanner)
 
-    cmd: List[str] = [py, str(script)]
+    # Prefer module execution so imports behave consistently (cwd rooted at repo root).
+    # This avoids relying on file paths like tools/scan_*.py.
+    module = f"tools.{script.stem}"
+    cmd: List[str] = [py, "-m", module]
 
     # ---- Scanner quirks ----
     if scanner == "aikido":
