@@ -127,7 +127,7 @@ def parse_args() -> argparse.Namespace:
         "--suite-file",
         dest="suite_file",
         help=(
-            "(suite mode) Optional Python suite definition (.py exporting SUITE_DEF). If omitted, you can build a suite interactively "
+            "(suite mode) Optional Python suite definition (.py exporting SUITE_DEF or SUITE_RAW). If omitted, you can build a suite interactively "
             "or use --cases-from / --worktrees-root to load many cases quickly. "
             "suite.json/case.json/run.json are always written as the ground-truth record of what actually ran."
         ),

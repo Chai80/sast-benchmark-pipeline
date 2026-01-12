@@ -113,6 +113,6 @@ re-deriving identifiers differently in multiple modules.
 
 ## Implementation note (where to look)
 
-* Resolver implementation: `pipeline/suite_resolver.py`
+* Resolver implementation: `pipeline/suites/suite_resolver.py`
 * Suite orchestration entrypoint: `sast_cli.py` (`run_suite_mode`)
-* Suite layout helpers (dirs + incremental suite.json updates): `pipeline/bundles.py`
+* Suite layout helpers (dirs + incremental suite.json updates): `pipeline/suites/bundles.py`

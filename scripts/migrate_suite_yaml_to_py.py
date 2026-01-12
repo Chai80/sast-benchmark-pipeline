@@ -10,7 +10,7 @@ The output .py will export:
 """
 from __future__ import annotations
 
-import json
+import pprint
 import sys
 from pathlib import Path
 
@@ -37,10 +37,12 @@ def main(argv: list[str]) -> int:
         return 2
 
     raw = suite_def.to_dict()
+    raw_py = pprint.pformat(raw, indent=2, sort_dicts=True)
+
     dst.parent.mkdir(parents=True, exist_ok=True)
     content = (
         "from pipeline.suites.suite_definition import SuiteDefinition\n\n"
-        f"SUITE_RAW = {json.dumps(raw, indent=2, sort_keys=True)}\n\n"
+        f"SUITE_RAW = {raw_py}\n\n"
         "SUITE_DEF = SuiteDefinition.from_dict(SUITE_RAW)\n"
     )
     dst.write_text(content, encoding="utf-8")
