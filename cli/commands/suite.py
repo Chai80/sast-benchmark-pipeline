@@ -418,11 +418,31 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
     suite_id = resolved_run.suite_id
     suite_dir = resolved_run.suite_dir
 
-    # If suite was built interactively, optionally write a Python suite file for reruns.
-    if not args.suite_file:
+    # If the user built this suite interactively, optionally write a Python suite file for reruns.
+    #
+    # If the suite came from --worktrees-root or --cases-from, the CLI command itself is already
+    # replayable, so don't prompt by default.
+    if prov.built_interactively:
         if _prompt_yes_no("Save this suite definition to a Python file for reruns?", default=False):
             default_out = suite_dir / "suite_definition.py"
-            out_path = _prompt_text("Python output path", default=str(default_out)).strip() or str(default_out)
+            raw_out = _prompt_text("Python output path (name or path)", default=str(default_out)).strip()
+
+            # If the user types a bare name like "Test1" (no slashes), treat it as a filename
+            # under the suite directory. This prevents accidental files being created in the repo root.
+            if not raw_out:
+                out_path = default_out
+            else:
+                s = raw_out.strip().strip('"').strip("'")
+                if ("/" not in s) and ("\\" not in s):
+                    name = safe_name(Path(s).stem) or "suite_definition"
+                    out_path = suite_dir / f"{name}.py"
+                else:
+                    p = Path(s).expanduser()
+                    if not p.is_absolute():
+                        p = suite_dir / p
+                    if p.suffix.lower() != ".py":
+                        p = p.with_suffix(".py")
+                    out_path = p
 
             to_write = SuiteDefinition(
                 suite_id=suite_id,
@@ -431,8 +451,8 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 analysis=analysis_defaults,
             )
             try:
-                _write_suite_py(out_path, to_write)
-                print(f"  ✅ Wrote suite definition: {out_path}")
+                written = _write_suite_py(out_path, to_write)
+                print(f"  ✅ Wrote suite definition: {written}")
             except Exception as e:
                 print(f"  ⚠️  Failed to write suite definition .py: {e}")
 

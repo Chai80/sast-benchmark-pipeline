@@ -14,7 +14,7 @@ We enrich issues by fetching rule details, then parsing them here.
 Notes:
 - SonarCloud may emit OWASP 2021 identifiers as `A1`..`A10` (no leading zero).
   The pipeline uses canonical 2021 codes `A01`..`A10`.
-- We rely on `tools.classification_resolver` for the canonical OWASP code
+- We rely on `tools.normalize.classification` for the canonical OWASP code
   normalization + name tables so all scanners stay consistent.
 """
 
@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from tools.classification_resolver import (
+from tools.normalize.classification import (
     OWASP_TOP_10_2017_NAMES,
     OWASP_TOP_10_2021_NAMES,
     normalize_owasp_top10_code,

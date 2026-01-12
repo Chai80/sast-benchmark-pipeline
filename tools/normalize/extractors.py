@@ -1,4 +1,4 @@
-"""tools/normalize_extractors.py
+"""tools/normalize/extractors.py
 
 Shared, boring, reusable extraction helpers for scanner normalizers.
 
@@ -33,7 +33,7 @@ from .classification import normalize_cwe_id, normalize_owasp_top10_code
 
 
 # NOTE: These regexes are for *finding candidates* in text. Canonical
-# normalization lives in classification_resolver.normalize_cwe_id / normalize_owasp_top10_code.
+# canonical normalization lives in normalize_cwe_id / normalize_owasp_top10_code.
 _CWE_RE = re.compile(r"(?i)\bCWE[-_ ]?(\d{1,6})\b")
 _OWASP_2021_RE = re.compile(r"(?i)\bA0?(10|[1-9])\b")  # matches A1/A01..A10
 

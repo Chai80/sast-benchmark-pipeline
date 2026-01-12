@@ -1,4 +1,4 @@
-"""tools/classification_resolver.py
+"""tools/normalize/classification.py
 
 Centralized OWASP/CWE resolution logic used by *all* scanner normalizers.
 

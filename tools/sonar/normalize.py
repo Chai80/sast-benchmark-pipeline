@@ -12,13 +12,12 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from tools.normalize_common import (
+from tools.normalize.common import (
     build_per_finding_metadata,
     build_scan_info,
     build_target_repo,
-    read_line_content,
-    write_json,
 )
+from tools.io import read_line_content, write_json
 
 from tools.core import finalize_normalized_findings
 
