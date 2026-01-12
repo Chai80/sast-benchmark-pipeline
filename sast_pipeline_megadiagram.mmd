@@ -1,47 +1,100 @@
 flowchart TD
-  %% SAST Benchmark Pipeline — Mega Flow (Mermaid)
-  %% Paste into any Mermaid renderer (GitHub, Mermaid Live Editor)
+  %% Durinn SAST Benchmark Pipeline — Mega Diagram (updated)
+  %% Control flow + ownership boundaries + key filesystem artifacts
 
-  subgraph CLI["CLI boundary (sast_cli.py)"]
-    A[Parse args & env] --> B{Mode}
-    B -->|scan| C1[Build single-case RunRequest]
-    B -->|benchmark| C2[Build single-case RunRequest (tools=N)]
-    B -->|suite| C3[Build SuiteDefinition (suite-file / worktrees-root / csv / prompts)]
-    B -->|analyze| C4[Resolve case dir + run analysis]
+  subgraph CLI["CLI / UX (sast_cli.py, cli/*)"]
+    direction TB
+    CLI0[Parse args & env<br/>(sast_cli.py)] --> CLI1[Build pipeline facade<br/>(pipeline/wiring.build_pipeline)]
+    CLI1 --> CLI2[Dispatch mode<br/>(cli/dispatch.dispatch)]
+    CLI2 -->|scan| CLI_SCAN[run_scan<br/>(cli/commands/scan.py)]
+    CLI2 -->|benchmark| CLI_BENCH[run_benchmark<br/>(cli/commands/benchmark.py)]
+    CLI2 -->|suite| CLI_SUITE[run_suite_mode<br/>(cli/commands/suite.py)]
+    CLI2 -->|analyze| CLI_ANALYZE[run_analyze<br/>(cli/commands/analyze.py)]
   end
 
-  subgraph Pipeline["Pipeline boundary (pipeline/*)"]
-    P0[Build Pipeline (wiring.py)]
-    P1[Resolve suite inputs -> suite.json (suite_resolver.py)]
-    P2[Run tools (orchestrator.py)]
-    P3[Build scan cmd (core.py)]
-    P4[Resolve case dir (layout.py)]
+  subgraph Suites["Suite planning + layout (pipeline/suites/*)"]
+    direction TB
+    SU0[Collect suite inputs<br/>(suite-file / CSV / worktrees / prompts)<br/>(cli/suite_sources.py)] --> SU1[Build SuiteDefinition<br/>(pipeline/suites/suite_definition.py)]
+    SU1 --> SU2[Resolve suite run<br/>(pipeline/suites/suite_resolver.resolve_suite_run)]
+    SU2 --> SU_LOOP{for each case}
   end
 
-  subgraph Tools["Tools boundary (tools/*)"]
-    T1[tools/scan_<tool>.py] --> T2[tools/<tool> runner + normalize]
+  subgraph Pipeline["Pipeline / Orchestration (pipeline/*)"]
+    direction TB
+    P0[SASTBenchmarkPipeline facade<br/>(pipeline/pipeline.py)]
+    P1[RunRequest / AnalyzeRequest<br/>(pipeline/models.py)]
+    P2[run_tools (scan|benchmark|suite-case)<br/>(pipeline/execution/run_case.py)]
+    P3[run_analyze (post-hoc)<br/>(pipeline/execution/analyze_mode.py)]
+    P4[Build scan cmd<br/>(pipeline/core.build_scan_command)]
   end
 
-  subgraph Analysis["Analysis boundary (pipeline/analysis/*)"]
-    AN1[Read normalized.json] --> AN2[Run stages/*] --> AN3[Write analysis/*]
+  subgraph Tools["Tool runner boundary (tools/*)"]
+    direction TB
+    T0[tools/scan_*.py<br/>(stable entrypoint)] --> T1[tools/&lt;tool&gt;/*<br/>(runner + normalize)]
+    T1 --> T2[Artifacts written<br/>raw.* + normalized.json<br/>metadata.json + run.json + logs/]
   end
 
-  subgraph FS["Filesystem (contracts)"]
-    F1[(runs/suites/<suite_id>/suite.json)]
-    F2[(.../cases/<case_id>/tool_runs/<tool>/<run_id>/raw.*)]
-    F3[(.../normalized.json)]
-    F4[(.../analysis/*)]
+  subgraph Analysis["Analysis (pipeline/analysis/*)"]
+    direction TB
+    AN0[Read normalized.json] --> AN1[Compute metrics / exports / scoring] --> AN2[Write case_dir/analysis/*]
   end
 
-  A --> P0
-  C1 --> P1
-  C2 --> P1
-  C3 --> P1
+  subgraph Contracts["Contracts (sast_benchmark/*)"]
+    direction TB
+    C0[sast_benchmark/io/layout.py<br/>(paths + discovery)]
+    C1[sast_benchmark/io/run_dir.py<br/>(run_id + run_dir)]
+    C2[sast_benchmark/domain/*<br/>(normalized schema types)]
+  end
 
-  P1 --> F1
-  P1 --> P2
-  P2 --> P3 --> T1 --> T2 --> F2 --> F3
-  P2 --> AN1
-  AN3 --> F4
+  subgraph FS["Filesystem contract (runs/...)"]
+    direction TB
+    F0[runs/suites/LATEST]
+    F1[runs/suites/{suite_id}/suite.json]
+    F2[runs/suites/{suite_id}/summary.csv]
+    F3[runs/suites/{suite_id}/cases/{case_id}/case.json]
+    F4[runs/suites/{suite_id}/cases/{case_id}/tool_runs/{tool}/{run_id}/]
+    F5[runs/suites/{suite_id}/cases/{case_id}/analysis/]
+    FLEG[runs/{tool}/{repo_name}/{run_id}/...<br/>(legacy when --no-bundle)]
+  end
 
-  C4 --> P4 --> AN1
+  %% Mode wiring
+  CLI_SCAN --> P1 --> P0 --> P2
+  CLI_BENCH --> P1
+  CLI_BENCH --> P0
+  P0 --> P2
+
+  CLI_SUITE --> SU0
+  SU_LOOP --> P1
+  SU_LOOP --> P0
+  SU_LOOP --> P2
+
+  CLI_ANALYZE --> P1 --> P0 --> P3
+
+  %% Suite resolution artifacts
+  SU2 --> F0
+  SU2 --> F1
+  SU2 --> F2
+
+  %% run_tools: suite vs legacy rooting
+  P2 --> D0{use_suite?}
+  D0 -->|yes| F3
+  D0 -->|no| FLEG
+
+  %% Tool execution + artifacts
+  P2 --> P4 --> T0 --> T1 --> T2
+  T2 --> F4
+
+  %% Optional analysis
+  P2 -->|optional| AN0
+  AN2 --> F5
+
+  %% Analyze mode reads existing outputs
+  P3 --> F1
+  P3 --> F3
+  P3 --> AN0
+
+  %% Dependency direction: pipeline/tools depend on contracts
+  P2 -. uses .-> C0
+  T0 -. uses .-> C0
+  T0 -. uses .-> C1
+  AN0 -. reads .-> C2

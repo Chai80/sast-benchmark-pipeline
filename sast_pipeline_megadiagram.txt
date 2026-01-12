@@ -1,5 +1,6 @@
-SAST Benchmark Pipeline — “Mega” Diagram (Control + Ownership + Artifacts)
-=========================================================================
+Durinn SAST Benchmark Pipeline — “Mega” Diagram (Control + Ownership + Artifacts)
+================================================================================
+
 Goal of this diagram:
   1) Show *where everything belongs* (ownership / layering)
   2) Show the *one true runtime flow* (scan/benchmark/suite are parameterizations)
@@ -20,64 +21,78 @@ A) OWNERSHIP / LAYERING  (where everything belongs)
 
 +----------------------------------------------------------------------------------+
 | (Boundary) CLI / UX layer                                                        |
-|  module: sast_cli.py                                                             |
+|  entrypoint: sast_cli.py                                                         |
+|  modules: cli/dispatch.py, cli/commands/*.py, cli/ui.py, cli/common.py,           |
+|           cli/suite_sources.py                                                   |
 |                                                                                  |
 |  Responsibilities:                                                               |
-|   - Parse CLI args and environment                                                |
-|   - Choose mode (scan / benchmark / suite / analyze)                              |
-|   - Collect “suite inputs” (suite-file, worktrees-root, cases-from CSV, prompts) |
-|   - Build RunRequest / SuiteDefinition and call into pipeline                     |
+|   - Parse CLI args and environment                                               |
+|   - Choose mode (scan / benchmark / suite / analyze)                             |
+|   - Build CaseSpec / RepoSpec (single-case modes)                                |
+|   - Collect “suite inputs” (suite-file, worktrees-root, cases-from CSV, prompts)|
+|   - Build RunRequest / AnalyzeRequest and call the pipeline facade               |
 +------------------------------------------+---------------------------------------+
                                            |
                                            v
 +----------------------------------------------------------------------------------+
-| (Boundary) Pipeline / Orchestration layer                                         |
-|  modules: pipeline/wiring.py, pipeline/orchestrator.py, pipeline/core.py,         |
-|           pipeline/suite_resolver.py, pipeline/layout.py, pipeline/bundles.py,    |
-|           pipeline/scanners.py                                                   |
+| (Boundary) Pipeline / Orchestration layer                                        |
+|  modules: pipeline/wiring.py          (composition root; loads .env)             |
+|           pipeline/pipeline.py        (SASTBenchmarkPipeline facade)             |
+|           pipeline/models.py          (RepoSpec / CaseSpec / manifests)          |
+|           pipeline/scanners.py        (supported scanners + defaults)            |
+|           pipeline/core.py            (build scan_<tool> command lines)          |
+|           pipeline/execution/run_case.py    (run_tools implementation)           |
+|           pipeline/execution/analyze_mode.py (run_analyze implementation)        |
+|           pipeline/suites/*           (suite resolver + layout helpers)          |
 |                                                                                  |
 |  Responsibilities:                                                               |
-|   - Build pipeline config (wiring)                                               |
-|   - Resolve suite inputs -> canonical manifest (suite.json)                       |
-|   - Resolve case dirs (filesystem truth; '_' <-> '-')                             |
-|   - Construct tool commands (core)                                               |
-|   - Execute tool runs + write run.json/case.json updates (orchestrator)          |
+|   - Resolve suite inputs -> canonical manifest (suite.json)                      |
+|   - Resolve case dirs & ids (filesystem truth; '-' <-> '_' variants)             |
+|   - Construct tool commands (core.py)                                            |
+|   - Execute tool runs + write suite/case manifests + summary.csv                 |
+|   - Invoke optional post-processing analysis (per-case)                          |
 +------------------------------------------+---------------------------------------+
                                            |
                                            v
 +----------------------------------------------------------------------------------+
 | (Boundary) Tool runner layer                                                     |
-|  modules: tools/scan_<tool>.py (entrypoints)                                     |
-|           tools/<tool>/* (runner/normalize/transform helpers)                    |
+|  modules: tools/scan_<tool>.py (stable subprocess entrypoints)                   |
+|           tools/<tool>/* (runner/normalize helpers)                              |
+|           tools/core.py + tools/io.py + tools/normalize/* (shared plumbing)      |
 |                                                                                  |
 |  Responsibilities:                                                               |
-|   - Run the scanner CLI/API (Semgrep/Snyk/Sonar/Aikido/...)                       |
-|   - Capture raw output + normalize to a common schema                             |
-|   - Write tool-run artifacts in the run directory                                 |
+|   - Acquire repo (clone/reuse OR use local --repo-path)                          |
+|   - Run the scanner CLI/API (Semgrep/Snyk/Sonar/Aikido/...)                      |
+|   - Capture raw output + normalize to a common schema                            |
+|   - Write tool-run artifacts in the tool run directory                           |
 +------------------------------------------+---------------------------------------+
                                            |
                                            v
 +----------------------------------------------------------------------------------+
 | (Boundary) Analysis layer                                                        |
-|  modules: pipeline/analysis/analyze_suite.py + pipeline/analysis/stages/*         |
+|  modules: pipeline/analysis/analyze_suite.py (legacy entrypoint used by run_case)|
+|           pipeline/analysis/framework/*, pipeline/analysis/stages/*              |
+|           pipeline/analysis/exports/*, pipeline/scoring/*                        |
 |                                                                                  |
 |  Responsibilities:                                                               |
 |   - Read normalized outputs                                                      |
-|   - Compute metrics / exports / reports                                           |
+|   - Compute metrics / exports / reports / scoring                                |
 |   - Write analysis artifacts under case_dir/analysis                              |
 +------------------------------------------+---------------------------------------+
                                            |
                                            v
 +----------------------------------------------------------------------------------+
 | (Boundary) Contracts / Domain layer                                               |
-|  modules: sast_benchmark/* (domain + io + layout)                                 |
+|  modules: sast_benchmark/domain/* (normalized finding types)                      |
+|           sast_benchmark/io/layout.py (paths + run discovery)                     |
+|           sast_benchmark/io/run_dir.py (run dir creation)                         |
 |                                                                                  |
 |  Responsibilities:                                                               |
-|   - Define stable filesystem / schema contracts                                   |
-|   - Provide IO + layout helpers usable by multiple layers                          |
+|   - Define stable filesystem + artifact naming contracts                          |
+|   - Provide IO + layout helpers usable by multiple layers                         |
 |                                                                                  |
-|  NOTE: dependency boundary rule (enforced by tests):                              |
-|    sast_benchmark/* must NOT import pipeline/* or tools/*                          |
+|  NOTE: dependency boundary rule (guardrail):                                     |
+|    sast_benchmark/* must NOT import pipeline/* or tools/*                         |
 +----------------------------------------------------------------------------------+
 
 
@@ -89,92 +104,118 @@ B) ONE TRUE RUNTIME FLOW  (modes are parameters)
   |
   v
 [CLI parse + validate args]
-  (module: sast_cli.py)
+  (module: sast_cli.py -> cli/dispatch.py)
   |
   v
-[Build Pipeline object]
-  (module: pipeline/wiring.py)
+[Build Pipeline facade]
+  (module: pipeline/wiring.py -> pipeline/pipeline.py)
   |
   v
 [Choose MODE]
   |
-  +--> (scan)      -> CASES = 1, TOOLS = 1
-  +--> (benchmark) -> CASES = 1, TOOLS = N
-  +--> (suite)     -> CASES = M, TOOLS = N
+  +--> (scan)      -> CASES = 1, TOOLS = 1 (analysis skipped)
+  +--> (benchmark) -> CASES = 1, TOOLS = N (analysis optional)
+  +--> (suite)     -> CASES = M, TOOLS = N (analysis optional)
   \--> (analyze)   -> no scanning; read existing outputs only
 
 
 ---------------------------------------
-FLOW FOR scan/benchmark/suite (shared)
+FLOW FOR scan/benchmark  (single-case)
+---------------------------------------
+
+[Build CaseSpec + RunRequest]
+  (module: cli/commands/scan.py | cli/commands/benchmark.py)
+  |
+  v
+[pipeline.run(req)]
+  (module: pipeline/pipeline.py)
+  |
+  v
+[run_tools(req)]
+  (module: pipeline/execution/run_case.py)
+  |
+  v
+[If use_suite=True (default): ensure suite/case dirs + manifests]
+  (module: pipeline/suites/bundles.py + pipeline/suites/layout.py)
+  (artifact: runs/suites/<suite_id>/suite.json)    (incremental)
+  (artifact: runs/suites/<suite_id>/summary.csv)   (incremental)
+  (artifact: runs/suites/<suite_id>/cases/<case_id>/case.json)
+  (artifact: runs/suites/LATEST)
+  |
+  v
+{ FOR EACH TOOL in scanners }
+  |
+  v
+  [Build scan command]
+    (module: pipeline/core.py)
+    -> python tools/scan_<tool>.py ...
+  |
+  v
+  [Execute tool entrypoint]
+    (module: tools/scan_<tool>.py)
+    |
+    v
+    (tool writes artifacts)
+      - raw.*                (scanner-specific: sarif/json/etc.)
+      - normalized.json       (cross-tool contract)
+      - metadata.json
+      - logs/
+      - run.json
+    (artifact root when use_suite=True):
+      runs/suites/<suite_id>/cases/<case_id>/tool_runs/<tool>/<run_id>/
+    (artifact root when use_suite=False / --no-bundle):
+      runs/<tool>/<repo_name>/<run_id>/   (legacy compatibility)
+  |
+  v
+{ END TOOL LOOP }
+  |
+  v
+[Optional per-case analysis]
+  (module: pipeline/analysis/analyze_suite.py + stages/*)
+  (artifact: runs/suites/<suite_id>/cases/<case_id>/analysis/*)
+  |
+  v
+[Update suite summary + exit]
+  (artifact: runs/suites/<suite_id>/summary.csv)
+  |
+  v
+[EXIT]
+
+
+---------------------------------------
+FLOW FOR suite  (multi-case)
 ---------------------------------------
 
 [Collect “suite inputs”]
-  (module: sast_cli.py)
+  (module: cli/commands/suite.py + cli/suite_sources.py)
   Inputs may be ANY of:
-    - --repo-path (local checkout)
-    - --repo-url / repo-key (will acquire a local clone, default branch only)
-    - --suite-file (python suite definition)
+    - --suite-file (python SUITE_DEF)
     - --worktrees-root (auto-discover local checkouts => cases)
     - --cases-from (CSV “work order” => cases)
     - interactive prompts (build suite definition manually)
   |
   v
-[Resolve suite plan -> suite.json]
-  (module: pipeline/suite_resolver.py)
+[Resolve suite plan -> suite.json + summary scaffolding]
+  (module: pipeline/suites/suite_resolver.py)
   (artifact: runs/suites/<suite_id>/suite.json)
   (artifact: runs/suites/<suite_id>/README.txt)
   (artifact: runs/suites/<suite_id>/summary.csv)
-  (artifact: runs/suites/LATEST)   (when applicable)
+  (artifact: runs/suites/LATEST)
   |
   v
-{ FOR EACH CASE in suite.json  (CASES=1 for scan/benchmark; CASES=M for suite) }
+{ FOR EACH CASE in suite.json }
   |
   v
   [Create RunRequest for case]
-    - includes suite_id, case_id, repo_path, scanners list, track, etc.
-    (module: sast_cli.py -> pipeline entry)
+    (module: cli/commands/suite.py)
   |
   v
-  [Run tools for case]
-    (module: pipeline/orchestrator.py)
-    |
-    v
-    { FOR EACH TOOL in scanners  (TOOLS=1 for scan; TOOLS=N for benchmark/suite) }
-      |
-      v
-      [Create tool run dir + run_id]
-        (artifact: runs/suites/<suite_id>/cases/<case_id>/tool_runs/<tool>/<run_id>/)
-      |
-      v
-      [Build scan command]
-        (module: pipeline/core.py)
-        (uses: pipeline/scanners.py for scripts/defaults/tracks)
-      |
-      v
-      [Execute tool entrypoint]
-        (module: tools/scan_<tool>.py)
-        |
-        v
-        (tool writes artifacts)
-          - raw.*                (sarif/json/etc.)
-          - normalized.json
-          - metadata.json
-          - logs/
-          - run.json
-      |
-      v
-    { END TOOL LOOP }
-  |
-  v
-  [Optional per-case analysis]
-    (module: pipeline/analysis/analyze_suite.py + stages/*)
-    Condition examples:
-      - auto-analysis for benchmark/suite unless --skip-analysis
-    (artifact: runs/suites/<suite_id>/cases/<case_id>/analysis/*)
+  [pipeline.run(req) -> run_tools(req)]
+    (module: pipeline/pipeline.py -> pipeline/execution/run_case.py)
+    (same tool loop + optional analysis as scan/benchmark)
   |
   v
 { END CASE LOOP }
-
   |
   v
 [Suite complete]
@@ -191,18 +232,26 @@ FLOW FOR analyze (post-hoc)
 (mode=analyze)
   |
   v
-[Resolve case directory]
-  (module: pipeline/layout.py)
+[Build AnalyzeRequest]
+  (module: cli/commands/analyze.py)
+  |
+  v
+[pipeline.analyze(req)]
+  (module: pipeline/pipeline.py)
+  |
+  v
+[Resolve suite/case directory]
+  (module: pipeline/suites/layout.py)
   - accepts suite_id='latest' via runs/suites/LATEST
-  - case_id is resolved using filesystem truth + '_' <-> '-' variants
+  - case_id resolution tolerates '-' <-> '_' variants
   |
   v
 [Discover tool runs + select normalized.json]
-  (module: pipeline/analysis/*)
+  (module: sast_benchmark/io/layout.py + pipeline/execution/analyze_mode.py)
   |
   v
-[Run analysis stages]
-  (artifact: <case_dir>/analysis/*)
+[Run analysis/reporting]
+  (artifact: <case_dir>/analysis/* or --out path)
   |
   v
 [EXIT]
@@ -217,21 +266,22 @@ repos/
   worktrees/<repo_name>/<branch_or_case>/      # recommended for micro-suites
 
 runs/
-  suites/<suite_id>/
-    suite.json
-    README.txt
-    summary.csv
+  suites/<suite_id>/                           # suite layout (preferred)
+    README.txt                                 # "start here"
+    suite.json                                  # suite manifest (cases, tools, timestamps)
+    summary.csv                                 # one row per case
     cases/<case_id>/
-      case.json
+      case.json                                 # per-case manifest (what ran)
       tool_runs/<tool>/<run_id>/
-        raw.*                     # scanner-specific
-        normalized.json           # pipeline-common
+        raw.*                                   # scanner-specific
+        normalized.json                          # pipeline-common contract
         metadata.json
         logs/
         run.json
       analysis/
-        *.csv / *.json / *.md     # analysis stages outputs
-      gt/                         # optional ground truth assets
+        *.csv / *.json / *.md                   # analysis stage outputs
+      gt/                                       # optional ground-truth assets
+  suites/LATEST                                 # pointer file containing latest suite_id
 
-NOTE: legacy non-suite runs may exist under runs/<tool>/<repo>/<run_id>/,
-but suite layout is the preferred stable contract for analysis and exports.
+NOTE: legacy non-suite runs may exist under runs/<tool>/<repo_name>/<run_id>/,
+but suite layout (runs/suites/...) is the preferred stable contract for analysis and exports.

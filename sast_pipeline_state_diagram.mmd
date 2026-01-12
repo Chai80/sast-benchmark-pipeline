@@ -1,0 +1,92 @@
+stateDiagram-v2
+  %% Durinn SAST Benchmark Pipeline — Runtime State Machine (high level)
+  %% This focuses on control-flow states (not ownership boundaries).
+
+  [*] --> ParseArgs
+  ParseArgs --> BuildPipeline
+  BuildPipeline --> DispatchMode
+
+  DispatchMode --> RunSingleCase: mode=scan
+  DispatchMode --> RunSingleCase: mode=benchmark
+  DispatchMode --> ResolveSuite: mode=suite
+  DispatchMode --> RunAnalyze: mode=analyze
+
+  state RunSingleCase {
+    [*] --> BuildRunRequest
+    BuildRunRequest --> EnsureBundle
+    EnsureBundle --> ToolLoop
+
+    note right of EnsureBundle
+      When use_suite=true:
+        - ensure suite/case dirs
+        - write runs/suites/LATEST
+        - update suite.json + case.json + summary.csv
+      When use_suite=false:
+        - tools write to legacy runs/{tool}/{repo}/{run_id}/...
+    end note
+
+    state ToolLoop {
+      [*] --> BuildCmd
+      BuildCmd --> ExecuteTool
+      ExecuteTool --> WriteArtifacts
+      WriteArtifacts --> NextTool
+      NextTool --> BuildCmd: more tools
+      NextTool --> [*]: done
+    }
+
+    note right of WriteArtifacts
+      Tool-run artifacts:
+        - raw.* (scanner specific)
+        - normalized.json
+        - metadata.json
+        - run.json
+        - logs/
+    end note
+
+    ToolLoop --> OptionalAnalysis
+    OptionalAnalysis --> UpdateManifests
+    UpdateManifests --> [*]
+
+    note right of OptionalAnalysis
+      Per-case analysis writes:
+        runs/suites/{suite_id}/cases/{case_id}/analysis/*
+    end note
+  }
+
+  state ResolveSuite {
+    [*] --> CollectSuiteInputs
+    CollectSuiteInputs --> BuildSuiteDefinition
+    BuildSuiteDefinition --> WriteSuiteManifest
+    WriteSuiteManifest --> [*]
+
+    note right of WriteSuiteManifest
+      Suite scaffolding:
+        - runs/suites/{suite_id}/suite.json
+        - runs/suites/{suite_id}/README.txt
+        - runs/suites/{suite_id}/summary.csv
+        - runs/suites/LATEST
+    end note
+  }
+
+  ResolveSuite --> RunSuiteCases
+
+  state RunSuiteCases {
+    [*] --> CaseLoop
+    CaseLoop --> RunSingleCase: next case
+    RunSingleCase --> CaseLoop: until exhausted
+    CaseLoop --> [*]
+  }
+
+  state RunAnalyze {
+    [*] --> ResolveCaseDir
+    ResolveCaseDir --> DiscoverRuns
+    DiscoverRuns --> RunReports
+    RunReports --> [*]
+
+    note right of ResolveCaseDir
+      Accepts suite_id="latest" via runs/suites/LATEST.
+      Case id resolution tolerates '-' <-> '_' variants.
+    end note
+  }
+
+  RunAnalyze --> [*]
