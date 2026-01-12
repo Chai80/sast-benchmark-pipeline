@@ -155,6 +155,10 @@ def fetch_all_issues_for_project(cfg: SonarConfig, project_key: str) -> List[Dic
 
     while True:
         params = {
+            # SonarQube/SonarCloud API param names changed in 10.2:
+            #   componentKeys -> components
+            # Keep both for backward/forward compatibility.
+            "components": project_key,
             "componentKeys": project_key,
             "organization": cfg.org,
             "ps": page_size,
