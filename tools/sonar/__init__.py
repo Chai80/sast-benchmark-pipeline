@@ -6,5 +6,8 @@ Split into:
   - normalize.py: base normalization + optional enrichment glue
   - types.py    : small shared data structures
 
-The scan_sonar.py script acts as the orchestration layer.
+Orchestration implementation lives in tools/sonar/runner.py.
+
+The stable script entrypoint used by the pipeline remains:
+  tools/scan_sonar.py
 """

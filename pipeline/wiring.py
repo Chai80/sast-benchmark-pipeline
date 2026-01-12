@@ -16,8 +16,9 @@ from being duplicated across entrypoints (CLI, scripts, notebooks, CI).
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 from pipeline.core import ROOT_DIR
 from pipeline.pipeline import SASTBenchmarkPipeline
@@ -27,41 +28,22 @@ ENV_PATH: Path = ROOT_DIR / ".env"
 
 
 def load_dotenv_if_present(dotenv_path: Path = ENV_PATH) -> None:
-    """Minimal .env loader.
+    """Load environment variables from a .env file (if present).
 
-    Loads KEY=VALUE lines into ``os.environ`` if the key is not already set.
+    Uses ``python-dotenv`` for consistent parsing across:
+    - the pipeline wiring (CLI)
+    - tool runners (e.g. Sonar / Aikido)
 
-    Design goals:
-    - no third-party dependency
-    - simple quoting support
-    - safe-ish comment stripping for common cases
+    Behavior:
+    - If the file doesn't exist, no-op.
+    - Values do **not** override existing environment variables.
     """
 
     if not dotenv_path.exists():
         return
 
-    for raw in dotenv_path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-
-        key, val = line.split("=", 1)
-        key = key.strip()
-        raw_val = val.strip()
-
-        # Quoted value
-        if (raw_val.startswith('"') and raw_val.endswith('"')) or (
-            raw_val.startswith("'") and raw_val.endswith("'")
-        ):
-            parsed_val = raw_val[1:-1]
-        else:
-            # Strip inline comments only when preceded by whitespace: "VALUE   # comment"
-            parsed_val = re.split(r"\s+#", raw_val, maxsplit=1)[0].strip()
-            parsed_val = parsed_val.strip('"').strip("'")
-
-        parsed_val = parsed_val.replace("\r", "")
-        if key and key not in os.environ:
-            os.environ[key] = parsed_val
+    # Keep the same "do not override" semantics as our old custom loader.
+    load_dotenv(dotenv_path, override=False)
 
 
 def build_pipeline(*, load_dotenv: bool = True) -> SASTBenchmarkPipeline:
