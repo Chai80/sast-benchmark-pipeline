@@ -26,8 +26,10 @@ Notes
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from pathlib import Path
-from typing import Optional, Sequence, Union
+from typing import Any, Dict, Optional, Sequence, Union
 
 from sast_benchmark.io.layout import (
     discover_latest_run_dir as _discover_latest_run_dir,
@@ -35,16 +37,88 @@ from sast_benchmark.io.layout import (
 )
 
 from pipeline.suites.bundles import (
-    BundlePaths as SuitePaths,
+    BundlePaths,
     anchor_under_repo_root,
-    ensure_bundle_dirs as ensure_suite_dirs,
+    ensure_bundle_dirs,
     get_bundle_paths,
     new_bundle_id,
     safe_name,
-    update_suite_artifacts,
-    write_latest_pointer as write_latest_suite_pointer,
+    update_suite_artifacts as _update_suite_artifacts,
+    write_latest_pointer as _write_latest_pointer,
 )
 
+
+
+
+@dataclass(frozen=True)
+class SuitePaths:
+    """Computed filesystem paths for one case inside one suite.
+
+    This is the canonical 'suite' terminology view used by the pipeline. Internally,
+    the legacy implementation lives in :class:`pipeline.suites.bundles.BundlePaths`.
+    """
+
+    suite_root: Path
+    case_id: str
+    suite_id: str
+
+    # Suite-level
+    suite_dir: Path
+    cases_dir: Path
+    suite_readme_path: Path
+    suite_json_path: Path
+    suite_summary_path: Path
+    latest_pointer_path: Path  # runs/suites/LATEST
+
+    # Case-level
+    case_dir: Path
+    tool_runs_dir: Path
+    analysis_dir: Path
+    gt_dir: Path
+    case_json_path: Path
+
+
+def _to_suite_paths(bp: BundlePaths) -> SuitePaths:
+    return SuitePaths(
+        suite_root=bp.bundle_root,
+        case_id=bp.target,
+        suite_id=bp.bundle_id,
+        suite_dir=bp.suite_dir,
+        cases_dir=bp.cases_dir,
+        suite_readme_path=bp.suite_readme_path,
+        suite_json_path=bp.suite_json_path,
+        suite_summary_path=bp.suite_summary_path,
+        latest_pointer_path=bp.latest_pointer_path,
+        case_dir=bp.case_dir,
+        tool_runs_dir=bp.tool_runs_dir,
+        analysis_dir=bp.analysis_dir,
+        gt_dir=bp.gt_dir,
+        case_json_path=bp.case_json_path,
+    )
+
+
+def _to_bundle_paths(sp: SuitePaths) -> BundlePaths:
+    """Convert :class:`SuitePaths` to legacy :class:`BundlePaths`.
+
+    This keeps the legacy bundles implementation as an internal detail while allowing
+    new code to use suite terminology end-to-end.
+    """
+    return BundlePaths(
+        bundle_root=sp.suite_root,
+        target=sp.case_id,
+        bundle_id=sp.suite_id,
+        suite_dir=sp.suite_dir,
+        cases_dir=sp.cases_dir,
+        suite_readme_path=sp.suite_readme_path,
+        suite_json_path=sp.suite_json_path,
+        suite_summary_path=sp.suite_summary_path,
+        latest_pointer_path=sp.latest_pointer_path,
+        case_dir=sp.case_dir,
+        tool_runs_dir=sp.tool_runs_dir,
+        analysis_dir=sp.analysis_dir,
+        gt_dir=sp.gt_dir,
+        case_json_path=sp.case_json_path,
+    )
 
 def new_suite_id() -> str:
     """Generate a new suite id (sortable UTC timestamp)."""
@@ -58,8 +132,24 @@ def get_suite_paths(
     suite_root: Union[str, Path] = "runs/suites",
 ) -> SuitePaths:
     """Compute filesystem paths for one case inside one suite."""
-    return get_bundle_paths(target=case_id, bundle_id=suite_id, bundle_root=suite_root)
+    bundle = get_bundle_paths(target=case_id, bundle_id=suite_id, bundle_root=suite_root)
+    return _to_suite_paths(bundle)
 
+
+
+def ensure_suite_dirs(paths: SuitePaths) -> None:
+    """Create the suite/case directory scaffolding."""
+    ensure_bundle_dirs(_to_bundle_paths(paths))
+
+
+def write_latest_suite_pointer(paths: SuitePaths) -> None:
+    """Write/overwrite runs/suites/LATEST with the current suite id."""
+    _write_latest_pointer(_to_bundle_paths(paths))
+
+
+def update_suite_artifacts(paths: SuitePaths, case_manifest: Dict[str, Any]) -> None:
+    """Update suite-level README / suite.json / summary.csv (best-effort)."""
+    _update_suite_artifacts(_to_bundle_paths(paths), case_manifest)
 
 def resolve_case_dir(
     *,

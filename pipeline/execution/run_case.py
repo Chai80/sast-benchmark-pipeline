@@ -366,15 +366,15 @@ def run_tools(req: RunRequest) -> int:
         )
 
     # Suite handling
-    bundle: Optional[SuitePaths] = None
+    suite_paths: Optional[SuitePaths] = None
     sid: Optional[str] = None
     if req.use_suite:
         sid = str(req.suite_id) if req.suite_id else new_suite_id()
-        bundle = get_suite_paths(case_id=req.case.case_id, suite_id=sid, suite_root=req.suite_root)
-        ensure_suite_dirs(bundle)
-        write_latest_suite_pointer(bundle)
+        suite_paths = get_suite_paths(case_id=req.case.case_id, suite_id=sid, suite_root=req.suite_root)
+        ensure_suite_dirs(suite_paths)
+        write_latest_suite_pointer(suite_paths)
         # Optional: capture suite GT YAML into the case folder for reproducibility
-        _capture_optional_benchmark_yaml(req.case.repo.repo_path, bundle.case_dir, warnings=case_warnings)
+        _capture_optional_benchmark_yaml(req.case.repo.repo_path, suite_paths.case_dir, warnings=case_warnings)
 
     # Print header
     if req.invocation_mode == "scan":
@@ -386,10 +386,10 @@ def run_tools(req: RunRequest) -> int:
         print(f"  Target   : {req.case.label}")
         print(f"  Repo name: {req.case.runs_repo_name}")
         print(f"  Scanners : {', '.join(scanners)}")
-        if bundle is not None:
-            print(f"  Suite id : {bundle.bundle_id}")
-            print(f"  Suite dir: {bundle.suite_dir}")
-            print(f"  Case dir : {bundle.case_dir}")
+        if suite_paths is not None:
+            print(f"  Suite id : {suite_paths.suite_id}")
+            print(f"  Suite dir: {suite_paths.suite_dir}")
+            print(f"  Case dir : {suite_paths.case_dir}")
 
     started = _now_iso()
 
@@ -436,8 +436,8 @@ def run_tools(req: RunRequest) -> int:
             extra_args = _merge_dicts(extra_args, {"git-ref": req.aikido_git_ref})
 
         # Suite output rooting
-        if bundle is not None:
-            extra_args = _merge_dicts(extra_args, {"output-root": str(bundle.tool_runs_dir / scanner)})
+        if suite_paths is not None:
+            extra_args = _merge_dicts(extra_args, {"output-root": str(suite_paths.tool_runs_dir / scanner)})
             if scanner == "aikido":
                 # Ensure Aikido writes to the same repo folder name for analysis.
                 extra_args = _merge_dicts(extra_args, {"repo-name": req.case.runs_repo_name})
@@ -458,8 +458,8 @@ def run_tools(req: RunRequest) -> int:
             overall = code
 
         # Record run info (best-effort) when using suites
-        if bundle is not None:
-            tool_out_root = bundle.tool_runs_dir / scanner
+        if suite_paths is not None:
+            tool_out_root = suite_paths.tool_runs_dir / scanner
 
             # Discover the tool run root (layout v2: <output_root>/<run_id>/... or v1: <output_root>/<repo>/<run_id>/...)
             run_root_dir = discover_repo_dir(tool_out_root, prefer=req.case.runs_repo_name)
@@ -490,8 +490,8 @@ def run_tools(req: RunRequest) -> int:
                 try:
                     _write_run_json(
                         run_dir,
-                        suite_id=bundle.bundle_id,
-                        case_id=bundle.target,
+                        suite_id=suite_paths.suite_id,
+                        case_id=suite_paths.case_id,
                         tool=scanner,
                         repo_name=req.case.runs_repo_name,
                         exit_code=code,
@@ -564,12 +564,12 @@ def run_tools(req: RunRequest) -> int:
     # even though the pipeline was in suite mode.
     # -------------------------------------------------------------------
     manifest: Optional[Dict[str, Any]] = None
-    if bundle is not None:
+    if suite_paths is not None:
         manifest = {
-            "suite": {"id": bundle.bundle_id, "suite_dir": str(bundle.suite_dir)},
+            "suite": {"id": suite_paths.suite_id, "suite_dir": str(suite_paths.suite_dir)},
             "case": {
-                "id": bundle.target,
-                "case_dir": str(bundle.case_dir),
+                "id": suite_paths.case_id,
+                "case_dir": str(suite_paths.case_dir),
                 # Expected context comes from the CaseSpec (often micro-suites).
                 "expected_branch": req.case.branch,
                 "expected_commit": req.case.commit,
@@ -604,12 +604,12 @@ def run_tools(req: RunRequest) -> int:
 
         # Write pre-analysis manifest (best-effort; never break scans)
         try:
-            _write_json(bundle.case_json_path, manifest)
+            _write_json(suite_paths.case_json_path, manifest)
         except Exception as e:
             case_warnings.append(f"write_case_json_failed:pre_analysis:{e}")
 
     # Auto-analysis (only makes sense when bundling)
-    if bundle is not None and req.invocation_mode == "benchmark" and not req.skip_analysis:
+    if suite_paths is not None and req.invocation_mode == "benchmark" and not req.skip_analysis:
         print("\n----------------------------------------")
         print("▶ analysis suite")
 
@@ -619,7 +619,7 @@ def run_tools(req: RunRequest) -> int:
         for tool in scanners:
             try:
                 find_latest_normalized_json(
-                    runs_dir=bundle.tool_runs_dir,
+                    runs_dir=suite_paths.tool_runs_dir,
                     tool=tool,
                     repo_name=req.case.runs_repo_name,
                 )
@@ -635,25 +635,25 @@ def run_tools(req: RunRequest) -> int:
             analysis_summary = run_suite(
                 repo_name=req.case.runs_repo_name,
                 tools=available_tools,
-                runs_dir=bundle.tool_runs_dir,
-                out_dir=bundle.analysis_dir,
+                runs_dir=suite_paths.tool_runs_dir,
+                out_dir=suite_paths.analysis_dir,
                 tolerance=int(req.tolerance),
                 mode=str(req.analysis_filter),
                 formats=["json", "csv"],
             )
-            print(f"  ✅ analysis complete: {bundle.analysis_dir}")
+            print(f"  ✅ analysis complete: {suite_paths.analysis_dir}")
         else:
             print("  ⚠️  no tool outputs found; skipping analysis")
 
     finished = _now_iso()
 
     # Write final case manifest + suite summary
-    if bundle is not None:
+    if suite_paths is not None:
         if manifest is None:
             # Should not happen, but keep a safe fallback.
             manifest = {
-                "suite": {"id": bundle.bundle_id, "suite_dir": str(bundle.suite_dir)},
-                "case": {"id": bundle.target, "case_dir": str(bundle.case_dir)},
+                "suite": {"id": suite_paths.suite_id, "suite_dir": str(suite_paths.suite_dir)},
+                "case": {"id": suite_paths.case_id, "case_dir": str(suite_paths.case_dir)},
                 "repo": {
                     "label": req.case.label,
                     "repo_url": req.case.repo.repo_url,
@@ -674,17 +674,17 @@ def run_tools(req: RunRequest) -> int:
         manifest["timestamps"]["finished"] = finished
         manifest["warnings"] = list(case_warnings)
 
-        _write_json(bundle.case_json_path, manifest)
-        update_suite_artifacts(bundle, manifest)
+        _write_json(suite_paths.case_json_path, manifest)
+        update_suite_artifacts(suite_paths, manifest)
 
         print("\n📦 Case complete")
-        print(f"  Suite id : {bundle.bundle_id}")
-        print(f"  Suite dir: {bundle.suite_dir}")
-        print(f"  Case dir : {bundle.case_dir}")
-        print(f"  Tool runs: {bundle.tool_runs_dir}")
-        print(f"  Analysis : {bundle.analysis_dir if not req.skip_analysis else '(skipped)'}")
-        print(f"  Manifest : {bundle.case_json_path}")
-        print(f"  Summary  : {bundle.suite_summary_path}")
+        print(f"  Suite id : {suite_paths.suite_id}")
+        print(f"  Suite dir: {suite_paths.suite_dir}")
+        print(f"  Case dir : {suite_paths.case_dir}")
+        print(f"  Tool runs: {suite_paths.tool_runs_dir}")
+        print(f"  Analysis : {suite_paths.analysis_dir if not req.skip_analysis else '(skipped)'}")
+        print(f"  Manifest : {suite_paths.case_json_path}")
+        print(f"  Summary  : {suite_paths.suite_summary_path}")
 
     if overall == 0:
         if req.invocation_mode == "scan":
