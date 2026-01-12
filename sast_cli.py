@@ -109,14 +109,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--suite-root",
         "--bundle-root",
-        dest="bundle_root",
+        dest="suite_root",
         default=str(ROOT_DIR / "runs" / "suites"),
         help="Base directory for suite runs (default: runs/suites).",
     )
     parser.add_argument(
         "--suite-id",
         "--bundle-id",
-        dest="bundle_id",
+        dest="suite_id",
         help=(
             "Suite run id to create/use. If omitted in scan/benchmark, a new UTC timestamp is used. "
             "In analyze mode you can pass 'latest'."
@@ -171,13 +171,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--case-path",
         "--bundle-path",
-        dest="bundle_path",
+        dest="case_path",
         help="(analyze mode) Path to an existing case dir (overrides --suite-root/--suite-id).",
     )
     parser.add_argument(
         "--no-suite",
         "--no-bundle",
-        dest="no_bundle",
+        dest="no_suite",
         action="store_true",
         help="Disable suite layout and use legacy runs/<tool>/<repo>/<run_id>/... paths.",
     )
@@ -272,7 +272,17 @@ def parse_args() -> argparse.Namespace:
         help="Suppress scanner stdout/stderr (not recommended for debugging)",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # Backwards-compatible attribute aliases (legacy bundle terminology).
+    # Flags --bundle-root/--bundle-id/--bundle-path/--no-bundle remain supported;
+    # internal code should prefer suite_* / case_* naming.
+    args.bundle_root = args.suite_root
+    args.bundle_id = args.suite_id
+    args.bundle_path = args.case_path
+    args.no_bundle = args.no_suite
+
+    return args
 
 
 def main() -> None:

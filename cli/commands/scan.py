@@ -34,7 +34,7 @@ def run_scan(
         scanners=[scanner],
         suite_root=suite_root,
         suite_id=suite_id,
-        use_suite=not bool(args.no_bundle),
+        use_suite=not bool(args.no_suite),
         dry_run=bool(args.dry_run),
         quiet=bool(args.quiet),
         # scan mode never runs analysis

@@ -2,6 +2,13 @@
 
 Filesystem layout helpers for *suite runs*.
 
+Legacy naming
+-------------
+This module name predates the project's move to "suite" terminology.
+It is kept to avoid churn and to preserve backward compatibility.
+
+New code should prefer importing from `pipeline.suites.layout` and using suite_* naming.
+
 Why this exists
 ---------------
 The pipeline can run *many scanners* across *many cases* (e.g., OWASP branch-per-case

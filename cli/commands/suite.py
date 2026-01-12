@@ -264,7 +264,7 @@ def _build_suite_from_sources(args: argparse.Namespace) -> SuiteDefinition:
 
     This is meant for prototype automation and CI.
     """
-    suite_id = str(args.bundle_id) if args.bundle_id else new_suite_id()
+    suite_id = str(args.suite_id) if args.suite_id else new_suite_id()
 
     scanners_csv = args.scanners or DEFAULT_SCANNERS_CSV
     scanners = _parse_scanners_str(scanners_csv)
@@ -323,14 +323,14 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
     - Otherwise we prompt interactively.
     """
 
-    if args.no_bundle:
+    if args.no_suite:
         print("❌ Suite mode requires suite layout (do not use --no-suite).")
         return 2
 
     # Keep suite_root anchored under the repo root unless the user passed an
     # absolute path. This prevents "worked on my laptop" path drift when the
     # CLI is invoked from different working directories.
-    suite_root = anchor_under_repo_root(Path(args.bundle_root).expanduser())
+    suite_root = anchor_under_repo_root(Path(args.suite_root).expanduser())
 
     # Load or build suite definition
     # Load suite definition (Python only at runtime; YAML is migration-only)
@@ -349,7 +349,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
             suite_def = _build_suite_interactively(args, repo_registry=repo_registry)
 
     # CLI overrides
-    suite_id = str(args.bundle_id) if args.bundle_id else (suite_def.suite_id or new_suite_id())
+    suite_id = str(args.suite_id) if args.suite_id else (suite_def.suite_id or new_suite_id())
 
     scanners: List[str]
     if args.scanners:

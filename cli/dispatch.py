@@ -118,8 +118,8 @@ def dispatch(
         track=str(args.track).strip() if args.track else None,
     )
 
-    suite_root = Path(args.bundle_root)
-    suite_id = str(args.bundle_id) if args.bundle_id else None
+    suite_root = Path(args.suite_root)
+    suite_id = str(args.suite_id) if args.suite_id else None
 
     if mode == "analyze":
         return int(run_analyze(args, pipeline, case=case, suite_root=suite_root, suite_id=suite_id))

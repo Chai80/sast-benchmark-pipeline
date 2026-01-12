@@ -32,7 +32,7 @@ def run_benchmark(
         scanners=scanners,
         suite_root=suite_root,
         suite_id=suite_id,
-        use_suite=not bool(args.no_bundle),
+        use_suite=not bool(args.no_suite),
         dry_run=bool(args.dry_run),
         quiet=bool(args.quiet),
         skip_analysis=bool(args.skip_analysis),

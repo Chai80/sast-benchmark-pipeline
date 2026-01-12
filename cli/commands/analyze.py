@@ -28,7 +28,7 @@ def run_analyze(
         case=case,
         suite_root=suite_root,
         suite_id=suite_id,
-        case_path=args.bundle_path,
+        case_path=args.case_path,
         runs_dir=Path(args.runs_dir),
         tools=tools,
         output_format=str(args.format),
