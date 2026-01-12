@@ -26,15 +26,43 @@ Design
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
 
 def write_json(path: Path, data: Any) -> None:
-    """Write pretty JSON to disk (UTF-8)."""
+    """Write pretty JSON to disk (UTF-8) using an atomic replace.
+
+    Why atomic
+    ----------
+    Manifests like case.json / suite.json / run.json are effectively state.
+    If the process is interrupted while writing, a partially-written JSON file
+    can break downstream analysis in confusing ways.
+
+    We write to a temporary file in the same directory and then `os.replace`
+    it into place so readers never observe a truncated JSON file.
+    """
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    fd, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent))
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+
+        os.replace(tmp_path, path)
+    finally:
+        # If os.replace fails, best-effort cleanup of the temp file.
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except Exception:
+            pass
 
 
 def read_json(path: Path) -> Any:

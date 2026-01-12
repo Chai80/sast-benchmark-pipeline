@@ -43,6 +43,7 @@ from pipeline.suites.layout import (
 )
 from pipeline.models import CaseSpec
 from pipeline.scanners import SUPPORTED_SCANNERS
+from tools.io import write_json
 
 
 ENV_PATH: Path = REPO_ROOT / ".env"
@@ -87,11 +88,6 @@ def _load_json_if_exists(path: Path) -> Optional[Dict[str, Any]]:
         return data if isinstance(data, dict) else None
     except Exception:
         return None
-
-
-def _write_json(path: Path, data: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def _run_one(cmd: List[str], *, dry_run: bool, quiet: bool) -> int:
@@ -273,7 +269,7 @@ def _write_run_json(
         },
     }
 
-    (run_dir / "run.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+    write_json(run_dir / "run.json", data)
 
 
 # ---------------------------------------------------------------------------
@@ -604,7 +600,7 @@ def run_tools(req: RunRequest) -> int:
 
         # Write pre-analysis manifest (best-effort; never break scans)
         try:
-            _write_json(suite_paths.case_json_path, manifest)
+            write_json(suite_paths.case_json_path, manifest)
         except Exception as e:
             case_warnings.append(f"write_case_json_failed:pre_analysis:{e}")
 
@@ -674,7 +670,7 @@ def run_tools(req: RunRequest) -> int:
         manifest["timestamps"]["finished"] = finished
         manifest["warnings"] = list(case_warnings)
 
-        _write_json(suite_paths.case_json_path, manifest)
+        write_json(suite_paths.case_json_path, manifest)
         update_suite_artifacts(suite_paths, manifest)
 
         print("\n📦 Case complete")

@@ -46,6 +46,8 @@ from pipeline.suites.layout import ensure_suite_dirs, get_suite_paths, write_lat
 from pipeline.models import CaseSpec, RepoSpec
 from pipeline.suites.suite_definition import SuiteAnalysisDefaults, SuiteCase, SuiteDefinition
 
+from tools.io import write_json
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -282,7 +284,7 @@ def write_suite_manifest(
         "cases": cases_summary,
     }
 
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=False), encoding="utf-8")
+    write_json(path, manifest)
     return path
 
 

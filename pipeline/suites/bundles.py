@@ -65,6 +65,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
+from tools.io import write_json
+
 
 def _append_suite_warning(paths: "BundlePaths", message: str) -> None:
     """Persist a suite-level warning (best-effort).
@@ -298,7 +300,7 @@ def _ensure_suite_json(paths: BundlePaths) -> None:
         "updated_at": now,
         "cases": {},
     }
-    paths.suite_json_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    write_json(paths.suite_json_path, data)
 
 
 def _load_json(path: Path, *, warn: Optional[Callable[[str], None]] = None) -> Optional[Dict[str, Any]]:
@@ -363,7 +365,7 @@ def _update_suite_json(
         "exit_codes": exit_codes,
     }
 
-    paths.suite_json_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    write_json(paths.suite_json_path, data)
 
 
 def _write_suite_summary(paths: BundlePaths, *, warn: Optional[Callable[[str], None]] = None) -> None:
