@@ -80,6 +80,9 @@ Gold: analysis/* + gt/*                                     (derived metrics)
 runs/suites/<suite_id>/
   suite.json            # suite index
   summary.csv           # one row per case (human-friendly entry point)
+  replay/               # optional: "replay button" for interactively curated suites
+    replay_suite.py     # exports SUITE_RAW; used via --suite-file
+    replay_command.txt  # copy/paste helper command (best-effort)
   cases/<case_id>/
     case.json           # “ground truth” manifest for this case
     tool_runs/<tool>/<run_id>/
@@ -93,6 +96,16 @@ runs/suites/<suite_id>/
 ```
 
 (v1 legacy layout still exists for compat when running tools directly; analysis supports both.)
+
+### Replay files (optional)
+
+When you build a suite **interactively**, the CLI can optionally write a small Python
+**replay file** under `runs/suites/<suite_id>/replay/`. Treat this as a *replay button*:
+it captures the curated case list + scanners so you can rerun later without re-answering prompts
+(`--suite-file ...`).
+
+If your suite was sourced from `--worktrees-root` or `--cases-from`, you typically do **not**
+need a replay file—those inputs are already replayable by rerunning the same command.
 
 ### Normalized findings contract (schema v1.1)
 

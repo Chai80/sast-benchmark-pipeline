@@ -163,7 +163,7 @@ FLOW FOR scan/benchmark  (single-case)
       - run.json
     (artifact root when use_suite=True):
       runs/suites/<suite_id>/cases/<case_id>/tool_runs/<tool>/<run_id>/
-    (artifact root when use_suite=False / --no-bundle):
+    (artifact root when use_suite=False / --no-suite / --no-bundle):
       runs/<tool>/<repo_name>/<run_id>/   (legacy compatibility)
   |
   v
@@ -189,10 +189,11 @@ FLOW FOR suite  (multi-case)
 [Collect “suite inputs”]
   (module: cli/commands/suite.py + cli/suite_sources.py)
   Inputs may be ANY of:
-    - --suite-file (python SUITE_DEF)
+    - --suite-file (python replay file: SUITE_RAW or SUITE_DEF)
     - --worktrees-root (auto-discover local checkouts => cases)
     - --cases-from (CSV “work order” => cases)
-    - interactive prompts (build suite definition manually)
+    - interactive prompts (build a suite, then optionally write a replay file under:
+        runs/suites/<suite_id>/replay/replay_suite.py)
   |
   v
 [Resolve suite plan -> suite.json + summary scaffolding]

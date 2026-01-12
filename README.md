@@ -67,8 +67,18 @@ and compute cross-tool analysis (agreement/hotspots/taxonomy/triage + optional G
 ## Advanced usage
 ### Suite from worktrees
 - `scripts/make_worktrees.sh` flow
-### Python suite definitions (`--suite-file`)
-- Minimal example + link to a real example file
+### Replay files (`--suite-file`)
+`--suite-file` points to an optional Python **replay file** (exports `SUITE_RAW` or `SUITE_DEF`).
+
+Think of this as a *replay button* for suites you built **interactively**: it captures the curated
+case list + scanners so you can rerun later without re-answering prompts.
+
+By default, interactive suite runs save replay artifacts under:
+`runs/suites/<suite_id>/replay/`.
+
+If you built a suite from `--worktrees-root` or `--cases-from`, you usually do **not** need a replay
+file—the command itself is already replayable.
+
 ### Export mode (JSONL / warehouse ingestion)
 - What it’s for
 - How to run it

@@ -51,6 +51,8 @@ flowchart TD
     F0[runs/suites/LATEST]
     F1[runs/suites/{suite_id}/suite.json]
     F2[runs/suites/{suite_id}/summary.csv]
+    FR[runs/suites/{suite_id}/replay/replay_suite.py<br/>(optional; interactive replay)]
+    FCMD[runs/suites/{suite_id}/replay/replay_command.txt<br/>(optional helper)]
     F3[runs/suites/{suite_id}/cases/{case_id}/case.json]
     F4[runs/suites/{suite_id}/cases/{case_id}/tool_runs/{tool}/{run_id}/]
     F5[runs/suites/{suite_id}/cases/{case_id}/analysis/]
@@ -74,6 +76,14 @@ flowchart TD
   SU2 --> F0
   SU2 --> F1
   SU2 --> F2
+
+  %% Interactive suite replay artifacts (optional)
+  CLI_SUITE -.-> FR
+  CLI_SUITE -.-> FCMD
+
+  %% Optional interactive replay output
+  CLI_SUITE -.-> FR
+  CLI_SUITE -.-> FCMD
 
   %% run_tools: suite vs legacy rooting
   P2 --> D0{use_suite?}

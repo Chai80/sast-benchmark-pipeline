@@ -12,7 +12,7 @@ Modes
    - (default) run the analysis suite after scans
 3) suite
    - run multiple scanners across multiple cases (many repos / branches)
-   - suite definitions are supplied as Python (.py) (or built interactively)
+   - suites can be built interactively, loaded from CSV/worktrees, or replayed from an optional Python replay file (.py)
 4) analyze
    - compute cross-tool metrics from existing normalized runs
 
@@ -48,8 +48,8 @@ python sast_cli.py --mode analyze --metric suite --repo-key juice_shop --suite-i
 # Legacy behavior (write directly to runs/<tool>/...)
 python sast_cli.py --mode benchmark --repo-key juice_shop --no-suite
 
-# Run a multi-case suite from a Python definition
-python sast_cli.py --mode suite --suite-file examples/suite_inputs/example_suite.py
+# Run a multi-case suite from a Python replay file (usually generated under runs/suites/<suite_id>/replay/)
+python sast_cli.py --mode suite --suite-file runs/suites/<suite_id>/replay/replay_suite.py --suite-id <new_suite_id>
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ def parse_args() -> argparse.Namespace:
         "--mode",
         choices=["scan", "benchmark", "suite", "analyze"],
         help=(
-            "scan = one tool, benchmark = multiple tools, suite = multi-case suite run (optional YAML), "
+            "scan = one tool, benchmark = multiple tools, suite = multi-case suite run (interactive/CSV/worktrees/replay file), "
             "analyze = compute metrics from existing runs"
         ),
     )
@@ -127,7 +127,9 @@ def parse_args() -> argparse.Namespace:
         "--suite-file",
         dest="suite_file",
         help=(
-            "(suite mode) Optional Python suite definition (.py exporting SUITE_DEF or SUITE_RAW). If omitted, you can build a suite interactively "
+            "(suite mode) Optional Python *replay file* (.py exporting SUITE_DEF or SUITE_RAW). "
+            "Think of this as a replay button for an interactively curated suite (usually saved under runs/suites/<suite_id>/replay/). "
+            "If omitted, you can build a suite interactively "
             "or use --cases-from / --worktrees-root to load many cases quickly. "
             "suite.json/case.json/run.json are always written as the ground-truth record of what actually ran."
         ),

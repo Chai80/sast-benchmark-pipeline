@@ -10,7 +10,7 @@ It is intentionally **filesystem-first**: every run produces a stable set of art
 
 ```mermaid
 flowchart TD
-  A[Suite Plan<br/>optional YAML] -->|cases + tools| B[Orchestrator<br/>pipeline/orchestrator.py]
+  A[Suite Plan<br/>optional Python replay file (.py)] -->|cases + tools| B[Orchestrator<br/>pipeline/orchestrator.py]
 
   subgraph SuiteLayout["runs/suites/<suite_id>/"]
     direction TB
@@ -25,7 +25,9 @@ flowchart TD
     end
 
     SuiteLayout --> S1[suite.json]
-    SuiteLayout --> S2[summary.md]
+    SuiteLayout --> S2[summary.csv]
+    SuiteLayout --> R1[replay/replay_suite.py<br/>(optional; interactive replay)]
+    SuiteLayout --> R2[replay/replay_command.txt<br/>(optional helper)]
   end
 
   B -->|execute tools| C2
