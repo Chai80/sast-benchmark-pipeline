@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import os
-import platform
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -30,6 +29,11 @@ from pipeline.core import (
     build_scan_command,
     filter_scanners_for_track,
 )
+from pipeline.suites.manifests import (
+    update_latest_pointer,
+    update_suite_artifacts,
+    write_case_manifest,
+)
 from pipeline.suites.layout import (
     SuitePaths,
     discover_latest_run_dir,
@@ -37,8 +41,6 @@ from pipeline.suites.layout import (
     ensure_suite_dirs,
     get_suite_paths,
     new_suite_id,
-    update_suite_artifacts,
-    write_latest_suite_pointer,
 )
 from pipeline.models import CaseSpec
 from pipeline.scanners import SCANNERS, SUPPORTED_SCANNERS, ScannerRunContext
@@ -55,28 +57,6 @@ ENV_PATH: Path = REPO_ROOT / ".env"
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _pipeline_git_commit() -> Optional[str]:
-    """Best-effort commit hash for *this* pipeline repo (not the scanned repo)."""
-    try:
-        out = subprocess.check_output(
-            ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ).strip()
-        return out or None
-    except Exception:
-        return None
-
-
-def _runtime_environment() -> Dict[str, Any]:
-    """Runtime provenance captured into manifests (safe, no secrets)."""
-    return {
-        "python_version": platform.python_version(),
-        "platform": platform.platform(),
-        "pipeline_git_commit": _pipeline_git_commit(),
-    }
 
 
 def _load_json_if_exists(path: Path) -> Optional[Dict[str, Any]]:
@@ -360,7 +340,7 @@ def _compute_suite_paths_and_init(req: RunRequest, *, case_warnings: List[str]) 
     sid = str(req.suite_id) if req.suite_id else new_suite_id()
     suite_paths = get_suite_paths(case_id=req.case.case_id, suite_id=sid, suite_root=req.suite_root)
     ensure_suite_dirs(suite_paths)
-    write_latest_suite_pointer(suite_paths)
+    update_latest_pointer(suite_paths)
 
     # Optional: capture suite GT YAML into the case folder for reproducibility
     _capture_optional_benchmark_yaml(req.case.repo.repo_path, suite_paths.case_dir, warnings=case_warnings)
@@ -565,68 +545,6 @@ def _backfill_case_repo_context(
     return case_repo_path, case_repo_branch, case_repo_commit
 
 
-def _write_case_manifest_pre_analysis(
-    *,
-    req: RunRequest,
-    suite_paths: SuitePaths,
-    case_track: Optional[str],
-    started: str,
-    scanners_requested: Sequence[str],
-    scanners_used: Sequence[str],
-    tool_runs_manifest: Dict[str, Any],
-    case_warnings: List[str],
-    repo_path: Optional[str],
-    repo_branch: Optional[str],
-    repo_commit: Optional[str],
-) -> Dict[str, Any]:
-    """Write a pre-analysis case.json so analysis stages can rely on it."""
-
-    manifest: Dict[str, Any] = {
-        "suite": {"id": suite_paths.suite_id, "suite_dir": str(suite_paths.suite_dir)},
-        "case": {
-            "id": suite_paths.case_id,
-            "case_dir": str(suite_paths.case_dir),
-            # Expected context comes from the CaseSpec (often micro-suites).
-            "expected_branch": req.case.branch,
-            "expected_commit": req.case.commit,
-            "track": str(case_track) if case_track else None,
-            "tags": dict(req.case.tags or {}),
-        },
-        "repo": {
-            "label": req.case.label,
-            "repo_url": req.case.repo.repo_url,
-            # Prefer the scanned checkout path from tool metadata if available.
-            "repo_path": repo_path,
-            "runs_repo_name": req.case.runs_repo_name,
-            "git_branch": repo_branch,
-            "git_commit": repo_commit,
-        },
-        "invocation": {
-            "mode": req.invocation_mode,
-            "argv": list(req.argv) if req.argv else None,
-            "python": req.python_executable,
-            "skip_analysis": bool(req.skip_analysis),
-            "environment": _runtime_environment(),
-        },
-        "timestamps": {"started": started, "finished": None},
-        # Keep both for auditability
-        "scanners_requested": list(scanners_requested),
-        "scanners_used": list(scanners_used),
-        "tool_runs": tool_runs_manifest,
-        "analysis": None,
-        "warnings": list(case_warnings),
-        "errors": [],
-    }
-
-    # Write pre-analysis manifest (best-effort; never break scans)
-    try:
-        write_json(suite_paths.case_json_path, manifest)
-    except Exception as e:
-        case_warnings.append(f"write_case_json_failed:pre_analysis:{e}")
-
-    return manifest
-
-
 def _maybe_run_analysis(
     *,
     req: RunRequest,
@@ -676,33 +594,6 @@ def _maybe_run_analysis(
     )
     print(f"  ✅ analysis complete: {suite_paths.analysis_dir}")
     return analysis_summary
-
-
-def _finalize_case_and_suite_artifacts(
-    *,
-    req: RunRequest,
-    suite_paths: SuitePaths,
-    manifest: Dict[str, Any],
-    analysis_summary: Optional[Dict[str, Any]],
-    finished: str,
-    case_warnings: List[str],
-) -> None:
-    manifest["analysis"] = analysis_summary
-    manifest.setdefault("timestamps", {})
-    manifest["timestamps"]["finished"] = finished
-    manifest["warnings"] = list(case_warnings)
-
-    write_json(suite_paths.case_json_path, manifest)
-    update_suite_artifacts(suite_paths, manifest)
-
-    print("\n📦 Case complete")
-    print(f"  Suite id : {suite_paths.suite_id}")
-    print(f"  Suite dir: {suite_paths.suite_dir}")
-    print(f"  Case dir : {suite_paths.case_dir}")
-    print(f"  Tool runs: {suite_paths.tool_runs_dir}")
-    print(f"  Analysis : {suite_paths.analysis_dir if not req.skip_analysis else '(skipped)'}")
-    print(f"  Manifest : {suite_paths.case_json_path}")
-    print(f"  Summary  : {suite_paths.suite_summary_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -811,18 +702,30 @@ def run_tools(req: RunRequest) -> int:
     # Write a *pre-analysis* case manifest so analysis stages (diagnostics + GT
     # marker scoring) can read case.json reliably.
     if suite_paths is not None:
-        manifest = _write_case_manifest_pre_analysis(
-            req=req,
-            suite_paths=suite_paths,
-            case_track=case_track,
+        manifest = write_case_manifest(
+            paths=suite_paths,
+            invocation_mode=req.invocation_mode,
+            argv=req.argv,
+            python_executable=req.python_executable,
+            skip_analysis=bool(req.skip_analysis),
+            repo_label=req.case.label,
+            repo_url=req.case.repo.repo_url,
+            repo_path=case_repo_path,
+            runs_repo_name=req.case.runs_repo_name,
+            expected_branch=req.case.branch,
+            expected_commit=req.case.commit,
+            track=case_track,
+            tags=dict(req.case.tags or {}),
+            git_branch=case_repo_branch,
+            git_commit=case_repo_commit,
             started=started,
+            finished=None,
             scanners_requested=scanners_requested,
             scanners_used=scanners,
-            tool_runs_manifest=tool_runs_manifest,
-            case_warnings=case_warnings,
-            repo_path=case_repo_path,
-            repo_branch=case_repo_branch,
-            repo_commit=case_repo_commit,
+            tool_runs=tool_runs_manifest,
+            analysis=None,
+            warnings=case_warnings,
+            errors=[],
         )
 
         analysis_summary = _maybe_run_analysis(
@@ -836,34 +739,43 @@ def run_tools(req: RunRequest) -> int:
 
     # Final case manifest + suite artifacts
     if suite_paths is not None:
-        if manifest is None:
-            # Should not happen, but keep a safe fallback.
-            manifest = {
-                "suite": {"id": suite_paths.suite_id, "suite_dir": str(suite_paths.suite_dir)},
-                "case": {"id": suite_paths.case_id, "case_dir": str(suite_paths.case_dir)},
-                "repo": {
-                    "label": req.case.label,
-                    "repo_url": req.case.repo.repo_url,
-                    "repo_path": case_repo_path,
-                },
-                "invocation": {"mode": req.invocation_mode, "argv": list(req.argv) if req.argv else None},
-                "timestamps": {"started": started, "finished": finished},
-                "scanners_requested": list(scanners_requested),
-                "scanners_used": list(scanners),
-                "tool_runs": tool_runs_manifest,
-                "analysis": analysis_summary,
-                "warnings": list(case_warnings),
-                "errors": [],
-            }
-
-        _finalize_case_and_suite_artifacts(
-            req=req,
-            suite_paths=suite_paths,
-            manifest=manifest,
-            analysis_summary=analysis_summary,
+        # Final case manifest + suite-level indexes
+        manifest = write_case_manifest(
+            paths=suite_paths,
+            invocation_mode=req.invocation_mode,
+            argv=req.argv,
+            python_executable=req.python_executable,
+            skip_analysis=bool(req.skip_analysis),
+            repo_label=req.case.label,
+            repo_url=req.case.repo.repo_url,
+            repo_path=case_repo_path,
+            runs_repo_name=req.case.runs_repo_name,
+            expected_branch=req.case.branch,
+            expected_commit=req.case.commit,
+            track=case_track,
+            tags=dict(req.case.tags or {}),
+            git_branch=case_repo_branch,
+            git_commit=case_repo_commit,
+            started=started,
             finished=finished,
-            case_warnings=case_warnings,
+            scanners_requested=scanners_requested,
+            scanners_used=scanners,
+            tool_runs=tool_runs_manifest,
+            analysis=analysis_summary,
+            warnings=case_warnings,
+            errors=[],
         )
+
+        update_suite_artifacts(suite_paths, manifest)
+
+        print("\n📦 Case complete")
+        print(f"  Suite id : {suite_paths.suite_id}")
+        print(f"  Suite dir: {suite_paths.suite_dir}")
+        print(f"  Case dir : {suite_paths.case_dir}")
+        print(f"  Tool runs: {suite_paths.tool_runs_dir}")
+        print(f"  Analysis : {suite_paths.analysis_dir if not req.skip_analysis else '(skipped)'}")
+        print(f"  Manifest : {suite_paths.case_json_path}")
+        print(f"  Summary  : {suite_paths.suite_summary_path}")
 
     # Exit messaging
     if overall == 0:
