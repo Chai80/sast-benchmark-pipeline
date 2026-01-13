@@ -28,7 +28,6 @@ from typing import Any, Dict, List, Optional, Sequence
 from pipeline.core import (
     ROOT_DIR as REPO_ROOT,
     build_scan_command,
-    derive_sonar_project_key,
     filter_scanners_for_track,
 )
 from pipeline.suites.layout import (
@@ -42,7 +41,7 @@ from pipeline.suites.layout import (
     write_latest_suite_pointer,
 )
 from pipeline.models import CaseSpec
-from pipeline.scanners import SUPPORTED_SCANNERS
+from pipeline.scanners import SCANNERS, SUPPORTED_SCANNERS, ScannerRunContext
 from tools.io import write_json
 
 
@@ -200,18 +199,6 @@ def _capture_optional_benchmark_yaml(
         if warnings is not None:
             warnings.append(f"benchmark_yaml_capture_failed: {e}")
         return
-
-
-def _sonar_extra_args(*, repo_id: str, sonar_project_key: Optional[str]) -> Dict[str, str]:
-    _require_env("SONAR_ORG")
-    _require_env("SONAR_TOKEN")
-
-    if sonar_project_key:
-        project_key = sonar_project_key
-    else:
-        project_key = derive_sonar_project_key(os.environ["SONAR_ORG"], repo_id)
-
-    return {"project-key": project_key}
 
 
 def _merge_dicts(a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -430,24 +417,28 @@ def _compute_extra_args(
 ) -> Dict[str, Any]:
     extra_args: Dict[str, Any] = {}
 
-    # Tool-specific args
-    if scanner == "sonar":
-        extra_args = _sonar_extra_args(repo_id=req.repo_id, sonar_project_key=req.sonar_project_key)
+    # Scanner-specific quirks (env requirements + derived args) are centralized
+    # in pipeline.scanners as pure hooks.
+    info = SCANNERS.get(scanner)
+    if info is not None:
+        for var in getattr(info, "required_env", ()):
+            _require_env(str(var))
+
+        builder = getattr(info, "extra_args_builder", None)
+        if builder is not None:
+            ctx = ScannerRunContext(git_branch=git_ctx.branch, git_commit=git_ctx.commit)
+            built = builder(req, ctx) or {}
+            if not isinstance(built, dict):
+                raise SystemExit(f"Invalid extra_args_builder for {scanner!r}: expected dict, got {type(built)}")
+            extra_args = _merge_dicts(extra_args, built)
+
+    # Small UX: show derived project-key when present (primarily Sonar).
+    if "project-key" in extra_args:
         print(f"  Sonar project key : {extra_args.get('project-key')}")
 
-    if scanner == "aikido" and git_ctx.branch:
-        # Prefer the captured case context branch (stable for the whole run).
-        extra_args = _merge_dicts(extra_args, {"branch": git_ctx.branch})
-
-    if scanner == "aikido" and req.aikido_git_ref:
-        extra_args = _merge_dicts(extra_args, {"git-ref": req.aikido_git_ref})
-
-    # Suite output rooting
+    # Suite output rooting (all scanners share --output-root)
     if suite_paths is not None:
         extra_args = _merge_dicts(extra_args, {"output-root": str(suite_paths.tool_runs_dir / scanner)})
-        if scanner == "aikido":
-            # Ensure Aikido writes to the same repo folder name for analysis.
-            extra_args = _merge_dicts(extra_args, {"repo-name": req.case.runs_repo_name})
 
     return extra_args
 

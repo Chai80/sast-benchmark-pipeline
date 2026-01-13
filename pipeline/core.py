@@ -1,14 +1,16 @@
 # pipeline/core.py
 """Core orchestration helpers for the SAST benchmark pipeline.
 
-This module intentionally contains *no* scanner-specific parsing logic.
-Its job is to build stable, correct command lines for the scanner entrypoints
+This module builds stable, correct command lines for the scanner entrypoints
 in ``tools/scan_*.py``.
 
-Why this exists:
-- Avoid duplicating command-building rules across CLI(s) and other runners.
-- Keep scanner scripts focused on scanning + normalization.
-- Provide a single place to encode scanner quirks (e.g., Aikido's git-ref).
+Clean-architecture boundary
+---------------------------
+Scanner-specific *quirks* (required env vars, extra derived args, and how a
+tool identifies its target) are declared in :mod:`pipeline.scanners`.
+
+This module only contains the generic command-shaping rules required to invoke
+those entrypoints consistently.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
-from pipeline.scanners import SCANNER_SCRIPTS, SCANNER_TRACKS, SUPPORTED_SCANNERS
+from pipeline.scanners import SCANNER_SCRIPTS, SCANNER_TARGET_MODES, SCANNER_TRACKS, SUPPORTED_SCANNERS
 
 
 # Use the same interpreter that imports this module (CLI inherits it).
@@ -132,11 +134,14 @@ def build_scan_command(
     module = f"tools.{script.stem}"
     cmd: List[str] = [py, "-m", module]
 
-    # ---- Scanner quirks ----
-    if scanner == "aikido":
-        # Aikido scanner expects a git reference / slug; it does not accept --repo-url.
-        # When scanning via --repo-path (e.g., suite branch worktrees/clones) we may not have a
-        # repo_url available, so allow an explicit override via extra_args["git-ref"].
+    # ---- Non-standard target modes (declared by the registry) ----
+    if SCANNER_TARGET_MODES.get(scanner) == "git-ref":
+        # Some scanners (currently Aikido cloud mode) identify repos by a git
+        # reference / slug, not a local path or repo URL.
+        #
+        # When scanning via --repo-path (e.g., suite worktrees/clones) we may not
+        # have a repo_url available, so allow an explicit override via
+        # extra_args["git-ref"].
         extra = dict(extra_args or {})
         override = extra.pop("git-ref", None)
         if override:
@@ -144,9 +149,11 @@ def build_scan_command(
         elif repo_url:
             git_ref = repo_url.rstrip("/").replace(".git", "")
         else:
-            raise ValueError("Aikido scanner requires repo_url or extra_args['git-ref'] to set --git-ref.")
+            raise ValueError(
+                f"Scanner {scanner!r} requires repo_url or extra_args['git-ref'] to set --git-ref."
+            )
         if not git_ref:
-            raise ValueError("Empty Aikido git-ref (from repo_url or extra_args['git-ref']).")
+            raise ValueError("Empty git-ref (from repo_url or extra_args['git-ref']).")
         cmd += ["--git-ref", git_ref]
         cmd += _render_extra_args(extra)
         return cmd
