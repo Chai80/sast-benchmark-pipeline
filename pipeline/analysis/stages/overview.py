@@ -13,10 +13,17 @@ from pipeline.analysis.utils.path_norm import normalize_file_path
 
 from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
-from ._shared import load_normalized_json
+from ._shared import _is_excluded_path, load_normalized_json
 
 
-def analyze_latest_hotspots_for_repo(*, repo_name: str, tools: Sequence[str], runs_dir: Path, mode: str = "security") -> Dict[str, Any]:
+def analyze_latest_hotspots_for_repo(
+    *,
+    repo_name: str,
+    tools: Sequence[str],
+    runs_dir: Path,
+    mode: str = "security",
+    exclude_prefixes: Sequence[str] | None = None,
+) -> Dict[str, Any]:
     """Compute a simple per-file overlap report from the latest normalized run for each tool."""
     runs_dir = Path(runs_dir)
 
@@ -25,6 +32,8 @@ def analyze_latest_hotspots_for_repo(*, repo_name: str, tools: Sequence[str], ru
     tool_to_findings_count: Dict[str, int] = defaultdict(int)
 
     used_tools: List[str] = []
+
+    exclude_prefixes = tuple([str(p).strip() for p in (exclude_prefixes or ()) if str(p).strip()])
 
     for tool in tools:
         try:
@@ -46,6 +55,13 @@ def analyze_latest_hotspots_for_repo(*, repo_name: str, tools: Sequence[str], ru
             fp = normalize_file_path(str(f.get("file_path") or ""), repo_name=repo_name)
             if not fp:
                 continue
+            if exclude_prefixes and _is_excluded_path(
+                fp,
+                repo_name=repo_name,
+                exclude_prefixes=exclude_prefixes,
+            ):
+                continue
+
             tool_to_files[tool].add(fp)
             file_to_tool_counts[fp][tool] += 1
 
@@ -77,6 +93,7 @@ def analyze_latest_hotspots_for_repo(*, repo_name: str, tools: Sequence[str], ru
     return {
         "repo_name": repo_name,
         "mode": mode,
+        "exclude_prefixes": list(exclude_prefixes),
         "tools": used_tools,
         "by_tool": by_tool,
         "files": files,
@@ -88,6 +105,11 @@ def print_text_report(report: Dict[str, Any], *, max_unique: int = 25) -> None:
     tools = report.get("tools") or []
     print(f"Repo: {report.get('repo_name')}")
     print(f"Mode: {report.get('mode')}")
+
+    ex = report.get("exclude_prefixes") or []
+    if ex:
+        print("Exclude prefixes:", ", ".join([str(p) for p in ex]))
+
     print("Tools:", ", ".join(tools))
     print()
 
@@ -117,6 +139,7 @@ def stage_overview(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         tools=ctx.tools,
         runs_dir=ctx.runs_dir,
         mode=ctx.mode,
+        exclude_prefixes=getattr(ctx, "exclude_prefixes", ()) or (),
     )
     store.put("overview_report", report)
 
@@ -136,12 +159,19 @@ def main(argv: List[str] | None = None) -> None:  # pragma: no cover
     ap.add_argument("--runs-dir", default="runs")
     ap.add_argument("--tools", default=DEFAULT_SCANNERS_CSV)
     ap.add_argument("--mode", choices=["security", "all"], default="security")
+    ap.add_argument("--exclude-prefix", action="append", default=[], help="Repeatable repo-relative prefix to exclude")
     ap.add_argument("--out", help="Optional output JSON path")
     ap.add_argument("--max-unique", type=int, default=25)
     args = ap.parse_args(argv)
 
     tools = [t.strip() for t in str(args.tools).split(",") if t.strip()]
-    report = analyze_latest_hotspots_for_repo(repo_name=args.repo_name, tools=tools, runs_dir=Path(args.runs_dir), mode=args.mode)
+    report = analyze_latest_hotspots_for_repo(
+        repo_name=args.repo_name,
+        tools=tools,
+        runs_dir=Path(args.runs_dir),
+        mode=args.mode,
+        exclude_prefixes=args.exclude_prefix,
+    )
 
     if args.out:
         write_json(Path(args.out), report)

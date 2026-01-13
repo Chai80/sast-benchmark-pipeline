@@ -28,6 +28,8 @@ PIPELINES: Dict[str, List[str]] = {
         "taxonomy",
         "triage_queue",
         "gt_score",
+        # DS-friendly export (cluster feature table)
+        "triage_features",
     ],
 
     # Optional diagnostics (not run by default)

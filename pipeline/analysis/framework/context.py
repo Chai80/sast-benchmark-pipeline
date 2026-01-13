@@ -29,6 +29,48 @@ def _derive_suite_case_ids(out_dir: Path) -> Tuple[Optional[str], Optional[str]]
     return None, None
 
 
+def _normalize_exclude_prefix(prefix: str) -> str:
+    """Normalize an exclude prefix into a repo-relative POSIX-ish form.
+
+    Notes:
+    - We intentionally do *not* resolve '..' segments; this is a simple
+      prefix-based filter, not a security boundary.
+    - Leading slashes are stripped to keep the comparison repo-relative.
+    """
+    p = str(prefix or "").strip().replace("\\", "/")
+
+    # Remove common shell-ish relative prefixes.
+    while p.startswith("./"):
+        p = p[2:]
+
+    # Keep comparisons repo-relative.
+    p = p.lstrip("/")
+
+    # Make "benchmark/" and "benchmark" equivalent.
+    p = p.rstrip("/")
+
+    # Collapse duplicate separators.
+    while "//" in p:
+        p = p.replace("//", "/")
+
+    return p
+
+
+def _normalize_exclude_prefixes(prefixes: Sequence[str] | None) -> Tuple[str, ...]:
+    """Normalize + de-duplicate exclude prefixes while preserving order."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in prefixes or []:
+        p = _normalize_exclude_prefix(str(raw))
+        if not p:
+            continue
+        if p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return tuple(out)
+
+
 @dataclass(frozen=True)
 class AnalysisContext:
     """Immutable analysis job packet.
@@ -53,8 +95,18 @@ class AnalysisContext:
           <case_dir>/analysis
     tolerance:
         Line clustering tolerance when grouping locations.
+    gt_tolerance:
+        Line overlap tolerance used ONLY for GT scoring (gt_score stage).
     mode:
         Finding filter mode: "security" or "all".
+    exclude_prefixes:
+        Repo-relative path prefixes to exclude across ALL analysis stages.
+        Comparisons use normalized, repo-relative POSIX-like paths.
+
+        In v2/suite layout, benchmark harness paths under "benchmark/" are
+        excluded by default unless include_harness is True.
+    include_harness:
+        If True, do not apply the suite-layout default harness exclusion.
     formats:
         Output formats to write, e.g. ("json", "csv").
     normalized_paths:
@@ -71,8 +123,19 @@ class AnalysisContext:
     tools: Tuple[str, ...]
     runs_dir: Path
     out_dir: Path
+
+    # Clustering tolerance (location_matrix / triage UX)
     tolerance: int = 3
+
+    # GT scoring tolerance (gt_score only)
+    gt_tolerance: int = 0
+
     mode: str = "security"
+
+    # Scope filtering
+    exclude_prefixes: Tuple[str, ...] = ()
+    include_harness: bool = False
+
     formats: Tuple[str, ...] = ("json", "csv")
     normalized_paths: Mapping[str, Path] = field(default_factory=dict)
 
@@ -89,20 +152,37 @@ class AnalysisContext:
         runs_dir: Path,
         out_dir: Path,
         tolerance: int = 3,
+        gt_tolerance: int = 0,
         mode: str = "security",
+        exclude_prefixes: Sequence[str] | None = None,
+        include_harness: bool = False,
         formats: Sequence[str] = ("json", "csv"),
         normalized_paths: Mapping[str, Path] | None = None,
         config: Mapping[str, Any] | None = None,
     ) -> "AnalysisContext":
         out_dir = Path(out_dir)
         suite_id, case_id = _derive_suite_case_ids(out_dir)
+
+        # Normalize user-provided exclude prefixes.
+        normalized = list(_normalize_exclude_prefixes(exclude_prefixes))
+
+        # Suite layout default: exclude harness noise under benchmark/ unless explicitly included.
+        # This keeps SCA/SAST tools from surfacing benchmark harness scripts as top hotspots.
+        if suite_id and case_id and not include_harness:
+            default_harness_prefix = "benchmark"
+            if default_harness_prefix not in normalized:
+                normalized.append(default_harness_prefix)
+
         return AnalysisContext(
             repo_name=str(repo_name),
             tools=tuple(tools),
             runs_dir=Path(runs_dir),
             out_dir=out_dir,
             tolerance=int(tolerance),
+            gt_tolerance=max(0, int(gt_tolerance)),
             mode=str(mode),
+            exclude_prefixes=tuple(normalized),
+            include_harness=bool(include_harness),
             formats=tuple(formats),
             normalized_paths=dict(normalized_paths or {}),
             suite_id=suite_id,
@@ -117,7 +197,10 @@ class AnalysisContext:
             "runs_dir": str(self.runs_dir),
             "out_dir": str(self.out_dir),
             "tolerance": self.tolerance,
+            "gt_tolerance": self.gt_tolerance,
             "mode": self.mode,
+            "exclude_prefixes": list(self.exclude_prefixes or ()),
+            "include_harness": bool(self.include_harness),
             "formats": list(self.formats),
             "normalized_paths": {k: str(v) for k, v in (self.normalized_paths or {}).items()},
             "suite_id": self.suite_id,

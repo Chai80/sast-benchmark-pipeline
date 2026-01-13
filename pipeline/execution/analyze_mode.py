@@ -40,9 +40,28 @@ class AnalyzeRequest:
     out: Optional[str] = None
     analysis_out_dir: Optional[str] = None
 
+    # Analysis / triage knobs
     tolerance: int = 3
+    gt_tolerance: int = 0
     analysis_filter: str = "security"
+
+    # Scope controls
+    exclude_prefixes: Sequence[str] = ()
+    include_harness: bool = False
+
     max_unique: int = 25
+
+
+def _effective_exclude_prefixes(req: AnalyzeRequest, *, is_suite_layout: bool) -> list[str]:
+    """Merge CLI-provided prefixes with suite-layout defaults."""
+    prefixes: list[str] = [str(p).strip() for p in (req.exclude_prefixes or ()) if str(p).strip()]
+
+    # Default suite-layout noise filter: exclude benchmark harness paths unless explicitly included.
+    if is_suite_layout and (not req.include_harness):
+        if "benchmark" not in prefixes and "benchmark/" not in prefixes:
+            prefixes.append("benchmark")
+
+    return prefixes
 
 
 def run_analyze(req: AnalyzeRequest) -> int:
@@ -75,11 +94,15 @@ def run_analyze(req: AnalyzeRequest) -> int:
             if legacy.exists():
                 runs_dir = legacy
         default_out_dir = case_dir / "analysis"
+        is_suite_layout = True
     else:
         if req.runs_dir is None:
             raise SystemExit("Analyze mode requires --suite-id/--case-path OR --runs-dir (legacy).")
         runs_dir = Path(req.runs_dir).resolve()
         default_out_dir = runs_dir / "analysis" / req.case.runs_repo_name
+        is_suite_layout = False
+
+    exclude_prefixes = _effective_exclude_prefixes(req, is_suite_layout=is_suite_layout)
 
     if metric == "suite":
         out_dir = Path(req.analysis_out_dir).resolve() if req.analysis_out_dir else default_out_dir
@@ -93,7 +116,10 @@ def run_analyze(req: AnalyzeRequest) -> int:
             runs_dir=runs_dir,
             out_dir=out_dir,
             tolerance=int(req.tolerance),
+            gt_tolerance=int(req.gt_tolerance),
             mode=str(req.analysis_filter),
+            exclude_prefixes=exclude_prefixes,
+            include_harness=bool(req.include_harness),
             formats=["json", "csv"],
         )
 
@@ -115,9 +141,11 @@ def run_analyze(req: AnalyzeRequest) -> int:
 
     try:
         report = analyze_latest_hotspots_for_repo(
-            req.case.runs_repo_name,
+            repo_name=req.case.runs_repo_name,
             tools=list(tools),
             runs_dir=runs_dir,
+            mode=str(req.analysis_filter),
+            exclude_prefixes=exclude_prefixes,
         )
     except FileNotFoundError as e:
         print("\n⚠️  No normalized runs found for analysis.")

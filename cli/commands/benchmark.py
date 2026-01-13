@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from typing import Optional
 
 from cli.common import parse_csv
 from pipeline.models import CaseSpec
@@ -16,31 +14,32 @@ def run_benchmark(
     pipeline: SASTBenchmarkPipeline,
     *,
     case: CaseSpec,
-    repo_id: str,
     suite_root: Path,
-    suite_id: Optional[str],
+    suite_id: str,
 ) -> int:
-    scanners_arg = args.scanners or DEFAULT_SCANNERS_CSV
-    scanners = [s for s in parse_csv(scanners_arg) if s in SUPPORTED_SCANNERS]
-    if not scanners:
-        raise SystemExit("No valid scanners specified for benchmark mode.")
+    scanners_csv = args.scanners or DEFAULT_SCANNERS_CSV
+    scanners = [s for s in parse_csv(scanners_csv) if s in SUPPORTED_SCANNERS]
 
     req = RunRequest(
         invocation_mode="benchmark",
         case=case,
-        repo_id=repo_id,
+        repo_id=str(args.repo_id),
         scanners=scanners,
         suite_root=suite_root,
         suite_id=suite_id,
-        use_suite=not bool(args.no_suite),
+        use_suite=True,
         dry_run=bool(args.dry_run),
         quiet=bool(args.quiet),
         skip_analysis=bool(args.skip_analysis),
         tolerance=int(args.tolerance),
+        gt_tolerance=int(getattr(args, "gt_tolerance", 0)),
         analysis_filter=str(args.analysis_filter),
+        exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
+        include_harness=bool(getattr(args, "include_harness", False)),
         sonar_project_key=args.sonar_project_key,
         aikido_git_ref=args.aikido_git_ref,
-        argv=list(sys.argv),
-        python_executable=sys.executable,
+        argv=None,
+        python_executable=None,
     )
+
     return int(pipeline.run(req))
