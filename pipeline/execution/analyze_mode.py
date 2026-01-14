@@ -43,10 +43,7 @@ class AnalyzeRequest:
     # Analysis / triage knobs
     tolerance: int = 3
     gt_tolerance: int = 0
-<<<<<<< ours
-=======
     gt_source: str = "auto"
->>>>>>> theirs
     analysis_filter: str = "security"
 
     # Scope controls
@@ -121,10 +118,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
             out_dir=out_dir,
             tolerance=int(req.tolerance),
             gt_tolerance=int(req.gt_tolerance),
-<<<<<<< ours
-=======
             gt_source=str(req.gt_source),
->>>>>>> theirs
             mode=str(req.analysis_filter),
             exclude_prefixes=exclude_prefixes,
             include_harness=bool(req.include_harness),

@@ -443,11 +443,6 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         suite_sets_meta=suite_sets_meta,
     )
 
-<<<<<<< ours
-    if scoring_track and not gt_items:
-        store.add_warning(f"gt_score: no GT items for track '{scoring_track}'")
-        return {"skipped": True, "reason": "no_gt_for_track"}
-=======
     repo_path: Optional[Path] = None
     try:
         rp = (case_json.get("repo") or {}).get("repo_path")
@@ -528,15 +523,11 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
                 "filtered_out_by_track": filtered_out_by_track,
                 "gt_source": gt_source or "unknown",
             }
->>>>>>> theirs
 
     # Build location items (FULL filters: mode + scope)
     location_items = build_location_items(ctx, store)
     tool_locs = _tool_locations(location_items)
 
-<<<<<<< ours
-    tol = int(getattr(ctx, "gt_tolerance", 0) or 0)
-=======
     rows: List[Dict[str, Any]] = []
     by_set_total: Counter[str] = Counter()
     by_set_matched: Counter[str] = Counter()
@@ -545,7 +536,6 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
 
     matched_count = 0
     per_tool_matched: Counter[str] = Counter()
->>>>>>> theirs
 
     rows: List[Dict[str, Any]] = []
     for gt in gt_items:
@@ -557,11 +547,6 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
             gt_file=gt_file,
             gt_start=gt_start,
             gt_end=gt_end,
-<<<<<<< ours
-            tool_locs=tool_locs,
-            tol=tol,
-        )
-=======
             location_items=location_items,
             repo_name=ctx.repo_name,
             tol=int(gt_tolerance),
@@ -573,7 +558,6 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
             by_track_matched[gt_track] += 1
             for t in tools:
                 per_tool_matched[str(t)] += 1
->>>>>>> theirs
 
         rows.append(
             {
@@ -590,112 +574,6 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         )
 
     total = len(rows)
-<<<<<<< ours
-    matched_count = sum(1 for r in rows if r.get("matched"))
-    match_rate = round(matched_count / total, 6) if total else 0.0
-
-    by_set = _summarize_by_field(rows, "set")
-    by_track = _summarize_by_field(rows, "track")
-
-    # Per-tool recall (tool-level contribution to GT match)
-    per_tool: Dict[str, Dict[str, Any]] = {}
-    for tool in ctx.tools:
-        m = 0
-        for r in rows:
-            tools_s = str(r.get("matched_tools") or "")
-            tools = [t for t in tools_s.split(",") if t]
-            if tool in tools:
-                m += 1
-        per_tool[tool] = {
-            "matched": int(m),
-            "total": int(total),
-            "recall": round(m / total, 6) if total else 0.0,
-        }
-
-    # GT gap queue (unmatched items)
-    # Detect whether gaps are due to filtering by comparing against raw/mode-only items.
-    raw_items = _build_location_items_without_scope(ctx=ctx, apply_mode_filter=False)
-    mode_items = _build_location_items_without_scope(ctx=ctx, apply_mode_filter=True)
-
-    raw_locs = _tool_locations(raw_items)
-    mode_locs = _tool_locations(mode_items)
-
-    gap_rows: List[Dict[str, Any]] = []
-    for r in rows:
-        if r.get("matched"):
-            continue
-        gt_file = str(r.get("file") or "")
-        gt_start = _coerce_int(r.get("start_line"), default=0)
-        gt_end = _coerce_int(r.get("end_line"), default=gt_start)
-
-        raw_tools = _match_tools_for_gt(
-            gt_file=gt_file,
-            gt_start=gt_start,
-            gt_end=gt_end,
-            tool_locs=raw_locs,
-            tol=tol,
-        )
-        mode_tools = _match_tools_for_gt(
-            gt_file=gt_file,
-            gt_start=gt_start,
-            gt_end=gt_end,
-            tool_locs=mode_locs,
-            tol=tol,
-        )
-
-        reason = "no_findings"
-        filtered_out_by: Optional[str] = None
-        if raw_tools:
-            reason = "filtered_out"
-            filtered_out_by = "mode" if not mode_tools else "scope"
-
-        gap_rows.append(
-            {
-                "gt_id": str(r.get("gt_id") or ""),
-                "set": str(r.get("set") or "unknown"),
-                "track": str(r.get("track") or "unknown"),
-                "file": gt_file,
-                "start_line": gt_start,
-                "end_line": gt_end,
-                "reason": reason,
-                "filtered_out_by": filtered_out_by or "",
-                "raw_matched_tools": ",".join(raw_tools),
-                "mode_matched_tools": ",".join(mode_tools),
-            }
-        )
-
-    gap_total = len(gap_rows)
-    gap_filtered_out = sum(1 for g in gap_rows if g.get("reason") == "filtered_out")
-
-    summary: Dict[str, Any] = {
-        "schema_version": "gt_score_v1",
-        "gt_total": int(total),
-        "matched": int(matched_count),
-        "match_rate": float(match_rate),
-        "gt_tolerance": int(tol),
-        "scoring_track": str(scoring_track or ""),
-        "by_set": by_set,
-        "by_track": by_track,
-        "per_tool_recall": per_tool,
-        "gap_total": int(gap_total),
-        "gap_filtered_out": int(gap_filtered_out),
-    }
-
-    # Persist
-    gt_dir = case_dir / "gt"
-    gt_dir.mkdir(parents=True, exist_ok=True)
-
-    out_json = gt_dir / "gt_score.json"
-    out_csv = gt_dir / "gt_score.csv"
-
-    write_json(
-        out_json,
-        {
-            "schema_version": "gt_score_v1",
-            "summary": summary,
-            "rows": rows,
-        },
-=======
     per_tool_recall = {
         str(t): (per_tool_matched.get(str(t), 0) / total) if total else 0.0 for t in (ctx.tools or [])
     }
@@ -741,7 +619,6 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
             "matched_tool_count",
             "matched_tools",
         ],
->>>>>>> theirs
     )
     write_csv(out_csv, rows, fieldnames=list(rows[0].keys()) if rows else [])
 

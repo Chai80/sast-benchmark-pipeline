@@ -64,23 +64,9 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
             "repo_name": ctx.repo_name,
             "tools": list(ctx.tools),
             "mode": ctx.mode,
-<<<<<<< ours
-            # clustering tolerance
-            "tolerance": int(ctx.tolerance),
-
-            # Optional (new, backwards-compatible additions)
-            "gt_tolerance": int(getattr(ctx, "gt_tolerance", 0) or 0),
-            "exclude_prefixes": list(getattr(ctx, "exclude_prefixes", ()) or ()),
-            "include_harness": bool(getattr(ctx, "include_harness", False)),
-
-            # Optional (new): OWASP Top 10 context for OWASP micro-suite cases
-            "owasp_id": owasp_id,
-            "owasp_title": owasp_title,
-=======
             "tolerance": ctx.tolerance,
             "gt_tolerance": int((ctx.config or {}).get("gt_tolerance") or 0),
             "gt_source": str((ctx.config or {}).get("gt_source") or "auto"),
->>>>>>> theirs
         },
         "summary": {
             "tool_count": len(ctx.tools),
@@ -96,16 +82,10 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
         "pairwise_agreement": pairwise,
         "taxonomy": taxonomy,
         "triage_queue_top": triage_top,
-<<<<<<< ours
-
-        # Optional (new): GT scoring summary (includes per_tool_recall if present)
-        "gt_score": gt_score_summary,
-=======
         "consensus": {
             "summary": consensus_summary,
             "queue_top": consensus_top,
         },
->>>>>>> theirs
     }
     return pack
 

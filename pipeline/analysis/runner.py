@@ -33,10 +33,7 @@ def run_suite(
     out_dir: Path,
     tolerance: int = 3,
     gt_tolerance: int = 0,
-<<<<<<< ours
-=======
     gt_source: str = "auto",
->>>>>>> theirs
     mode: str = "security",
     exclude_prefixes: Sequence[str] = (),
     include_harness: bool = False,
@@ -177,14 +174,8 @@ def run_suite(
         "out_dir": str(out_dir),
         "mode": ctx.mode,
         "tolerance": ctx.tolerance,
-<<<<<<< ours
-        "gt_tolerance": ctx.gt_tolerance,
-        "exclude_prefixes": list(ctx.exclude_prefixes or ()),
-        "include_harness": bool(ctx.include_harness),
-=======
         "gt_tolerance": int((ctx.config or {}).get("gt_tolerance") or 0),
         "gt_source": str((ctx.config or {}).get("gt_source") or "auto"),
->>>>>>> theirs
         "tools_requested": requested_tools,
         "tools_used": used_tools,
         "tools_missing": missing_tools,

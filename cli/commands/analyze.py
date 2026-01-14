@@ -36,10 +36,7 @@ def run_analyze(
         analysis_out_dir=args.analysis_out_dir,
         tolerance=int(args.tolerance),
         gt_tolerance=int(getattr(args, "gt_tolerance", 0)),
-<<<<<<< ours
-=======
         gt_source=str(getattr(args, "gt_source", "auto")),
->>>>>>> theirs
         analysis_filter=str(args.analysis_filter),
         exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
         include_harness=bool(getattr(args, "include_harness", False)),
