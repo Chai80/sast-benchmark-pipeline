@@ -14,6 +14,7 @@ from . import pairwise  # noqa: F401
 from . import taxonomy  # noqa: F401
 from . import triage  # noqa: F401
 from . import gt_score  # noqa: F401
+from . import triage_features  # noqa: F401
 from . import diagnostics  # noqa: F401
 from . import case_context  # noqa: F401
 
@@ -26,6 +27,7 @@ __all__ = [
     "taxonomy",
     "triage",
     "gt_score",
+    "triage_features",
     "diagnostics",
     "case_context",
 ]

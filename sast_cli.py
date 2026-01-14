@@ -228,6 +228,32 @@ def parse_args() -> argparse.Namespace:
         help="(analysis suite) Line clustering tolerance for location matrix (default: 3)",
     )
     parser.add_argument(
+        "--gt-tolerance",
+        type=int,
+        default=0,
+        help=(
+            "(gt_score) Line overlap tolerance used ONLY for GT scoring/matching (default: 0). "
+            "Does not affect clustering/triage."
+        ),
+    )
+    parser.add_argument(
+        "--exclude-prefix",
+        action="append",
+        dest="exclude_prefixes",
+        default=[],
+        help=(
+            "Exclude findings whose repo-relative file path starts with this prefix. "
+            "May be repeated. In suite layout, benchmark/ is excluded by default unless --include-harness."
+        ),
+    )
+    parser.add_argument(
+        "--include-harness",
+        action="store_true",
+        help=(
+            "(suite layout) Include benchmark harness paths (benchmark/...) which are excluded by default."
+        ),
+    )
+    parser.add_argument(
         "--analysis-filter",
         choices=["security", "all"],
         default="security",

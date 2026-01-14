@@ -16,7 +16,7 @@ It is intentionally conservative:
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore
 from pipeline.analysis.framework.pipelines import PIPELINES
@@ -32,7 +32,10 @@ def run_suite(
     runs_dir: Path,
     out_dir: Path,
     tolerance: int = 3,
+    gt_tolerance: int = 0,
     mode: str = "security",
+    exclude_prefixes: Sequence[str] = (),
+    include_harness: bool = False,
     formats: Sequence[str] = ("json", "csv"),
     run_diagnostics: bool = False,
 ) -> Dict[str, Any]:
@@ -49,9 +52,15 @@ def run_suite(
     out_dir:
         Output dir. In suite mode this is usually <case_dir>/analysis.
     tolerance:
-        Line clustering tolerance used by location clustering.
+        Line clustering tolerance used by location clustering + triage UX.
+    gt_tolerance:
+        Line overlap tolerance used ONLY for GT scoring (gt_score stage).
     mode:
         "security" filters out non-security findings (mainly Sonar CODE_SMELL).
+    exclude_prefixes:
+        Repeatable repo-relative prefixes to exclude from analysis scope.
+    include_harness:
+        If True, do not apply suite-layout default harness exclusion.
     formats:
         Output formats to write. Defaults to json + csv.
     run_diagnostics:
@@ -85,7 +94,8 @@ def run_suite(
 
     if not used_tools:
         raise FileNotFoundError(
-            f"No normalized runs found for repo={repo_name!r} under {runs_dir}. "            f"Tried tools={requested_tools}"
+            f"No normalized runs found for repo={repo_name!r} under {runs_dir}. "
+            f"Tried tools={requested_tools}"
         )
 
     fmt = tuple([f.strip().lower() for f in formats if str(f).strip()])
@@ -98,7 +108,10 @@ def run_suite(
         runs_dir=runs_dir,
         out_dir=out_dir,
         tolerance=tolerance,
+        gt_tolerance=gt_tolerance,
         mode=mode,
+        exclude_prefixes=exclude_prefixes,
+        include_harness=include_harness,
         formats=fmt,
         normalized_paths=normalized_paths,
         config={"requested_tools": requested_tools, "missing_tools": missing_tools},
@@ -155,6 +168,9 @@ def run_suite(
         "out_dir": str(out_dir),
         "mode": ctx.mode,
         "tolerance": ctx.tolerance,
+        "gt_tolerance": ctx.gt_tolerance,
+        "exclude_prefixes": list(ctx.exclude_prefixes or ()),
+        "include_harness": bool(ctx.include_harness),
         "tools_requested": requested_tools,
         "tools_used": used_tools,
         "tools_missing": missing_tools,

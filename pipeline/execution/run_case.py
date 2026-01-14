@@ -264,7 +264,12 @@ class RunRequest:
     # post-processing
     skip_analysis: bool = False
     tolerance: int = 3
+    gt_tolerance: int = 0
     analysis_filter: str = "security"
+
+    # scope filtering (analysis only)
+    exclude_prefixes: Sequence[str] = ()
+    include_harness: bool = False
 
     # tool overrides
     sonar_project_key: Optional[str] = None
@@ -589,7 +594,10 @@ def _maybe_run_analysis(
         runs_dir=suite_paths.tool_runs_dir,
         out_dir=suite_paths.analysis_dir,
         tolerance=int(req.tolerance),
+        gt_tolerance=int(req.gt_tolerance),
         mode=str(req.analysis_filter),
+        exclude_prefixes=req.exclude_prefixes,
+        include_harness=bool(req.include_harness),
         formats=["json", "csv"],
     )
     print(f"  ✅ analysis complete: {suite_paths.analysis_dir}")
