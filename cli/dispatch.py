@@ -10,10 +10,39 @@ from cli.commands.analyze import run_analyze
 from cli.commands.benchmark import run_benchmark
 from cli.commands.scan import run_scan
 from cli.commands.suite import run_suite_mode
+from cli.utils.suite_picker import prompt_for_suite
 
 from pipeline.core import repo_id_from_repo_url, sanitize_sonar_key_fragment
 from pipeline.models import CaseSpec, RepoSpec
 from pipeline.pipeline import SASTBenchmarkPipeline
+
+
+def _infer_suite_id_from_case_path(case_path: str) -> Optional[str]:
+    """Best-effort: infer suite_id from a v2 case path.
+
+    Expected shape:
+      runs/suites/<suite_id>/cases/<case_id>
+    """
+    try:
+        p = Path(case_path).resolve()
+    except Exception:
+        return None
+    # .../runs/suites/<suite_id>/cases/<case_id>
+    if p.parent.name == "cases":
+        return p.parent.parent.name
+    return None
+
+
+def _choose_case_id_from_suite_dir(suite_dir: Path) -> str:
+    cases_dir = suite_dir / "cases"
+    if not cases_dir.exists():
+        raise SystemExit(f"Suite has no cases directory: {cases_dir}")
+    case_dirs = [p for p in cases_dir.iterdir() if p.is_dir()]
+    case_dirs.sort(key=lambda x: x.name)
+    if not case_dirs:
+        raise SystemExit(f"No cases found in suite: {suite_dir}")
+
+    return choose_from_menu("Choose a case:", {p.name: p.name for p in case_dirs})
 
 
 def resolve_repo(
@@ -96,6 +125,44 @@ def dispatch(
     if mode == "suite":
         return int(run_suite_mode(args, pipeline, repo_registry=repo_registry))
 
+    # Analyze mode operates on existing filesystem artifacts. It should not
+    # prompt for a repo source unless the user is explicitly scanning.
+    if mode == "analyze":
+        suite_root = Path(args.suite_root)
+
+        # If analyzing an explicit case directory, never prompt. Also infer
+        # suite_id when possible so exports are not polluted.
+        suite_id = str(args.suite_id) if args.suite_id else None
+        if getattr(args, "case_path", None):
+            suite_id = suite_id or _infer_suite_id_from_case_path(str(args.case_path))
+            case_id = args.case_id or Path(str(args.case_path)).resolve().name
+        else:
+            # No --case-path: prompt for a suite (LATEST or local list), then
+            # select a case within that suite unless the user provided --case-id.
+            if suite_id is None:
+                choice = prompt_for_suite(suite_root)
+                suite_id = choice.suite_id
+                suite_dir = choice.suite_dir
+            else:
+                suite_dir = (suite_root / suite_id).resolve()
+
+            case_id = args.case_id or _choose_case_id_from_suite_dir(suite_dir)
+
+        # In analyze mode, repo_name is only used as a label in analysis outputs.
+        # Use the case_id unless the user explicitly provided a runs_repo_name.
+        runs_repo_name = args.runs_repo_name or case_id
+        label = runs_repo_name
+        repo_spec = RepoSpec(repo_key=None, repo_url=None, repo_path=None)
+        case = CaseSpec(
+            case_id=case_id,
+            runs_repo_name=runs_repo_name,
+            label=label,
+            repo=repo_spec,
+            track=str(args.track).strip() if args.track else None,
+        )
+
+        return int(run_analyze(args, pipeline, case=case, suite_root=suite_root, suite_id=suite_id))
+
     repo_url, repo_path, label, repo_id = resolve_repo(args, repo_registry=repo_registry)
 
     # Derive the repo folder name used under runs/<tool>/<repo_name>/
@@ -120,9 +187,6 @@ def dispatch(
 
     suite_root = Path(args.suite_root)
     suite_id = str(args.suite_id) if args.suite_id else None
-
-    if mode == "analyze":
-        return int(run_analyze(args, pipeline, case=case, suite_root=suite_root, suite_id=suite_id))
 
     if mode == "scan":
         return int(run_scan(args, pipeline, case=case, repo_id=repo_id, suite_root=suite_root, suite_id=suite_id))
