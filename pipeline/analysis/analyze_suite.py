@@ -34,6 +34,25 @@ def main() -> None:
     ap.add_argument("--out-dir", help="Output directory (default: runs/analysis/<repo-name>/)")
     ap.add_argument("--tools", help=f"Comma-separated tools (default: {DEFAULT_SCANNERS_CSV})")
     ap.add_argument("--tolerance", type=int, default=3, help="Line clustering tolerance (default: 3)")
+    ap.add_argument(
+        "--gt-tolerance",
+        type=int,
+        default=0,
+        help=(
+            "GT scoring line-match tolerance (default: 0). "
+            "This affects only gt_score; it does NOT change location clustering/triage."
+        ),
+    )
+    ap.add_argument(
+        "--gt-source",
+        choices=["auto", "markers", "yaml", "none"],
+        default="auto",
+        help=(
+            "GT source selection (default: auto). "
+            "auto = markers then gt_catalog.yaml if present; markers = require inline GT markers; "
+            "yaml = require gt_catalog.yaml/.yml; none = skip GT scoring."
+        ),
+    )
     ap.add_argument("--mode", choices=["security", "all"], default="security", help="Filtering mode (default: security)")
     ap.add_argument("--formats", default="json,csv", help="Comma-separated formats to write (json,csv)")
 
@@ -49,6 +68,8 @@ def main() -> None:
         runs_dir=runs_dir,
         out_dir=out_dir,
         tolerance=int(args.tolerance),
+        gt_tolerance=int(args.gt_tolerance),
+        gt_source=str(args.gt_source),
         mode=args.mode,
         formats=formats,
     )

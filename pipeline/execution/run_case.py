@@ -265,6 +265,10 @@ class RunRequest:
     skip_analysis: bool = False
     tolerance: int = 3
     gt_tolerance: int = 0
+<<<<<<< ours
+=======
+    gt_source: str = "auto"
+>>>>>>> theirs
     analysis_filter: str = "security"
 
     # scope filtering (analysis only)
@@ -595,6 +599,10 @@ def _maybe_run_analysis(
         out_dir=suite_paths.analysis_dir,
         tolerance=int(req.tolerance),
         gt_tolerance=int(req.gt_tolerance),
+<<<<<<< ours
+=======
+        gt_source=str(req.gt_source),
+>>>>>>> theirs
         mode=str(req.analysis_filter),
         exclude_prefixes=req.exclude_prefixes,
         include_harness=bool(req.include_harness),

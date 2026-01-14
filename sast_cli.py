@@ -232,6 +232,7 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help=(
+<<<<<<< ours
             "(gt_score) Line overlap tolerance used ONLY for GT scoring/matching (default: 0). "
             "Does not affect clustering/triage."
         ),
@@ -251,6 +252,20 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "(suite layout) Include benchmark harness paths (benchmark/...) which are excluded by default."
+=======
+            "(analysis suite) GT scoring line-match tolerance (default: 0). "
+            "This affects only gt_score; it does NOT change location clustering/triage."
+        ),
+    )
+    parser.add_argument(
+        "--gt-source",
+        choices=["auto", "markers", "yaml", "none"],
+        default="auto",
+        help=(
+            "(analysis suite) GT source selection (default: auto). "
+            "auto = markers then gt_catalog.yaml if present; markers = require inline GT markers; "
+            "yaml = require gt_catalog.yaml/.yml; none = skip GT scoring."
+>>>>>>> theirs
         ),
     )
     parser.add_argument(

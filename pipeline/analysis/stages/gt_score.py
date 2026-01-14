@@ -402,6 +402,23 @@ def _build_location_items_without_scope(
 
 @register_stage("gt_score", kind="analysis")
 def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
+    # Optional knobs (passed via AnalysisContext.config)
+    cfg = dict(ctx.config or {})
+    gt_source_opt = str(cfg.get("gt_source") or "auto").strip().lower()
+    if gt_source_opt in ("off", "none", "disable", "disabled"):
+        return {"status": "skipped", "reason": "gt_disabled", "gt_source": gt_source_opt}
+    if gt_source_opt not in ("auto", "markers", "yaml"):
+        store.add_warning(f"gt_score: unknown gt_source={gt_source_opt!r}; using 'auto'")
+        gt_source_opt = "auto"
+
+    gt_tolerance = 0
+    try:
+        gt_tolerance = int(cfg.get("gt_tolerance") or 0)
+    except Exception:
+        gt_tolerance = 0
+    if gt_tolerance < 0:
+        gt_tolerance = 0
+
     case_dir = _find_case_dir(ctx)
     if not case_dir:
         store.add_warning("gt_score: skipped (not suite layout)")
@@ -426,15 +443,109 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         suite_sets_meta=suite_sets_meta,
     )
 
+<<<<<<< ours
     if scoring_track and not gt_items:
         store.add_warning(f"gt_score: no GT items for track '{scoring_track}'")
         return {"skipped": True, "reason": "no_gt_for_track"}
+=======
+    repo_path: Optional[Path] = None
+    try:
+        rp = (case_json.get("repo") or {}).get("repo_path")
+        if rp:
+            repo_path = Path(str(rp))
+    except Exception:
+        repo_path = None
+
+    gt_path: Optional[Path] = None
+    gt_items: List[Dict[str, Any]] = []
+    gt_source: Optional[str] = None
+
+    # 1) Marker-based GT (preferred when available)
+    if gt_source_opt in ("auto", "markers"):
+        if repo_path and repo_path.exists() and repo_path.is_dir():
+            gt_items = extract_gt_markers(repo_path)
+            if gt_items:
+                gt_source = "markers"
+                out_markers = write_json(
+                    gt_dir / "gt_markers.json",
+                    {"source": gt_source, "repo_path": str(repo_path), "items": gt_items},
+                )
+                store.add_artifact("gt_markers_json", out_markers)
+
+    # If the user forced markers and none exist, skip cleanly.
+    if gt_source_opt == "markers" and not gt_items:
+        store.add_warning("gt_score skipped: gt_source=markers but no GT markers found")
+        return {"status": "skipped", "reason": "no_gt_markers", "gt_source": gt_source_opt}
+
+    # 2) YAML gt_catalog fallback (optional or forced)
+    if not gt_items and gt_source_opt in ("auto", "yaml"):
+        gt_path = _find_gt_catalog(ctx, repo_path=repo_path)
+        if gt_path is None:
+            # Important: if the user explicitly requested YAML mode, we should
+            # *not* silently fall back to other sources.
+            if gt_source_opt == "yaml":
+                store.add_warning("gt_score skipped: gt_source=yaml but no gt_catalog.yaml found")
+                return {"status": "skipped", "reason": "no_gt_catalog", "gt_source": gt_source_opt}
+
+            store.add_warning("gt_score skipped: no GT markers or gt_catalog found")
+            return {"status": "skipped", "reason": "no_gt"}
+
+        yaml_mod, yaml_err = _try_import_yaml()
+        if yaml_mod is None:
+            store.add_warning("gt_score skipped: PyYAML not installed (needed for gt_catalog)")
+            return {"status": "skipped", "reason": "pyyaml_not_installed", "error": yaml_err}
+
+        gt_data = yaml_mod.safe_load(gt_path.read_text(encoding="utf-8"))
+        gt_items = _parse_gt_items(gt_data)
+        gt_source = str(gt_path)
+
+        if gt_source_opt == "yaml" and not gt_items:
+            store.add_warning("gt_score skipped: gt_catalog.yaml parsed but contained zero GT items")
+            return {"status": "skipped", "reason": "empty_gt_catalog", "gt_source": gt_source_opt, "gt_catalog_path": str(gt_path)}
+
+    # Optional: enforce case-declared track by filtering GT items.
+    filtered_out_by_track = 0
+    if scoring_track:
+        before = len(gt_items)
+        gt_items = [
+            it
+            for it in gt_items
+            if str(it.get("track") or "unknown").strip().lower() == scoring_track
+        ]
+        filtered_out_by_track = before - len(gt_items)
+        if filtered_out_by_track:
+            store.add_warning(
+                f"gt_score: filtered out {filtered_out_by_track} GT items not matching case track={scoring_track!r}"
+            )
+        if not gt_items:
+            store.add_warning(
+                f"gt_score skipped: no GT items remained after filtering by case track={scoring_track!r}"
+            )
+            return {
+                "status": "skipped",
+                "reason": "no_gt_for_track",
+                "track": scoring_track,
+                "filtered_out_by_track": filtered_out_by_track,
+                "gt_source": gt_source or "unknown",
+            }
+>>>>>>> theirs
 
     # Build location items (FULL filters: mode + scope)
     location_items = build_location_items(ctx, store)
     tool_locs = _tool_locations(location_items)
 
+<<<<<<< ours
     tol = int(getattr(ctx, "gt_tolerance", 0) or 0)
+=======
+    rows: List[Dict[str, Any]] = []
+    by_set_total: Counter[str] = Counter()
+    by_set_matched: Counter[str] = Counter()
+    by_track_total: Counter[str] = Counter()
+    by_track_matched: Counter[str] = Counter()
+
+    matched_count = 0
+    per_tool_matched: Counter[str] = Counter()
+>>>>>>> theirs
 
     rows: List[Dict[str, Any]] = []
     for gt in gt_items:
@@ -446,9 +557,23 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
             gt_file=gt_file,
             gt_start=gt_start,
             gt_end=gt_end,
+<<<<<<< ours
             tool_locs=tool_locs,
             tol=tol,
         )
+=======
+            location_items=location_items,
+            repo_name=ctx.repo_name,
+            tol=int(gt_tolerance),
+        )
+        matched = bool(tools)
+        if matched:
+            matched_count += 1
+            by_set_matched[gt_set] += 1
+            by_track_matched[gt_track] += 1
+            for t in tools:
+                per_tool_matched[str(t)] += 1
+>>>>>>> theirs
 
         rows.append(
             {
@@ -465,6 +590,7 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         )
 
     total = len(rows)
+<<<<<<< ours
     matched_count = sum(1 for r in rows if r.get("matched"))
     match_rate = round(matched_count / total, 6) if total else 0.0
 
@@ -569,6 +695,53 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
             "summary": summary,
             "rows": rows,
         },
+=======
+    per_tool_recall = {
+        str(t): (per_tool_matched.get(str(t), 0) / total) if total else 0.0 for t in (ctx.tools or [])
+    }
+    summary: Dict[str, Any] = {
+        "status": "ok",
+        "gt_source_mode": gt_source_opt,
+        "gt_source": gt_source or "unknown",
+        "gt_catalog_path": str(gt_path) if gt_path else None,
+        "gt_tolerance": int(gt_tolerance),
+        "scoring_track": scoring_track,
+        "filtered_out_by_track": int(filtered_out_by_track),
+        "total_gt_items": total,
+        "matched_gt_items": matched_count,
+        "match_rate": (matched_count / total) if total else 0.0,
+        "per_tool_matched": {str(t): int(per_tool_matched.get(str(t), 0)) for t in (ctx.tools or [])},
+        "per_tool_recall": {k: round(float(v), 6) for k, v in per_tool_recall.items()},
+        "by_set": {
+            s: {"total": int(by_set_total[s]), "matched": int(by_set_matched[s])}
+            for s in sorted(by_set_total.keys())
+        },
+        "by_track": {
+            t: {"total": int(by_track_total[t]), "matched": int(by_track_matched[t])}
+            for t in sorted(by_track_total.keys())
+        },
+    }
+
+    # Cache for downstream exporters (e.g. benchmark_pack.json)
+    store.put("gt_score_summary", summary)
+    store.put("gt_score_rows", rows)
+
+    out_json = write_json(gt_dir / "gt_score.json", {"summary": summary, "rows": rows})
+    out_csv = write_csv(
+        gt_dir / "gt_score.csv",
+        rows,
+        fieldnames=[
+            "gt_id",
+            "track",
+            "set",
+            "file",
+            "start_line",
+            "end_line",
+            "matched",
+            "matched_tool_count",
+            "matched_tools",
+        ],
+>>>>>>> theirs
     )
     write_csv(out_csv, rows, fieldnames=list(rows[0].keys()) if rows else [])
 

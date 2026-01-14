@@ -38,6 +38,7 @@ DEFAULT_KEEP_ROOT: Set[str] = {
     "hotspot_drilldown_pack.json",
     # Optional convenience artifact (human-friendly, small).
     "triage_queue.json",
+    "consensus_queue.json",
 }
 
 
