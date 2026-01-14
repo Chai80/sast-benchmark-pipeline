@@ -40,6 +40,8 @@ def run_scan(
         # scan mode never runs analysis
         skip_analysis=True,
         tolerance=int(args.tolerance),
+        gt_tolerance=int(getattr(args, "gt_tolerance", 0)),
+        gt_source=str(getattr(args, "gt_source", "auto")),
         analysis_filter=str(args.analysis_filter),
         sonar_project_key=args.sonar_project_key,
         aikido_git_ref=args.aikido_git_ref,

@@ -43,9 +43,13 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
     pairwise = store.get("pairwise_rows") or []
     taxonomy = store.get("taxonomy_rows") or []
     triage = store.get("triage_rows") or []
+    consensus = store.get("consensus_rows") or []
+    consensus_summary = store.get("consensus_summary") or {}
+    gt_summary = store.get("gt_score_summary") or {}
 
     # Keep pack relatively small: include top-N triage rows.
     triage_top = list(triage)[:200]
+    consensus_top = list(consensus)[:200]
 
     # Optional GT summary if present
     gt_score_summary = store.get("gt_score_summary")
@@ -60,6 +64,7 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
             "repo_name": ctx.repo_name,
             "tools": list(ctx.tools),
             "mode": ctx.mode,
+<<<<<<< ours
             # clustering tolerance
             "tolerance": int(ctx.tolerance),
 
@@ -71,11 +76,19 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
             # Optional (new): OWASP Top 10 context for OWASP micro-suite cases
             "owasp_id": owasp_id,
             "owasp_title": owasp_title,
+=======
+            "tolerance": ctx.tolerance,
+            "gt_tolerance": int((ctx.config or {}).get("gt_tolerance") or 0),
+            "gt_source": str((ctx.config or {}).get("gt_source") or "auto"),
+>>>>>>> theirs
         },
         "summary": {
             "tool_count": len(ctx.tools),
             "triage_items": len(triage),
             "top_agreement": int(triage[0]["tool_count"]) if triage else 0,
+            "consensus_items": len(consensus),
+            "top_consensus": int(consensus[0]["tool_count"]) if consensus else 0,
+            "gt": gt_summary or None,
         },
         "artifacts": store.artifact_paths_rel(ctx.out_dir),
         "overview": overview,
@@ -83,9 +96,16 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
         "pairwise_agreement": pairwise,
         "taxonomy": taxonomy,
         "triage_queue_top": triage_top,
+<<<<<<< ours
 
         # Optional (new): GT scoring summary (includes per_tool_recall if present)
         "gt_score": gt_score_summary,
+=======
+        "consensus": {
+            "summary": consensus_summary,
+            "queue_top": consensus_top,
+        },
+>>>>>>> theirs
     }
     return pack
 

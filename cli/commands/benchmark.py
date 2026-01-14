@@ -33,6 +33,10 @@ def run_benchmark(
         skip_analysis=bool(args.skip_analysis),
         tolerance=int(args.tolerance),
         gt_tolerance=int(getattr(args, "gt_tolerance", 0)),
+<<<<<<< ours
+=======
+        gt_source=str(getattr(args, "gt_source", "auto")),
+>>>>>>> theirs
         analysis_filter=str(args.analysis_filter),
         exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
         include_harness=bool(getattr(args, "include_harness", False)),

@@ -27,6 +27,7 @@ PIPELINES: Dict[str, List[str]] = {
         "pairwise_agreement",
         "taxonomy",
         "triage_queue",
+        "consensus_queue",
         "gt_score",
         # DS-friendly export (cluster feature table)
         "triage_features",
