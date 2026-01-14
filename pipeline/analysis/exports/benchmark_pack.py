@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_json
+from pipeline.analysis.utils.owasp import infer_owasp
 
 
 def _load_gt_score_summary(ctx: AnalysisContext) -> Optional[Dict[str, Any]]:
@@ -35,6 +36,8 @@ def _load_gt_score_summary(ctx: AnalysisContext) -> Optional[Dict[str, Any]]:
 
 def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     """Build a single JSON object suitable for DB ingestion / UX."""
+    owasp_id, owasp_title = infer_owasp(ctx.case_id, out_dir=Path(ctx.out_dir))
+
     overview = store.get("overview_report") or {}
     tool_profile = store.get("tool_profile_rows") or []
     pairwise = store.get("pairwise_rows") or []
@@ -64,6 +67,10 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
             "gt_tolerance": int(getattr(ctx, "gt_tolerance", 0) or 0),
             "exclude_prefixes": list(getattr(ctx, "exclude_prefixes", ()) or ()),
             "include_harness": bool(getattr(ctx, "include_harness", False)),
+
+            # Optional (new): OWASP Top 10 context for OWASP micro-suite cases
+            "owasp_id": owasp_id,
+            "owasp_title": owasp_title,
         },
         "summary": {
             "tool_count": len(ctx.tools),

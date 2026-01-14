@@ -10,6 +10,7 @@ from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register
 from pipeline.analysis.io.write_artifacts import write_csv
 from pipeline.analysis.utils.path_norm import normalize_file_path
 from pipeline.analysis.utils.signatures import cluster_locations
+from pipeline.analysis.utils.owasp import infer_owasp
 
 from ._shared import build_location_items, max_severity, severity_rank
 
@@ -128,6 +129,8 @@ def stage_triage_features(ctx: AnalysisContext, store: ArtifactStore) -> Dict[st
 
     gt_tol = int(getattr(ctx, "gt_tolerance", 0) or 0)
 
+    owasp_id, owasp_title = infer_owasp(ctx.case_id, out_dir=Path(ctx.out_dir))
+
     rows: List[Dict[str, Any]] = []
     for c in clusters:
         if not isinstance(c, dict):
@@ -190,6 +193,8 @@ def stage_triage_features(ctx: AnalysisContext, store: ArtifactStore) -> Dict[st
             {
                 "suite_id": ctx.suite_id or "",
                 "case_id": ctx.case_id or "",
+                "owasp_id": owasp_id or "",
+                "owasp_title": owasp_title or "",
                 "repo_name": ctx.repo_name,
 
                 "cluster_id": cid,
@@ -241,6 +246,8 @@ def stage_triage_features(ctx: AnalysisContext, store: ArtifactStore) -> Dict[st
         fieldnames=[
             "suite_id",
             "case_id",
+            "owasp_id",
+            "owasp_title",
             "repo_name",
             "cluster_id",
             "file_path",
@@ -279,3 +286,4 @@ def stage_triage_features(ctx: AnalysisContext, store: ArtifactStore) -> Dict[st
     store.add_artifact("triage_features_csv", out_csv)
 
     return {"rows": len(rows)}
+
