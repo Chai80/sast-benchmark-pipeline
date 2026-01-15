@@ -45,6 +45,11 @@ class SuiteAnalysisDefaults:
     tolerance: int = 3
     filter: str = "security"  # security|all
 
+    # Optional: whether GT (gt_catalog.yaml) is required for cases by default.
+    # - None: do not enforce (GT scoring runs only when GT is present).
+    # - True/False: enforce presence across cases unless overridden per-case.
+    gt_required_default: Optional[bool] = None
+
 
 @dataclass(frozen=True)
 class SuiteCaseOverrides:
@@ -56,6 +61,8 @@ class SuiteCaseOverrides:
 
     sonar_project_key: Optional[str] = None
     aikido_git_ref: Optional[str] = None
+    # Optional: declare GT is required for this case (used by suite evaluators).
+    gt_required: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -93,9 +100,11 @@ class SuiteDefinition:
                 "commit": c.commit,
                 "track": c.track,
                 "tags": c.tags or {},
+                "gt_required": sc.overrides.gt_required,
                 "overrides": {
                     "sonar_project_key": sc.overrides.sonar_project_key,
                     "aikido_git_ref": sc.overrides.aikido_git_ref,
+                    "gt_required": sc.overrides.gt_required,
                 },
             }
 
@@ -106,6 +115,7 @@ class SuiteDefinition:
                 "skip": bool(self.analysis.skip),
                 "tolerance": int(self.analysis.tolerance),
                 "filter": str(self.analysis.filter),
+                "gt_required_default": self.analysis.gt_required_default,
             },
             "cases": [case_to_dict(sc) for sc in (self.cases or [])],
         }
@@ -114,11 +124,27 @@ class SuiteDefinition:
     def from_dict(raw: Dict[str, Any]) -> "SuiteDefinition":
         raw = raw or {}
 
+        def _coerce_optional_bool(v: Any) -> Optional[bool]:
+            if v is None:
+                return None
+            if isinstance(v, bool):
+                return v
+            if isinstance(v, (int, float)):
+                return bool(v)
+            s = str(v).strip().lower()
+            if s in ("true", "yes", "y", "1"):
+                return True
+            if s in ("false", "no", "n", "0"):
+                return False
+            return None
+
+
         analysis_raw = raw.get("analysis") or {}
         analysis = SuiteAnalysisDefaults(
             skip=bool(analysis_raw.get("skip", False)),
             tolerance=int(analysis_raw.get("tolerance", 3)),
             filter=str(analysis_raw.get("filter", "security")),
+            gt_required_default=_coerce_optional_bool(analysis_raw.get("gt_required_default")),
         )
 
         scanners = raw.get("scanners") or raw.get("tools") or []
@@ -140,6 +166,7 @@ class SuiteDefinition:
             overrides = SuiteCaseOverrides(
                 sonar_project_key=(ov_raw.get("sonar_project_key") or c_raw.get("sonar_project_key")),
                 aikido_git_ref=(ov_raw.get("aikido_git_ref") or c_raw.get("aikido_git_ref")),
+                gt_required=_coerce_optional_bool(ov_raw.get("gt_required") if "gt_required" in ov_raw else c_raw.get("gt_required")),
             )
 
             repo = RepoSpec(

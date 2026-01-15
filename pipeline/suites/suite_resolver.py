@@ -202,9 +202,11 @@ def _case_plan_entry(sc: SuiteCase, *, repo_id: str) -> Dict[str, Any]:
         "commit": c.commit,
         "track": c.track,
         "tags": dict(c.tags or {}),
+        "gt_required": sc.overrides.gt_required,
         "overrides": {
             "sonar_project_key": sc.overrides.sonar_project_key,
             "aikido_git_ref": sc.overrides.aikido_git_ref,
+            "gt_required": sc.overrides.gt_required,
         },
     }
 
@@ -261,6 +263,7 @@ def write_suite_manifest(
                 "skip": bool(analysis.skip),
                 "tolerance": int(analysis.tolerance),
                 "filter": str(analysis.filter),
+                "gt_required_default": analysis.gt_required_default,
             },
             "cases": [_case_plan_entry(rc.suite_case, repo_id=rc.repo_id) for rc in resolved_cases],
             "provenance": {
