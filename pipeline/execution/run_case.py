@@ -572,7 +572,7 @@ def _maybe_run_analysis(
     print("\n----------------------------------------")
     print("▶ analysis suite")
 
-    from pipeline.analysis.run_discovery import find_latest_normalized_json
+    from pipeline.analysis.io.discovery import find_latest_normalized_json
 
     available_tools: List[str] = []
     for tool in scanners:

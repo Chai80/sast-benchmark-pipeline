@@ -3,7 +3,7 @@
 Scoring utilities (ground truth, metrics).
 
 This package is intentionally minimal in this patch. It exists so the
-compatibility shim :mod:`pipeline.analysis.gt_scorer` can import a stable
+compatibility shim :mod:`pipeline.scoring.gt_scorer` can import a stable
 implementation.
 
 """

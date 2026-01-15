@@ -22,3 +22,13 @@ Subpackages
 - stages/  : analysis stages (overview, matrices, taxonomy, triage)
 - exports/ : packers/exporters (benchmark pack, drilldown)
 """
+
+# Backward-compat: allow importing old module names as pipeline.analysis.<module>
+# after we moved the shim modules into pipeline/analysis/_legacy/.
+# This extends the package search path; it does not import legacy modules eagerly.
+
+from pathlib import Path
+
+_legacy_dir = Path(__file__).resolve().parent / "_legacy"
+if _legacy_dir.is_dir():
+    __path__.append(str(_legacy_dir))
