@@ -45,12 +45,10 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
     triage = store.get("triage_rows") or []
     consensus = store.get("consensus_rows") or []
     consensus_summary = store.get("consensus_summary") or {}
-    gt_summary = store.get("gt_score_summary") or {}
 
     # Keep pack relatively small: include top-N triage rows.
     triage_top = list(triage)[:200]
     consensus_top = list(consensus)[:200]
-
     # Optional GT summary if present
     gt_score_summary = store.get("gt_score_summary")
     if not isinstance(gt_score_summary, dict):
@@ -74,7 +72,7 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
             "top_agreement": int(triage[0]["tool_count"]) if triage else 0,
             "consensus_items": len(consensus),
             "top_consensus": int(consensus[0]["tool_count"]) if consensus else 0,
-            "gt": gt_summary or None,
+            "gt": gt_score_summary or None,
         },
         "artifacts": store.artifact_paths_rel(ctx.out_dir),
         "overview": overview,
