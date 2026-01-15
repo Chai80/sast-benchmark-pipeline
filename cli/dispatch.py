@@ -6,11 +6,11 @@ from typing import Dict, Optional, Tuple
 
 from cli.common import derive_runs_repo_name
 from cli.ui import choose_from_menu
-from cli.commands.analyze import run_analyze
+from cli.commands.analyze import run_analyze, run_analyze_suite_all_cases
 from cli.commands.benchmark import run_benchmark
 from cli.commands.scan import run_scan
 from cli.commands.suite import run_suite_mode
-from cli.utils.suite_picker import prompt_for_suite
+from cli.utils.suite_picker import prompt_for_suite, resolve_latest_suite_dir
 
 from pipeline.core import repo_id_from_repo_url, sanitize_sonar_key_fragment
 from pipeline.models import CaseSpec, RepoSpec
@@ -128,8 +128,7 @@ def dispatch(
     # Analyze mode operates on existing filesystem artifacts. It should not
     # prompt for a repo source unless the user is explicitly scanning.
     if mode == "analyze":
-        suite_root = Path(args.suite_root)
-
+        suite_root = Path(args.suite_root).expanduser().resolve()
         # If analyzing an explicit case directory, never prompt. Also infer
         # suite_id when possible so exports are not polluted.
         suite_id = str(args.suite_id) if args.suite_id else None
@@ -137,14 +136,55 @@ def dispatch(
             suite_id = suite_id or _infer_suite_id_from_case_path(str(args.case_path))
             case_id = args.case_id or Path(str(args.case_path)).resolve().name
         else:
-            # No --case-path: prompt for a suite (LATEST or local list), then
-            # select a case within that suite unless the user provided --case-id.
+            metric = str(getattr(args, "metric", None) or "hotspots").strip()
+
+            # No --case-path: resolve the suite directory.
             if suite_id is None:
-                choice = prompt_for_suite(suite_root)
-                suite_id = choice.suite_id
-                suite_dir = choice.suite_dir
+                # Default: use LATEST if available (non-interactive).
+                latest = resolve_latest_suite_dir(suite_root)
+                if latest is not None:
+                    suite_dir = latest
+                    suite_id = latest.name
+                    print(f"ℹ️  Using latest suite: {suite_id}")
+                else:
+                    # Fallback: interactive picker if no LATEST exists.
+                    choice = prompt_for_suite(suite_root)
+                    suite_id = choice.suite_id
+                    suite_dir = choice.suite_dir
             else:
-                suite_dir = (suite_root / suite_id).resolve()
+                # Allow explicit --suite-id latest.
+                if suite_id.strip().lower() == "latest":
+                    latest = resolve_latest_suite_dir(suite_root)
+                    if latest is None:
+                        raise SystemExit("LATEST suite is not available.")
+                    suite_dir = latest
+                    suite_id = latest.name
+                else:
+                    suite_dir = (suite_root / suite_id).resolve()
+
+            if not Path(suite_dir).exists():
+
+                raise SystemExit(
+
+                    f"Suite '{suite_id}' not found under {suite_root}. "
+
+                    f"Hint: omit --suite-id to use LATEST, or pass --suite-id latest."
+
+                )
+
+
+            # New default: when analyzing a suite, analyze ALL cases unless the
+            # user pins --case-id.
+            if metric == "suite" and not getattr(args, "case_id", None):
+                return int(
+                    run_analyze_suite_all_cases(
+                        args,
+                        pipeline,
+                        suite_root=suite_root,
+                        suite_id=str(suite_id),
+                        suite_dir=suite_dir,
+                    )
+                )
 
             case_id = args.case_id or _choose_case_id_from_suite_dir(suite_dir)
 
@@ -185,7 +225,7 @@ def dispatch(
         track=str(args.track).strip() if args.track else None,
     )
 
-    suite_root = Path(args.suite_root)
+    suite_root = Path(args.suite_root).expanduser().resolve()
     suite_id = str(args.suite_id) if args.suite_id else None
 
     if mode == "scan":
