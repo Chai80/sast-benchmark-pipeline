@@ -137,44 +137,49 @@ def _capture_optional_benchmark_yaml(
     *,
     warnings: Optional[List[str]] = None,
 ) -> None:
-    """Best-effort capture of benchmark YAML inputs for a case.
+    """Deterministically capture benchmark YAML inputs for a *suite* case.
 
-    Some suites (e.g. Durinn micro-suites) contain benchmark metadata like:
-      benchmark/gt_catalog.yaml
-      benchmark/suite_sets.yaml
+    Goal
+    ----
+    When scanning a *local* repo checkout (repo_path), copy canonical benchmark
+    YAML inputs into the suite case directory so GT scoring can run later
+    **without needing to re-open the original repo checkout**.
 
-    Many targets (e.g. Juice Shop) will not have these files.
+    Canonical paths only (no discovery)
+    ----------------------------------
+    We only consider the exact, canonical filenames:
 
-    This function is intentionally no-break:
-    - If repo_path is missing or files don't exist, it does nothing.
-    - Any exception is swallowed so scans are never blocked by capture.
+      - <repo_path>/benchmark/gt_catalog.yaml  ->  <case_dir>/gt/gt_catalog.yaml
+      - <repo_path>/benchmark/suite_sets.yaml ->  <case_dir>/gt/suite_sets.yaml (if present)
 
-    Captured files are copied to:
-      <case_dir>/gt/
+    We intentionally do *not* search for alternate extensions (e.g. .yml) or
+    other filenames. This keeps the ingest deterministic and reproducible.
 
-    This makes each case directory self-contained for later DB ingestion.
+    Behavior
+    --------
+    - Best-effort: never blocks scans.
+    - If repo_path is missing or the files don't exist, does nothing.
+    - Any exception is swallowed (optionally recorded in warnings).
     """
 
     if not repo_path:
         return
     try:
-        bench = Path(repo_path) / "benchmark"
-        if not bench.exists():
+        bench = Path(repo_path).expanduser() / "benchmark"
+        if not bench.exists() or not bench.is_dir():
             return
 
         gt_dir = Path(case_dir) / "gt"
         gt_dir.mkdir(parents=True, exist_ok=True)
 
-        candidates = [
-            "gt_catalog.yaml",
-            "gt_catalog.yml",
-            "suite_sets.yaml",
-            "suite_sets.yml",
-        ]
-        for name in candidates:
-            src = bench / name
-            if src.exists() and src.is_file():
-                shutil.copy2(src, gt_dir / name)
+        # NOTE: Canonical-only. Do not add discovery here.
+        gt_src = bench / "gt_catalog.yaml"
+        if gt_src.exists() and gt_src.is_file():
+            shutil.copy2(gt_src, gt_dir / "gt_catalog.yaml")
+
+        suite_sets_src = bench / "suite_sets.yaml"
+        if suite_sets_src.exists() and suite_sets_src.is_file():
+            shutil.copy2(suite_sets_src, gt_dir / "suite_sets.yaml")
     except Exception as e:
         if warnings is not None:
             warnings.append(f"benchmark_yaml_capture_failed: {e}")
