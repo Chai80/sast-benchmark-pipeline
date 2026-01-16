@@ -604,6 +604,32 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
             print(f"\n⚠️  Failed to build suite triage_dataset: {e}")
 
         # ------------------------------------------------------------------
+        # Suite-level calibration: tool weights for triage tie-breaking
+        # ------------------------------------------------------------------
+        # This is a best-effort step. If GT is missing for many cases, the
+        # calibration builder will exclude those cases explicitly.
+        try:
+            from pipeline.analysis.suite_triage_calibration import build_triage_calibration
+
+            cal = build_triage_calibration(suite_dir=suite_dir, suite_id=suite_id)
+
+            print("\n🧭 Suite triage_calibration")
+            print(f"  Output : {cal.get('out_json')}")
+            print(f"  Tools  : {cal.get('tools')}")
+            print(f"  Cases  : {len(cal.get('included_cases') or [])} (included w/ GT)")
+
+            if cal.get("excluded_cases_no_gt"):
+                ex = cal.get("excluded_cases_no_gt") or []
+                print(f"  ⚠️  Excluded cases without GT: {len(ex)}")
+
+            if cal.get("suspicious_cases"):
+                sus = cal.get("suspicious_cases") or []
+                print(f"  ⚠️  Suspicious cases (GT present but no overlaps): {len(sus)}")
+
+        except Exception as e:
+            print(f"\n⚠️  Failed to build suite triage_calibration: {e}")
+
+        # ------------------------------------------------------------------
         # Suite-level evaluation: triage ranking quality + tool utility
         # ------------------------------------------------------------------
         try:
@@ -620,7 +646,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
             try:
                 ks_list = ev.get("ks") or [1, 3, 5, 10, 25]
                 for k in ks_list:
-                    for strat in ["baseline", "agreement"]:
+                    for strat in ["baseline", "agreement", "calibrated"]:
                         ks = ev.get("macro", {}).get(strat, {}).get(str(k))
                         if ks:
                             mp = ks.get("precision")

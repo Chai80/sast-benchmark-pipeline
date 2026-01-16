@@ -149,6 +149,27 @@ def run_analyze(req: AnalyzeRequest) -> int:
                 out_csv = ds.get("out_csv") if isinstance(ds, dict) else getattr(ds, "out_csv", None)
                 if out_csv:
                     print(f"\n[triage_dataset] wrote: {out_csv}")
+
+                # Best-effort: keep suite-level calibration + eval in sync.
+                try:
+                    from pipeline.analysis.suite_triage_calibration import build_triage_calibration
+
+                    cal = build_triage_calibration(suite_dir=str(suite_dir), suite_id=str(suite_id))
+                    out_json = cal.get("out_json") if isinstance(cal, dict) else getattr(cal, "out_json", None)
+                    if out_json:
+                        print(f"\n[triage_calibration] wrote: {out_json}")
+                except Exception as e:
+                    print(f"\n[triage_calibration] build skipped/failed: {e}")
+
+                try:
+                    from pipeline.analysis.suite_triage_eval import build_triage_eval
+
+                    ev = build_triage_eval(suite_dir=str(suite_dir), suite_id=str(suite_id))
+                    out_summary = ev.get("out_summary_json") if isinstance(ev, dict) else getattr(ev, "out_summary_json", None)
+                    if out_summary:
+                        print(f"\n[triage_eval] wrote: {out_summary}")
+                except Exception as e:
+                    print(f"\n[triage_eval] build skipped/failed: {e}")
             except Exception as e:
                 # Never fail analysis due to suite dataset aggregation.
                 print(f"\n[triage_dataset] build skipped/failed: {e}")

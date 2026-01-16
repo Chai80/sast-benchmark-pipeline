@@ -48,6 +48,11 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
+from pipeline.analysis.suite_triage_calibration import (
+    load_triage_calibration,
+    tool_weights_from_calibration,
+    triage_score_v1,
+)
 
 
 def _now_iso() -> str:
@@ -258,6 +263,66 @@ def _rank_agreement(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     )
 
 
+def _load_suite_calibration(suite_dir: Path, *, out_dirname: str = "analysis") -> Optional[Dict[str, Any]]:
+    """Load suite-level triage calibration if present (best-effort)."""
+
+    p = Path(suite_dir) / out_dirname / "triage_calibration.json"
+    try:
+        return load_triage_calibration(p)
+    except Exception:
+        return None
+
+
+def _rank_calibrated(rows: List[Dict[str, str]], *, cal: Mapping[str, Any]) -> List[Dict[str, str]]:
+    """Calibrated ranking (v1).
+
+    Sort primarily by triage_score_v1 desc, then fall back to the legacy
+    deterministic ties (mirrors triage_queue ordering).
+    """
+
+    weights = tool_weights_from_calibration(cal)
+
+    scoring = cal.get("scoring") if isinstance(cal, dict) else None
+    agreement_lambda = float(scoring.get("agreement_lambda", 0.0)) if isinstance(scoring, dict) else 0.0
+    sb = scoring.get("severity_bonus") if isinstance(scoring, dict) else None
+    if not isinstance(sb, dict):
+        sb = {"HIGH": 0.25, "MEDIUM": 0.10, "LOW": 0.0, "UNKNOWN": 0.0}
+    sev_bonus: Dict[str, float] = {str(k).upper(): float(v) for k, v in sb.items()}
+
+    scored: List[Dict[str, str]] = []
+    for r in rows:
+        rr = dict(r)
+        tools = _tools_for_row(rr)
+        tool_count = _to_int(rr.get("tool_count"), default=len(tools))
+        max_sev = str(rr.get("max_severity") or "UNKNOWN")
+
+        try:
+            score = triage_score_v1(
+                tools=tools,
+                tool_count=int(tool_count),
+                max_severity=max_sev,
+                tool_weights=weights,
+                agreement_lambda=agreement_lambda,
+                severity_bonus=sev_bonus,
+            )
+            rr["triage_score_v1"] = str(float(f"{float(score):.6f}"))
+        except Exception:
+            rr["triage_score_v1"] = ""
+        scored.append(rr)
+
+    return sorted(
+        scored,
+        key=lambda r: (
+            -_to_float(r.get("triage_score_v1"), 0.0),
+            -_to_int(r.get("max_severity_rank"), 0),
+            -_to_int(r.get("tool_count"), 0),
+            -_to_int(r.get("finding_count"), 0),
+            _key_file_path(r),
+            _key_start_line(r),
+        ),
+    )
+
+
 def _gt_ids_for_row(r: Dict[str, str]) -> List[str]:
     # Canonical list encoding.
     ids = _parse_json_list(str(r.get("gt_overlap_ids_json") or ""))
@@ -328,6 +393,17 @@ def build_triage_eval(
         "baseline": _rank_baseline,
         "agreement": _rank_agreement,
     }
+
+    # Optional suite-level calibration strategy.
+    #
+    # This is enabled when runs/suites/<suite_id>/analysis/triage_calibration.json exists.
+    cal = _load_suite_calibration(suite_dir, out_dirname=out_dirname)
+    if cal:
+        # Capture cal in a default argument to keep behavior deterministic.
+        def _rank_cal(rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal) -> List[Dict[str, str]]:
+            return _rank_calibrated(rows, cal=_cal)
+
+        strategies["calibrated"] = _rank_cal
 
     # Normalize K values.
     k_list = sorted({int(k) for k in ks if int(k) > 0})
@@ -433,6 +509,7 @@ def build_triage_eval(
                             "file_path": str(r.get("file_path") or ""),
                             "start_line": _to_int(r.get("start_line"), 0),
                             "triage_rank": _to_int(r.get("triage_rank"), 0),
+                            "triage_score_v1": str(r.get("triage_score_v1") or ""),
                             "gt_overlap": _to_int(r.get("gt_overlap"), 0),
                             "gt_overlap_ids_json": str(r.get("gt_overlap_ids_json") or ""),
                             "gt_overlap_ids": str(r.get("gt_overlap_ids") or ""),
@@ -621,6 +698,7 @@ def build_triage_eval(
             "file_path",
             "start_line",
             "triage_rank",
+            "triage_score_v1",
             "gt_overlap",
             "gt_overlap_ids_json",
             "gt_overlap_ids",

@@ -7,6 +7,11 @@ from typing import Any, Dict, List
 
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
+from pipeline.analysis.suite_triage_calibration import (
+    load_triage_calibration,
+    tool_weights_from_calibration,
+    triage_score_v1,
+)
 from pipeline.analysis.utils.signatures import cluster_locations
 
 from pipeline.scanners import DEFAULT_SCANNERS_CSV
@@ -51,6 +56,36 @@ def _choose_sample_item(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     description="Create a ranked triage queue of hotspots to review first.",
 )
 def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
+    # Optional suite-level calibration (best-effort).
+    #
+    # Expected suite layout:
+    #   runs/suites/<suite_id>/cases/<case_id>/analysis/  (ctx.out_dir)
+    #   runs/suites/<suite_id>/analysis/triage_calibration.json
+    cal: Dict[str, Any] | None = None
+    cal_weights: Dict[str, float] = {}
+    agreement_lambda: float = 0.0
+    severity_bonus: Dict[str, float] = {"HIGH": 0.25, "MEDIUM": 0.10, "LOW": 0.0, "UNKNOWN": 0.0}
+
+    if ctx.suite_id:
+        try:
+            out_dir = Path(ctx.out_dir)
+            suite_dir = out_dir.parent.parent.parent if out_dir.name == "analysis" else None
+            if suite_dir and suite_dir.name == str(ctx.suite_id):
+                cal_path = suite_dir / "analysis" / "triage_calibration.json"
+                cal = load_triage_calibration(cal_path)
+                if cal:
+                    cal_weights = tool_weights_from_calibration(cal)
+                    scoring = cal.get("scoring") if isinstance(cal, dict) else None
+                    if isinstance(scoring, dict):
+                        agreement_lambda = float(scoring.get("agreement_lambda", 0.0))
+                        sb = scoring.get("severity_bonus")
+                        if isinstance(sb, dict):
+                            severity_bonus = {str(k).upper(): float(v) for k, v in sb.items()}
+        except Exception:
+            # Never fail per-case triage queue due to calibration issues.
+            cal = None
+            cal_weights = {}
+
     clusters = store.get("location_clusters")
     if not isinstance(clusters, list):
         items = build_location_items(ctx, store)
@@ -74,6 +109,23 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
         title = str(sample.get("title") or "")
         rule_id = str(sample.get("rule_id") or "")
 
+        # Calibrated score (v1) when suite calibration exists.
+        # If missing, score is blank and the stage uses the baseline ordering.
+        score_v1: str | float = ""
+        if cal:
+            try:
+                score = triage_score_v1(
+                    tools=list(c.get("tools") or []),
+                    tool_count=int(c.get("tool_count") or 0),
+                    max_severity=str(sev or "UNKNOWN"),
+                    tool_weights=cal_weights,
+                    agreement_lambda=agreement_lambda,
+                    severity_bonus=severity_bonus,
+                )
+                score_v1 = float(f"{float(score):.6f}")
+            except Exception:
+                score_v1 = ""
+
         rows.append(
             {
                 "file_path": c.get("file_path"),
@@ -83,6 +135,7 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
                 "tool_count": int(c.get("tool_count") or 0),
                 "total_findings": int(sum(tool_counts.values())),
                 "max_severity": sev,
+                "triage_score_v1": score_v1,
                 "sample_rule_id": rule_id,
                 "sample_title": title,
                 "cluster_id": c.get("cluster_id"),
@@ -90,17 +143,35 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
             }
         )
 
-    # Rank triage: highest severity first, then multi-tool overlap, then most findings.
-    # Deterministic tie-breakers keep ranks stable across runs.
-    rows.sort(
-        key=lambda r: (
-            -int(r.get("_sev_rank", 0)),
-            -int(r.get("tool_count", 0)),
-            -int(r.get("total_findings", 0)),
-            str(r.get("file_path") or ""),
-            int(r.get("start_line") or 0),
+    # Ranking
+    # -------
+    # If calibration exists, rank primarily by triage_score_v1 (desc), then fall
+    # back to the legacy deterministic ties.
+    #
+    # If calibration does not exist, keep the baseline ordering unchanged.
+    if cal:
+        rows.sort(
+            key=lambda r: (
+                -float(r.get("triage_score_v1") or 0.0),
+                -int(r.get("_sev_rank", 0)),
+                -int(r.get("tool_count", 0)),
+                -int(r.get("total_findings", 0)),
+                str(r.get("file_path") or ""),
+                int(r.get("start_line") or 0),
+            )
         )
-    )
+    else:
+        # Rank triage: highest severity first, then multi-tool overlap, then most findings.
+        # Deterministic tie-breakers keep ranks stable across runs.
+        rows.sort(
+            key=lambda r: (
+                -int(r.get("_sev_rank", 0)),
+                -int(r.get("tool_count", 0)),
+                -int(r.get("total_findings", 0)),
+                str(r.get("file_path") or ""),
+                int(r.get("start_line") or 0),
+            )
+        )
     for i, r in enumerate(rows, start=1):
         r["rank"] = i
         r.pop("_sev_rank", None)
@@ -115,6 +186,7 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
             rows,
             fieldnames=[
                 "rank",
+                "triage_score_v1",
                 "file_path",
                 "start_line",
                 "end_line",
