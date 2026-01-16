@@ -616,14 +616,16 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
             print(f"  By-case : {ev.get('out_by_case_csv')}")
             print(f"  Tools   : {ev.get('out_tool_utility_csv')}")
 
-            # Print a compact macro/micro snapshot for the most common Ks.
+            # Print a compact macro snapshot for Ks that matter for triage (top-1/top-3/top-5).
             try:
-                for k in [10, 25]:
-                    ks = ev.get("macro", {}).get("baseline", {}).get(str(k))
-                    if ks:
-                        mp = ks.get("precision")
-                        mc = ks.get("gt_coverage")
-                        print(f"  baseline macro@{k}: precision={mp} coverage={mc}")
+                ks_list = ev.get("ks") or [1, 3, 5, 10, 25]
+                for k in ks_list:
+                    for strat in ["baseline", "agreement"]:
+                        ks = ev.get("macro", {}).get(strat, {}).get(str(k))
+                        if ks:
+                            mp = ks.get("precision")
+                            mc = ks.get("gt_coverage")
+                            print(f"  {strat} macro@{k}: precision={mp} coverage={mc}")
             except Exception:
                 pass
         except Exception as e:

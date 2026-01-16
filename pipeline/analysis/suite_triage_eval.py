@@ -218,7 +218,7 @@ def build_triage_eval(
     *,
     suite_dir: Path,
     suite_id: Optional[str] = None,
-    ks: Sequence[int] = (10, 25),
+    ks: Sequence[int] = (1, 3, 5, 10, 25),
     out_dirname: str = "analysis",
     dataset_relpath: str = "analysis/_tables/triage_dataset.csv",
 ) -> Dict[str, Any]:
@@ -261,13 +261,16 @@ def build_triage_eval(
     # Normalize K values.
     k_list = sorted({int(k) for k in ks if int(k) > 0})
     if not k_list:
-        k_list = [10, 25]
+        k_list = [1, 3, 5, 10, 25]
+
+    max_k = max(k_list) if k_list else 0
 
     out_dir = suite_dir / out_dirname
     out_tables = out_dir / "_tables"
     out_by_case_csv = out_tables / "triage_eval_by_case.csv"
     out_summary_json = out_tables / "triage_eval_summary.json"
     out_tool_csv = out_tables / "triage_tool_utility.csv"
+    out_topk_csv = out_tables / "triage_eval_topk.csv"
     out_log = out_dir / "triage_eval.log"
 
     # --- Accumulators -------------------------------------------------
@@ -275,6 +278,11 @@ def build_triage_eval(
     cases_with_gt: List[str] = []
     cases_without_gt: List[str] = []
     cases_no_clusters: List[str] = []
+    cases_with_gt_but_no_clusters: List[str] = []
+    cases_with_gt_but_no_overlaps: List[str] = []
+
+    # Drilldown: ranked rows (per case+strategy) up to max(ks)
+    topk_rows: List[Dict[str, Any]] = []
 
     macro_prec_sum: Dict[str, Dict[int, float]] = defaultdict(lambda: defaultdict(float))
     macro_prec_n: Dict[str, Dict[int, int]] = defaultdict(lambda: defaultdict(int))
@@ -305,8 +313,57 @@ def build_triage_eval(
         else:
             cases_without_gt.append(case_id)
 
+
+        if has_gt and n_clusters == 0:
+            cases_with_gt_but_no_clusters.append(case_id)
+
+        if has_gt and n_clusters > 0:
+            any_pos = any(_to_int(r.get("gt_overlap"), 0) == 1 for r in case_rows)
+            if not any_pos:
+                cases_with_gt_but_no_overlaps.append(case_id)
+
         for strat, rank_fn in strategies.items():
             ordered = rank_fn(case_rows)
+
+            # Drilldown rows for inspecting top-1/top-3/top-5 behavior.
+            # We emit up to max_k ranks for each case+strategy.
+            if max_k > 0 and ordered:
+                covered_so_far: Set[str] = set()
+                max_rank = min(int(max_k), len(ordered))
+                for idx, r in enumerate(ordered[:max_rank], start=1):
+                    ids = _gt_ids_for_row(r) if has_gt else []
+                    if has_gt and gt_total:
+                        covered_so_far.update(ids)
+                        cum_cov: Optional[float] = float(len(covered_so_far)) / float(gt_total)
+                    else:
+                        cum_cov = None
+
+                    topk_rows.append(
+                        {
+                            "suite_id": sid,
+                            "case_id": case_id,
+                            "strategy": strat,
+                            "rank": int(idx),
+                            "cluster_id": str(r.get("cluster_id") or ""),
+                            "tool_count": _to_int(r.get("tool_count"), 0),
+                            "tools_json": str(r.get("tools_json") or ""),
+                            "tools": str(r.get("tools") or ""),
+                            "max_severity": str(r.get("max_severity") or ""),
+                            "max_severity_rank": _to_int(r.get("max_severity_rank"), 0),
+                            "finding_count": _to_int(r.get("finding_count"), 0),
+                            "file_path": str(r.get("file_path") or ""),
+                            "start_line": _to_int(r.get("start_line"), 0),
+                            "triage_rank": _to_int(r.get("triage_rank"), 0),
+                            "gt_overlap": _to_int(r.get("gt_overlap"), 0),
+                            "gt_overlap_ids_json": str(r.get("gt_overlap_ids_json") or ""),
+                            "gt_overlap_ids": str(r.get("gt_overlap_ids") or ""),
+                            "gt_overlap_ids_count": int(len(ids)),
+                            "has_gt": int(bool(has_gt)),
+                            "gt_total": int(gt_total),
+                            "cumulative_gt_covered": "" if cum_cov is None else int(len(covered_so_far)),
+                            "cumulative_gt_coverage": "" if cum_cov is None else round(float(cum_cov), 6),
+                        }
+                    )
 
             for k in k_list:
                 k_eff = min(k, len(ordered))
@@ -467,6 +524,35 @@ def build_triage_eval(
         ],
     )
 
+    write_csv(
+        out_topk_csv,
+        topk_rows,
+        fieldnames=[
+            "suite_id",
+            "case_id",
+            "strategy",
+            "rank",
+            "cluster_id",
+            "tool_count",
+            "tools_json",
+            "tools",
+            "max_severity",
+            "max_severity_rank",
+            "finding_count",
+            "file_path",
+            "start_line",
+            "triage_rank",
+            "gt_overlap",
+            "gt_overlap_ids_json",
+            "gt_overlap_ids",
+            "gt_overlap_ids_count",
+            "has_gt",
+            "gt_total",
+            "cumulative_gt_covered",
+            "cumulative_gt_coverage",
+        ],
+    )
+
     summary: Dict[str, Any] = {
         "suite_id": sid,
         "suite_dir": str(suite_dir),
@@ -478,11 +564,14 @@ def build_triage_eval(
         "cases_with_gt": int(len(cases_with_gt)),
         "cases_without_gt": int(len(cases_without_gt)),
         "cases_no_clusters": list(cases_no_clusters),
+        "cases_with_gt_but_no_clusters": list(cases_with_gt_but_no_clusters),
+        "cases_with_gt_but_no_overlaps": list(cases_with_gt_but_no_overlaps),
         "macro": macro,
         "micro": micro,
         "out_by_case_csv": str(out_by_case_csv),
         "out_summary_json": str(out_summary_json),
         "out_tool_utility_csv": str(out_tool_csv),
+        "out_topk_csv": str(out_topk_csv),
     }
 
     write_json(out_summary_json, summary)
@@ -504,6 +593,14 @@ def build_triage_eval(
             lines.append("")
             lines.append(f"cases_no_clusters ({len(cases_no_clusters)}):")
             lines.extend([f"  - {c}" for c in cases_no_clusters])
+        if cases_with_gt_but_no_clusters:
+            lines.append("")
+            lines.append(f"cases_with_gt_but_no_clusters ({len(cases_with_gt_but_no_clusters)}):")
+            lines.extend([f"  - {c}" for c in cases_with_gt_but_no_clusters])
+        if cases_with_gt_but_no_overlaps:
+            lines.append("")
+            lines.append(f"cases_with_gt_but_no_overlaps ({len(cases_with_gt_but_no_overlaps)}):")
+            lines.extend([f"  - {c}" for c in cases_with_gt_but_no_overlaps])
         out_log.write_text("\n".join(lines) + "\n", encoding="utf-8")
     except Exception:
         pass
