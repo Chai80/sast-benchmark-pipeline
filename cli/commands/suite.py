@@ -603,6 +603,32 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         except Exception as e:
             print(f"\n⚠️  Failed to build suite triage_dataset: {e}")
 
+        # ------------------------------------------------------------------
+        # Suite-level evaluation: triage ranking quality + tool utility
+        # ------------------------------------------------------------------
+        try:
+            from pipeline.analysis.suite_triage_eval import build_triage_eval
+
+            ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
+
+            print("\n📈 Suite triage_eval")
+            print(f"  Summary : {ev.get('out_summary_json')}")
+            print(f"  By-case : {ev.get('out_by_case_csv')}")
+            print(f"  Tools   : {ev.get('out_tool_utility_csv')}")
+
+            # Print a compact macro/micro snapshot for the most common Ks.
+            try:
+                for k in [10, 25]:
+                    ks = ev.get("macro", {}).get("baseline", {}).get(str(k))
+                    if ks:
+                        mp = ks.get("precision")
+                        mc = ks.get("gt_coverage")
+                        print(f"  baseline macro@{k}: precision={mp} coverage={mc}")
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"\n⚠️  Failed to build suite triage_eval: {e}")
+
     print("\n✅ Suite complete")
     print(f"  Suite id : {suite_id}")
     print(f"  Suite dir: {suite_dir}")
