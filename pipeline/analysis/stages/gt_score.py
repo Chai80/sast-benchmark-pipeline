@@ -19,6 +19,28 @@ GT scoring is optional and controlled by the presence of a GT catalog for a case
 - --gt-source markers:
   Require markers; if none, skip with reason: no_gt_markers.
 
+Suite authoring notes (YAML vs markers)
+--------------------------------------
+There are two supported ways to define ground-truth for a case/suite:
+
+1) Marker-based GT (recommended for branch-per-case suites)
+
+   Add inline markers in the case repo's source files, for example::
+
+       # DURINN_GT id=a07_01 track=sast set=core owasp=A07
+
+   This works well when each case is a git branch, because GT travels with the
+   code. Marker suites will NOT score if you force ``--gt-source=yaml``.
+
+2) YAML catalog GT (recommended for catalog-driven benchmarks)
+
+   Provide a catalog file in the repo (typically ``benchmark/gt_catalog.yaml``
+   or ``benchmark/gt_catalog.yml``). When a case is materialized, the catalog is
+   copied into ``<case_dir>/gt/gt_catalog.yaml`` and used by the scorer.
+
+In short: marker suites are easiest for branch-per-case designs; YAML catalogs
+are easiest when you want GT maintained in one place outside the code.
+
 Outputs (when scoring runs)
 ---------------------------
 Writes under <case_dir>/gt/:

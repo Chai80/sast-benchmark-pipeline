@@ -49,8 +49,10 @@ def main() -> None:
         default="auto",
         help=(
             "GT source selection (default: auto). "
-            "auto = markers then gt_catalog.yaml if present; markers = require inline GT markers; "
-            "yaml = require gt_catalog.yaml/.yml; none = skip GT scoring."
+            "auto = markers then YAML if present; "
+            "markers = require inline markers like '# DURINN_GT id=a07_01 track=sast set=core owasp=A07'; "
+            "yaml = require benchmark/gt_catalog.yaml (copied to <case>/gt/gt_catalog.yaml); "
+            "none = skip GT scoring."
         ),
     )
     ap.add_argument("--mode", choices=["security", "all"], default="security", help="Filtering mode (default: security)")
