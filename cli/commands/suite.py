@@ -554,6 +554,55 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         rc_code = int(pipeline.run(req))
         overall = max(overall, rc_code)
 
+
+
+    # ------------------------------------------------------------------
+    # Suite-level aggregation: triage dataset
+    # ------------------------------------------------------------------
+    # This is intentionally filesystem-first and best-effort.
+    # If some cases are missing triage_features.csv (analysis skipped/failed),
+    # the builder will log them explicitly.
+    if (not bool(args.dry_run)) and (not bool(args.skip_analysis)):
+        try:
+            from pipeline.analysis.suite_triage_dataset import build_triage_dataset
+
+            ds = build_triage_dataset(suite_dir=suite_dir, suite_id=suite_id)
+
+            print("\n📦 Suite triage_dataset")
+            print(f"  Output : {ds.get('out_csv')}")
+            print(f"  Rows   : {ds.get('rows')}")
+
+            if ds.get("missing_cases"):
+                missing = ds.get("missing_cases") or []
+                print(
+                    f"  ⚠️  Missing triage_features.csv for {len(missing)} case(s): "
+                    + ", ".join([str(x) for x in missing])
+                )
+
+            if ds.get("empty_cases"):
+                empty = ds.get("empty_cases") or []
+                print(
+                    f"  ⚠️  Empty triage_features.csv for {len(empty)} case(s): "
+                    + ", ".join([str(x) for x in empty])
+                )
+
+            if ds.get("read_errors"):
+                errs = ds.get("read_errors") or []
+                print(
+                    f"  ⚠️  Failed to read triage_features.csv for {len(errs)} case(s). "
+                    "See triage_dataset_build.log under suite analysis."
+                )
+
+            if ds.get("schema_mismatch_cases"):
+                mism = ds.get("schema_mismatch_cases") or []
+                print(
+                    f"  ⚠️  Schema mismatch triage_features.csv for {len(mism)} case(s). "
+                    "See triage_dataset_build.log under suite analysis."
+                )
+
+        except Exception as e:
+            print(f"\n⚠️  Failed to build suite triage_dataset: {e}")
+
     print("\n✅ Suite complete")
     print(f"  Suite id : {suite_id}")
     print(f"  Suite dir: {suite_dir}")

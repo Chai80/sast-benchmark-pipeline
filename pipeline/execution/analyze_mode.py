@@ -133,6 +133,26 @@ def run_analyze(req: AnalyzeRequest) -> int:
         print(f"  Benchmark pack: {out_dir / 'benchmark_pack.json'}")
 
         print(json.dumps(summary, indent=2))
+
+        # Best-effort: if this analyze run is happening inside a suite layout,
+        # rebuild the suite-level triage_dataset so artifacts stay current.
+        if is_suite_layout:
+            try:
+                from pipeline.analysis.suite_triage_dataset import build_triage_dataset
+
+                # out_dir is the per-case analysis dir: .../runs/suites/<suite_id>/cases/<case_id>/analysis
+                suite_dir = out_dir.parent.parent.parent  # .../runs/suites/<suite_id>
+                suite_id = suite_dir.name
+
+                ds = build_triage_dataset(suite_dir=str(suite_dir), suite_id=str(suite_id))
+
+                out_csv = ds.get("out_csv") if isinstance(ds, dict) else getattr(ds, "out_csv", None)
+                if out_csv:
+                    print(f"\n[triage_dataset] wrote: {out_csv}")
+            except Exception as e:
+                # Never fail analysis due to suite dataset aggregation.
+                print(f"\n[triage_dataset] build skipped/failed: {e}")
+
         return 0
 
     # metric == hotspots
