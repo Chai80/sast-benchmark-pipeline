@@ -54,6 +54,77 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+
+
+def _write_triage_eval_readme(out_tables: Path, *, suite_id: str, ks: Sequence[int]) -> Path:
+    """Write a small README next to triage eval artifacts.
+
+    This keeps metric definitions (especially K) discoverable alongside
+    generated outputs.
+    """
+
+    readme_path = Path(out_tables) / "README_triage_eval.md"
+    readme_path.parent.mkdir(parents=True, exist_ok=True)
+
+    ks_str = ", ".join(str(k) for k in ks)
+    built_at = _now_iso()
+
+    content = f"""# Triage evaluation artifacts
+
+Suite: {suite_id}
+Generated: {built_at}
+
+This folder contains suite-level evaluation outputs comparing triage ranking strategies.
+
+## What is a cluster?
+A *cluster* is one triage-able unit of work: multiple tool findings that point to the same code location
+(same file + nearby line range within the clustering tolerance). The triage queue ranks clusters, not raw findings.
+
+## What is K?
+*K* means: **how many top-ranked clusters a human looks at**.
+
+Examples:
+- Precision@1 answers: "Is the first item we show correct?"
+- Precision@3 answers: "If I review the first 3 items, how many are real?"
+- Coverage@5 answers: "By the time I review 5 items, how much of the ground truth did I surface?"
+
+This run evaluates K values: {ks_str}
+
+## Metrics
+### Precision@K
+Of the top K clusters (or all clusters if fewer than K exist), what fraction overlap ground truth?
+
+Precision@K = (GT-positive clusters in top K) / (clusters considered)
+
+### GT coverage@K
+Ground truth items can be many-to-one with clusters. A single cluster may overlap multiple GT IDs.
+
+Coverage@K = (unique GT IDs covered by top K clusters) / (total GT IDs for the case)
+
+Notes:
+- If a case has no GT (or GT artifacts are missing), GT-based metrics are reported as N/A for that case.
+- Coverage reflects end-to-end performance (detection + ranking). If tools produce no clusters for a GT-heavy case,
+  coverage will be low even if ranking is good on other cases.
+
+## Macro vs micro averages
+We report two suite-level aggregations:
+
+- Macro average: compute the metric per case, then average across cases (each case counts equally).
+- Micro average: pool numerators/denominators across cases (large cases count more).
+
+Both are useful:
+- Macro tells you if the system is consistently good across cases.
+- Micro tells you overall quality across the whole suite's top-K items.
+
+## Files
+- triage_eval_by_case.csv: per-case metrics for each strategy and K
+- triage_eval_summary.json: suite-level macro/micro summaries + warnings
+- triage_tool_utility.csv: tool contribution (unique GT coverage) vs noise (exclusive negatives)
+- triage_eval_topk.csv: top-ranked clusters per case/strategy (up to max(K))
+"""
+
+    readme_path.write_text(content, encoding="utf-8")
+    return readme_path
 def _to_int(x: Any, default: int = 0) -> int:
     try:
         if x is None:
@@ -272,6 +343,14 @@ def build_triage_eval(
     out_tool_csv = out_tables / "triage_tool_utility.csv"
     out_topk_csv = out_tables / "triage_eval_topk.csv"
     out_log = out_dir / "triage_eval.log"
+
+
+    # Write a README explaining K/metrics next to generated artifacts (best-effort).
+    readme_path: Optional[Path] = None
+    try:
+        readme_path = _write_triage_eval_readme(out_tables, suite_id=sid, ks=k_list)
+    except Exception:
+        readme_path = None
 
     # --- Accumulators -------------------------------------------------
     by_case_rows: List[Dict[str, Any]] = []
@@ -572,6 +651,7 @@ def build_triage_eval(
         "out_summary_json": str(out_summary_json),
         "out_tool_utility_csv": str(out_tool_csv),
         "out_topk_csv": str(out_topk_csv),
+        "out_readme_md": "" if readme_path is None else str(readme_path),
     }
 
     write_json(out_summary_json, summary)
