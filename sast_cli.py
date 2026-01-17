@@ -55,7 +55,6 @@ python sast_cli.py --mode suite --suite-file runs/suites/<suite_id>/replay/repla
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 from typing import Dict
 
 from cli.dispatch import dispatch
@@ -187,6 +186,55 @@ def parse_args() -> argparse.Namespace:
         "--skip-analysis",
         action="store_true",
         help="(benchmark|suite mode) Skip the analysis suite step (scans only).",
+    )
+
+    # QA runbook: triage calibration (suite mode)
+    parser.add_argument(
+        "--qa-calibration",
+        dest="qa_calibration",
+        action="store_true",
+        help=(
+            "(suite mode) Run the triage-calibration QA runbook: run suite, build calibration artifacts, "
+            "re-run analysis so per-case triage_queue includes populated triage_score_v1, then validate outputs."
+        ),
+    )
+    parser.add_argument(
+        "--qa-scope",
+        dest="qa_scope",
+        choices=["smoke", "full"],
+        default="smoke",
+        help=(
+            "(suite mode, --qa-calibration) Which default OWASP set to run: "
+            "smoke=A03+A07, full=A01..A10. Overridden by --qa-owasp or --qa-cases."
+        ),
+    )
+    parser.add_argument(
+        "--qa-owasp",
+        dest="qa_owasp",
+        default=None,
+        help=(
+            "(suite mode, --qa-calibration) Override OWASP selection, e.g. 'A03,A07' or 'A01-A10'. "
+            "If provided, this filters cases by OWASP id when the suite is OWASP-structured."
+        ),
+    )
+    parser.add_argument(
+        "--qa-cases",
+        dest="qa_cases",
+        default=None,
+        help=(
+            "(suite mode, --qa-calibration) Optional case selectors to include (comma-separated). "
+            "Each selector is treated as a substring/glob matched against case_id/branch/label. "
+            "If provided, overrides --qa-scope/--qa-owasp and works for non-OWASP suites too."
+        ),
+    )
+    parser.add_argument(
+        "--qa-no-reanalyze",
+        dest="qa_no_reanalyze",
+        action="store_true",
+        help=(
+            "(suite mode, --qa-calibration) Skip the extra analyze pass that recomputes per-case triage_queue.csv "
+            "using the newly built suite calibration. Useful for debugging."
+        ),
     )
 
     # Analysis / metrics

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import pprint
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -35,6 +37,196 @@ from pipeline.suites.suite_resolver import SuiteInputProvenance, resolve_suite_r
 
 ROOT_DIR = PIPELINE_ROOT_DIR
 
+def _default_owasp_micro_suite_worktrees_root() -> Optional[Path]:
+    """Default micro-suite worktrees root (if present on disk).
+
+    Keeps the QA calibration runbook deterministic for our current OWASP micro-suites.
+    If the default path doesn't exist, callers should fall back to explicit --worktrees-root/--cases-from.
+    """
+    p = ROOT_DIR / "repos" / "worktrees" / "durinn-owasp2021-python-micro-suite"
+    return p if p.is_dir() else None
+
+
+def _default_owasp_micro_suite_cases_csv() -> Optional[Path]:
+    """Default deterministic case list for the micro-suite QA (if present)."""
+    p = ROOT_DIR / "examples" / "suite_inputs" / "durinn-owasp2021-python-micro-suite_cases.csv"
+    return p if p.is_file() else None
+
+
+
+# ---------------------------------------------------------------------------
+# QA helpers: triage calibration
+#
+# The triage calibration pipeline is suite-level, but per-case triage artifacts
+# (triage_queue.csv) are emitted during per-case analysis. In a normal suite
+# run, triage_queue.csv is therefore generated *before* the suite-level
+# triage_calibration.json exists. The QA runbook for calibration does a
+# two-pass workflow:
+#   1) run the suite (scan + analysis) and build suite-level calibration assets
+#   2) re-run analyze across all cases so per-case triage_queue.csv can include
+#      triage_score_v1.
+# ---------------------------------------------------------------------------
+
+_OWASP_ID_RE = re.compile(r"\bA(0[1-9]|10)\b", re.IGNORECASE)
+_OWASP_RANGE_RE = re.compile(r"(?i)^A?(\d{1,2})\s*(?:-|\.\.)\s*A?(\d{1,2})$")
+_OWASP_TOKEN_RE = re.compile(r"(?i)^A?(\d{1,2})$")
+
+
+def _normalize_owasp_id(raw: str) -> str:
+    """Normalize an OWASP category id to the form 'A01'..'A10'."""
+
+    m = _OWASP_TOKEN_RE.match(raw.strip())
+    if not m:
+        raise ValueError(f"Invalid OWASP token: {raw!r}")
+    n = int(m.group(1))
+    if n < 1 or n > 10:
+        raise ValueError(f"OWASP id out of range (1..10): {raw!r}")
+    return f"A{n:02d}"
+
+
+def _expand_owasp_spec_token(token: str) -> List[str]:
+    """Expand a single token like 'A03' or 'A01-A10' into a list of IDs."""
+
+    t = token.strip()
+    if not t:
+        return []
+
+    # Normalize a few common range separators.
+    t = t.replace("–", "-").replace("—", "-")
+
+    m_range = _OWASP_RANGE_RE.match(t)
+    if m_range:
+        start = int(m_range.group(1))
+        end = int(m_range.group(2))
+        if start > end:
+            start, end = end, start
+        return [f"A{i:02d}" for i in range(start, end + 1) if 1 <= i <= 10]
+
+    # Single token.
+    return [_normalize_owasp_id(t)]
+
+
+def _parse_qa_owasp_spec(raw: str) -> List[str]:
+    """Parse --qa-owasp (CSV and simple ranges) into a deterministic list."""
+
+    out: List[str] = []
+    for tok in parse_csv(raw):
+        for oid in _expand_owasp_spec_token(tok):
+            if oid not in out:
+                out.append(oid)
+    return out
+
+
+def _qa_target_owasp_ids(scope: str) -> List[str]:
+    scope = (scope or "").strip().lower()
+    if scope == "full":
+        return [f"A{i:02d}" for i in range(1, 11)]
+    # Default: smoke
+    return ["A03", "A07"]
+
+
+def _detect_owasp_id(*texts: object) -> Optional[str]:
+    """Best-effort extraction of an OWASP token (A01..A10) from arbitrary inputs."""
+
+    for t in texts:
+        if t is None:
+            continue
+        m = _OWASP_ID_RE.search(str(t))
+        if not m:
+            continue
+        return f"A{int(m.group(1)):02d}"
+    return None
+
+
+def _default_qa_cases_csv() -> Optional[Path]:
+    """Default deterministic case list for QA (if present in the repo)."""
+
+    p = ROOT_DIR / "examples" / "suite_inputs" / "durinn-owasp2021-python-micro-suite_cases.csv"
+    return p if p.is_file() else None
+
+
+def _default_qa_worktrees_root() -> Optional[Path]:
+    """Default micro-suite worktrees root (if present on disk)."""
+
+    p = ROOT_DIR / "repos" / "worktrees" / "durinn-owasp2021-python-micro-suite"
+    return p if p.is_dir() else None
+
+
+def _qa_matches_selector(haystack: str, selector: str) -> bool:
+    """Case-insensitive match: substring by default, fnmatch if glob chars are present."""
+
+    h = (haystack or "").lower()
+    s = (selector or "").lower().strip()
+    if not s:
+        return False
+    if any(ch in s for ch in ("*", "?", "[")):
+        return fnmatch.fnmatch(h, s)
+    return s in h
+
+
+def _infer_case_owasp_id(suite_case: SuiteCase) -> Optional[str]:
+    c = suite_case.case
+    # Prefer explicit tokens in the user-visible identifiers.
+    oid = _detect_owasp_id(c.case_id, c.branch, c.label)
+    if oid:
+        return oid
+    # Fall back to tags (keys/values).
+    for k, v in (c.tags or {}).items():
+        oid = _detect_owasp_id(k, v)
+        if oid:
+            return oid
+    return None
+
+
+def _filter_suite_def_for_qa(suite_def: SuiteDefinition, args: argparse.Namespace) -> SuiteDefinition:
+    """Return a SuiteDefinition filtered for QA selection."""
+
+    # 1) Explicit case selectors override everything.
+    qa_cases = getattr(args, "qa_cases", None)
+    if qa_cases:
+        selectors = [s.strip() for s in parse_csv(qa_cases) if s.strip()]
+
+        def _match_case(sc: SuiteCase) -> bool:
+            c = sc.case
+            hay = [c.case_id, c.branch or "", c.label or ""]
+            return any(_qa_matches_selector(str(h), sel) for h in hay for sel in selectors)
+
+        selected = [sc for sc in suite_def.cases if _match_case(sc)]
+        selected.sort(key=lambda sc: sc.case.case_id)
+        if not selected:
+            raise SystemExit(
+                "qa-calibration: --qa-cases selection matched 0 cases. "
+                "Selectors match case_id/branch/label (substring or glob)."
+            )
+        return SuiteDefinition(
+            suite_id=suite_def.suite_id,
+            scanners=suite_def.scanners,
+            analysis=suite_def.analysis,
+            cases=selected,
+        )
+
+    # 2) OWASP slice selection.
+    qa_owasp = getattr(args, "qa_owasp", None)
+    qa_scope = getattr(args, "qa_scope", None) or "smoke"
+    wanted = set(_parse_qa_owasp_spec(qa_owasp) if qa_owasp else _qa_target_owasp_ids(qa_scope))
+    selected: List[SuiteCase] = []
+    for sc in suite_def.cases:
+        oid = _infer_case_owasp_id(sc)
+        if oid and oid in wanted:
+            selected.append(sc)
+    selected.sort(key=lambda sc: sc.case.case_id)
+    if not selected:
+        raise SystemExit(
+            f"qa-calibration: OWASP selection matched 0 cases. wanted={sorted(wanted)} "
+            "(matches A01..A10 tokens in case_id/branch/label/tags)."
+        )
+    return SuiteDefinition(
+        suite_id=suite_def.suite_id,
+        scanners=suite_def.scanners,
+        analysis=suite_def.analysis,
+        cases=selected,
+    )
+
 
 def _parse_scanners_str(value: str) -> List[str]:
     raw = parse_csv(value)
@@ -43,6 +235,170 @@ def _parse_scanners_str(value: str) -> List[str]:
     if unknown:
         print(f"  ⚠️  ignoring unknown scanners: {', '.join(unknown)}")
     return scanners
+
+
+# --------------------------
+# QA calibration helpers
+# --------------------------
+
+_OWASP_ID_RE = re.compile(r"\bA(0[1-9]|10)\b", flags=re.IGNORECASE)
+
+
+def _detect_owasp_id(*texts: object) -> Optional[str]:
+    """Detect an OWASP Top 10 id (A01..A10) from free-form text fields."""
+
+    for t in texts:
+        if not t:
+            continue
+        m = _OWASP_ID_RE.search(str(t))
+        if m:
+            return f"A{m.group(1)}"
+    return None
+
+
+def _normalize_owasp_id(token: str) -> str:
+    """Normalize inputs like 'a3'/'A03' -> 'A03'."""
+
+    s = str(token or "").strip().upper()
+    m = re.match(r"^A?(\d{1,2})$", s)
+    if not m:
+        return s
+    n = int(m.group(1))
+    return f"A{n:02d}"
+
+
+def _expand_owasp_token(token: str) -> List[str]:
+    """Expand an OWASP selector token.
+
+    Supports:
+      - A03
+      - A01-A10
+      - A01..A10
+    """
+
+    raw = str(token or "").strip()
+    if not raw:
+        return []
+
+    # Normalize unicode dashes that sometimes show up in pasted text.
+    raw = raw.replace("–", "-").replace("—", "-")
+
+    if raw.strip().lower() in {"all"}:
+        return [f"A{i:02d}" for i in range(1, 11)]
+
+    m = re.match(r"(?i)^A?(\d{1,2})\s*(?:\.\.|-)\s*A?(\d{1,2})$", raw)
+    if m:
+        a = int(m.group(1))
+        b = int(m.group(2))
+        lo, hi = (a, b) if a <= b else (b, a)
+        lo = max(lo, 1)
+        hi = min(hi, 10)
+        return [f"A{i:02d}" for i in range(lo, hi + 1)]
+
+    return [_normalize_owasp_id(raw)]
+
+
+def _parse_qa_owasp_spec(raw: str) -> List[str]:
+    """Parse the --qa-owasp argument into a list of normalized IDs."""
+
+    out: List[str] = []
+    seen: set[str] = set()
+    for tok in parse_csv(raw):
+        for oid in _expand_owasp_token(tok):
+            if not oid:
+                continue
+            if oid not in seen:
+                seen.add(oid)
+                out.append(oid)
+    return out
+
+
+def _qa_target_owasp_ids(args: argparse.Namespace) -> List[str]:
+    """Return the OWASP ids included by this QA run."""
+
+    raw = str(getattr(args, "qa_owasp", "") or "").strip()
+    if raw:
+        ids = _parse_qa_owasp_spec(raw)
+        if ids:
+            return ids
+
+    scope = str(getattr(args, "qa_scope", "smoke") or "smoke").lower()
+    if scope == "full":
+        return [f"A{i:02d}" for i in range(1, 11)]
+
+    # Default: smoke slice.
+    return ["A03", "A07"]
+
+
+def _qa_parse_case_selectors(raw: Optional[str]) -> List[str]:
+    return [s for s in parse_csv(raw or "") if s]
+
+
+def _qa_matches_selector(value: str, selector: str) -> bool:
+    """Match a selector against a value.
+
+    If selector contains glob metacharacters (*, ?, [), uses fnmatch.
+    Otherwise does a case-insensitive substring match.
+    """
+
+    v = (value or "").lower()
+    s = (selector or "").strip().lower()
+    if not s:
+        return False
+    if any(ch in s for ch in ("*", "?", "[")):
+        return fnmatch.fnmatch(v, s)
+    return s in v
+
+
+def _infer_case_owasp_id(sc: SuiteCase) -> Optional[str]:
+    c = sc.case
+    return _detect_owasp_id(c.case_id, c.branch, c.label)
+
+
+def _filter_suite_def_for_qa(
+    suite_def: SuiteDefinition,
+    *,
+    selectors: List[str],
+    wanted_owasp_ids: List[str],
+) -> SuiteDefinition:
+    """Return a suite definition restricted to the QA slice."""
+
+    selected: List[SuiteCase] = []
+    skipped: List[SuiteCase] = []
+
+    if selectors:
+        for sc in suite_def.cases:
+            c = sc.case
+            hay = [str(c.case_id or ""), str(c.branch or ""), str(c.label or "")]
+            if any(_qa_matches_selector(v, sel) for sel in selectors for v in hay):
+                selected.append(sc)
+            else:
+                skipped.append(sc)
+        reason = f"selectors: {', '.join(selectors)}"
+    else:
+        targets = set(wanted_owasp_ids)
+        for sc in suite_def.cases:
+            owasp = _infer_case_owasp_id(sc)
+            if owasp and owasp in targets:
+                selected.append(sc)
+            else:
+                skipped.append(sc)
+        reason = f"OWASP IDs: {', '.join(sorted(targets))}"
+
+    if not selected:
+        raise SystemExit(
+            "QA calibration slice matched 0 cases. "
+            "Either pass --qa-cases (explicit selectors) or ensure case_id/branch/label contains an OWASP id like 'A03'."
+        )
+
+    # Deterministic ordering.
+    selected.sort(key=lambda sc: str(sc.case.case_id))
+
+    print("\n🧪 QA calibration slice")
+    print(f"   - {reason}")
+    print(f"   - selected {len(selected)} case(s); skipped {len(skipped)}")
+
+    return SuiteDefinition(suite_id=suite_def.suite_id, scanners=suite_def.scanners, cases=selected, analysis=suite_def.analysis)
 
 
 def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[str, Dict[str, str]]) -> SuiteDefinition:
@@ -352,6 +708,45 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
     # CLI is invoked from different working directories.
     suite_root = anchor_under_repo_root(Path(args.suite_root).expanduser())
 
+    # ------------------------------------------------------------------
+    # QA calibration runbook: deterministic two-pass execution
+    # ------------------------------------------------------------------
+    qa_mode = bool(getattr(args, "qa_calibration", False))
+    qa_no_reanalyze = bool(getattr(args, "qa_no_reanalyze", False))
+    if qa_mode:
+        # QA requires artifacts on disk.
+        if args.dry_run:
+            print("❌ --qa-calibration cannot be used with --dry-run (needs artifacts to validate).")
+            return 2
+        if args.skip_analysis:
+            print("❌ --qa-calibration cannot be used with --skip-analysis (needs suite analysis + calibration).")
+            return 2
+
+        # Defensive: "latest" is reserved for selecting a previously-run suite.
+        # In QA mode we always create a new suite id.
+        if (args.suite_id or "").strip().lower() == "latest":
+            print("⚠️  Ignoring --suite-id=latest in QA mode; generating a fresh suite id.")
+            args.suite_id = None
+
+        # Deterministic suite definition: disallow interactive prompting.
+        # If no explicit suite inputs are provided, fall back to the example
+        # OWASP micro-suite inputs if present.
+        if not (args.suite_file or args.cases_from or args.worktrees_root):
+            default_wt = _default_owasp_micro_suite_worktrees_root()
+            default_csv = _default_owasp_micro_suite_cases_csv()
+            if default_wt is not None:
+                args.worktrees_root = str(default_wt)
+                print(f"🧪 QA calibration: using default worktrees-root: {default_wt}")
+            elif default_csv is not None:
+                args.cases_from = str(default_csv)
+                print(f"🧪 QA calibration: using default cases-from CSV: {default_csv}")
+            else:
+                print(
+                    "❌ --qa-calibration requires a non-interactive suite definition source.\n"
+                    "Provide one of: --suite-file, --cases-from, --worktrees-root."
+                )
+                return 2
+
     # Load or build suite definition
     # Load suite definition (Python only at runtime; YAML is migration-only)
     if args.suite_file:
@@ -367,6 +762,51 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
             suite_def = _build_suite_from_sources(args)
         else:
             suite_def = _build_suite_interactively(args, repo_registry=repo_registry)
+
+    # QA case selection: restrict the suite to the requested OWASP slice.
+    if qa_mode:
+        targets_list = _qa_target_owasp_ids(args)
+        targets = set(targets_list)
+        scope_label = "custom" if getattr(args, "qa_owasp", None) else (getattr(args, "qa_scope", None) or "smoke")
+
+        selected_cases: List[SuiteCase] = []
+        skipped_case_ids: List[str] = []
+        for sc in suite_def.cases:
+            c = sc.case
+            oid = _detect_owasp_id(c.case_id, c.branch, c.label)
+            if oid and oid in targets:
+                selected_cases.append(sc)
+            else:
+                skipped_case_ids.append(c.case_id)
+
+        if not selected_cases:
+            found_ids = sorted({
+                _detect_owasp_id(sc.case.case_id, sc.case.branch, sc.case.label)
+                for sc in suite_def.cases
+                if _detect_owasp_id(sc.case.case_id, sc.case.branch, sc.case.label)
+            })
+            print(
+                "❌ QA calibration selection produced 0 cases.\n"
+                f"Requested scope: {scope_label} (targets={sorted(targets)})\n"
+                f"Found OWASP ids in suite: {found_ids}\n"
+                "Tip: use --qa-owasp to override or point --cases-from/--worktrees-root at a suite with OWASP-labelled cases."
+            )
+            return 2
+
+        selected_cases = sorted(selected_cases, key=lambda sc: sc.case.case_id)
+        suite_def = SuiteDefinition(
+            suite_id=suite_def.suite_id,
+            scanners=suite_def.scanners,
+            cases=selected_cases,
+            analysis=suite_def.analysis,
+        )
+
+        print("\n🧪 QA calibration runbook")
+        print(f"- scope: {scope_label}")
+        print(f"- owasp targets: {targets_list}")
+        print(f"- selected cases: {len(selected_cases)}")
+        if skipped_case_ids:
+            print(f"- skipped cases: {len(skipped_case_ids)}")
 
     # CLI overrides
     suite_id = str(args.suite_id) if args.suite_id else (suite_def.suite_id or new_suite_id())
