@@ -19,6 +19,76 @@ from pipeline.scanners import DEFAULT_SCANNERS_CSV
 from ._shared import build_location_items, max_severity, severity_rank
 
 
+TRIAGE_QUEUE_SCHEMA_VERSION = "v1"
+
+# NOTE: This list is a contract. Update tests if you change it.
+TRIAGE_QUEUE_FIELDNAMES: List[str] = [
+    "rank",
+    "triage_score_v1",  # may be blank when no suite calibration exists
+    "file_path",
+    "start_line",
+    "end_line",
+    "tool_count",
+    "tools",
+    "total_findings",
+    "max_severity",
+    "sample_rule_id",
+    "sample_title",
+    "cluster_id",
+]
+
+
+def _as_float(v: Any, default: float = 0.0) -> float:
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _as_int(v: Any, default: int = 0) -> int:
+    try:
+        return int(v)
+    except Exception:
+        return int(default)
+
+
+def _baseline_sort_key(r: Dict[str, Any]) -> tuple:
+    """Legacy deterministic triage ordering.
+
+    This is the stable fallback order both with and without calibration.
+    """
+
+    return (
+        -_as_int(r.get("_sev_rank"), 0),
+        -_as_int(r.get("tool_count"), 0),
+        -_as_int(r.get("total_findings"), 0),
+        str(r.get("file_path") or ""),
+        _as_int(r.get("start_line"), 0),
+        # Final stable tie-break key (required for determinism)
+        str(r.get("cluster_id") or ""),
+    )
+
+
+def rank_triage_rows(rows: List[Dict[str, Any]], *, calibrated: bool) -> List[Dict[str, Any]]:
+    """Sort rows deterministically and assign 1-based rank.
+
+    Contract:
+      - If calibrated: primary sort triage_score_v1 desc, then fallback to legacy deterministic order.
+      - If not calibrated: legacy deterministic order unchanged.
+      - Always use stable tie-break keys (file_path, start_line, cluster_id).
+    """
+
+    if calibrated:
+        rows.sort(key=lambda r: (-_as_float(r.get("triage_score_v1"), 0.0),) + _baseline_sort_key(r))
+    else:
+        rows.sort(key=_baseline_sort_key)
+
+    for i, r in enumerate(rows, start=1):
+        r["rank"] = i
+        r.pop("_sev_rank", None)
+    return rows
+
+
 def _choose_sample_item(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Pick a representative finding from a cluster.
 
@@ -146,35 +216,10 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     # Ranking
     # -------
     # If calibration exists, rank primarily by triage_score_v1 (desc), then fall
-    # back to the legacy deterministic ties.
+    # back to the legacy deterministic order.
     #
     # If calibration does not exist, keep the baseline ordering unchanged.
-    if cal:
-        rows.sort(
-            key=lambda r: (
-                -float(r.get("triage_score_v1") or 0.0),
-                -int(r.get("_sev_rank", 0)),
-                -int(r.get("tool_count", 0)),
-                -int(r.get("total_findings", 0)),
-                str(r.get("file_path") or ""),
-                int(r.get("start_line") or 0),
-            )
-        )
-    else:
-        # Rank triage: highest severity first, then multi-tool overlap, then most findings.
-        # Deterministic tie-breakers keep ranks stable across runs.
-        rows.sort(
-            key=lambda r: (
-                -int(r.get("_sev_rank", 0)),
-                -int(r.get("tool_count", 0)),
-                -int(r.get("total_findings", 0)),
-                str(r.get("file_path") or ""),
-                int(r.get("start_line") or 0),
-            )
-        )
-    for i, r in enumerate(rows, start=1):
-        r["rank"] = i
-        r.pop("_sev_rank", None)
+    rank_triage_rows(rows, calibrated=bool(cal))
 
     store.put("triage_rows", rows)
 
@@ -184,20 +229,7 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
         write_csv(
             out_csv,
             rows,
-            fieldnames=[
-                "rank",
-                "triage_score_v1",
-                "file_path",
-                "start_line",
-                "end_line",
-                "tool_count",
-                "tools",
-                "total_findings",
-                "max_severity",
-                "sample_rule_id",
-                "sample_title",
-                "cluster_id",
-            ],
+            fieldnames=TRIAGE_QUEUE_FIELDNAMES,
         )
         store.add_artifact("triage_queue_csv", out_csv)
     if "json" in ctx.formats:
