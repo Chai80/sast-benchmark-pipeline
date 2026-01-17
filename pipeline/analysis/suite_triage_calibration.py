@@ -49,6 +49,8 @@ from __future__ import annotations
 import csv
 import json
 import math
+import re
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,7 +59,14 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
 
 
-TRIAGE_CALIBRATION_SCHEMA_VERSION: str = "triage_calibration_v1"
+TRIAGE_CALIBRATION_SCHEMA_V1: str = "triage_calibration_v1"
+TRIAGE_CALIBRATION_SCHEMA_VERSION: str = "triage_calibration_v2"
+
+# Backwards compatible reader (we still accept v1 files).
+TRIAGE_CALIBRATION_SUPPORTED_VERSIONS: set[str] = {
+    TRIAGE_CALIBRATION_SCHEMA_V1,
+    TRIAGE_CALIBRATION_SCHEMA_VERSION,
+}
 
 
 @dataclass(frozen=True)
@@ -73,6 +82,12 @@ class CalibrationParamsV1:
     # Scoring params (stored in calibration json and used by triage_score_v1)
     agreement_lambda: float = 0.50
     severity_bonus: Mapping[str, float] = None  # type: ignore[assignment]
+
+    # Per-OWASP selection guardrail
+    #
+    # A slice must have at least this many GT-scored clusters before we trust
+    # its category-specific weights.
+    min_support_by_owasp: int = 10
 
     def __post_init__(self) -> None:
         if self.severity_bonus is None:
@@ -159,7 +174,8 @@ def log_odds(p: float, *, p_min: float, p_max: float) -> float:
 
 def tool_weights_from_calibration(cal: Mapping[str, Any]) -> Dict[str, float]:
     out: Dict[str, float] = {}
-    for row in cal.get("tool_stats", []) or []:
+    rows = cal.get("tool_stats_global") or cal.get("tool_stats") or []
+    for row in rows or []:
         if not isinstance(row, dict):
             continue
         t = str(row.get("tool") or "").strip()
@@ -170,6 +186,93 @@ def tool_weights_from_calibration(cal: Mapping[str, Any]) -> Dict[str, float]:
         except Exception:
             out[t] = 0.0
     return out
+
+
+_RE_OWASP_ID = re.compile(r"^A(\d{1,2})$", re.IGNORECASE)
+
+
+def _normalize_owasp_id(v: Any) -> Optional[str]:
+    s = str(v or "").strip().upper()
+    if not s:
+        return None
+    m = _RE_OWASP_ID.match(s)
+    if not m:
+        return None
+    n = int(m.group(1))
+    if n < 1 or n > 10:
+        return None
+    return f"A{n:02d}"
+
+
+def tool_weights_for_owasp(
+    cal: Mapping[str, Any],
+    *,
+    owasp_id: Optional[str],
+    min_support: int = 10,
+) -> Dict[str, float]:
+    """Return tool weights for a specific OWASP category with fallback.
+
+    Rules
+    -----
+    - If the calibration JSON contains a slice for `owasp_id` and that slice has
+      at least `min_support` GT-scored clusters, return that slice's weights.
+    - Otherwise, fall back to global weights.
+
+    This function is intentionally small and dependency-free so both:
+      - per-case triage_queue scoring, and
+      - suite_triage_eval "calibrated" strategy
+    can use the exact same selection logic.
+    """
+
+    global_weights = tool_weights_from_calibration(cal)
+    oid = _normalize_owasp_id(owasp_id)
+    if not oid:
+        return global_weights
+
+    by_owasp = cal.get("tool_stats_by_owasp") if isinstance(cal, dict) else None
+    if not isinstance(by_owasp, dict):
+        return global_weights
+
+    slice_obj = by_owasp.get(oid)
+    if slice_obj is None:
+        return global_weights
+
+    # v2 shape: { support: {clusters, cases, ...}, tool_stats: [...] }
+    if isinstance(slice_obj, dict):
+        support = slice_obj.get("support")
+        clusters = 0
+        if isinstance(support, dict):
+            try:
+                clusters = int(support.get("clusters") or 0)
+            except Exception:
+                clusters = 0
+        tool_stats = slice_obj.get("tool_stats")
+        if not isinstance(tool_stats, list):
+            tool_stats = []
+
+        if clusters < int(min_support):
+            return global_weights
+
+        out: Dict[str, float] = {}
+        for row in tool_stats:
+            if not isinstance(row, dict):
+                continue
+            t = str(row.get("tool") or "").strip()
+            if not t:
+                continue
+            try:
+                out[t] = float(row.get("weight"))
+            except Exception:
+                out[t] = 0.0
+
+        return out or global_weights
+
+    # Legacy/experimental shape: directly a list of tool_stat dicts
+    if isinstance(slice_obj, list):
+        # No support count available -> conservative fallback.
+        return global_weights
+
+    return global_weights
 
 
 def triage_score_v1(
@@ -215,7 +318,8 @@ def triage_score_v1_for_row(row: Mapping[str, Any], cal: Mapping[str, Any]) -> f
 
     max_sev = str(row.get("max_severity") or row.get("severity") or "UNKNOWN")
 
-    weights = tool_weights_from_calibration(cal)
+    min_support = int(scoring.get("min_support_by_owasp", 10)) if isinstance(scoring, dict) else 10
+    weights = tool_weights_for_owasp(cal, owasp_id=str(row.get("owasp_id") or ""), min_support=min_support)
     return triage_score_v1(
         tools=tools,
         tool_count=tool_count,
@@ -233,7 +337,8 @@ def load_triage_calibration(path: Path) -> Optional[Dict[str, Any]]:
     data = json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         return None
-    if str(data.get("schema_version") or "") != TRIAGE_CALIBRATION_SCHEMA_VERSION:
+    sv = str(data.get("schema_version") or "")
+    if sv not in TRIAGE_CALIBRATION_SUPPORTED_VERSIONS:
         raise ValueError(f"Unsupported triage calibration schema_version: {data.get('schema_version')}")
     return data
 
@@ -304,6 +409,14 @@ def build_triage_calibration(
     tp: Dict[str, int] = {}
     fp: Dict[str, int] = {}
 
+    # Per-OWASP tool stats among included cases.
+    # key: owasp_id -> per-tool tp/fp
+    tp_by_owasp: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    fp_by_owasp: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    support_clusters_by_owasp: Dict[str, int] = defaultdict(int)
+    support_cases_by_owasp: Dict[str, set[str]] = defaultdict(set)
+    overlap_sum_by_owasp: Dict[str, int] = defaultdict(int)
+
     # Suspicious cases: has GT + has clusters + 0 overlaps.
     per_case_clusters: Dict[str, int] = {}
     per_case_overlap_sum: Dict[str, int] = {}
@@ -324,6 +437,18 @@ def build_triage_calibration(
             else:
                 fp[t] = fp.get(t, 0) + 1
 
+        # Per-OWASP slice
+        oid = _normalize_owasp_id(r.get("owasp_id"))
+        if oid:
+            support_clusters_by_owasp[oid] += 1
+            support_cases_by_owasp[oid].add(cid)
+            overlap_sum_by_owasp[oid] += int(ov)
+            for t in tools:
+                if ov == 1:
+                    tp_by_owasp[oid][t] += 1
+                else:
+                    fp_by_owasp[oid][t] += 1
+
     suspicious_cases: List[Dict[str, Any]] = []
     for cid in included_cases:
         n = per_case_clusters.get(cid, 0)
@@ -334,14 +459,14 @@ def build_triage_calibration(
     # Stable tool ordering.
     tools_all = sorted(set(list(tp.keys()) + list(fp.keys())))
 
-    tool_stats: List[Dict[str, Any]] = []
+    tool_stats_global: List[Dict[str, Any]] = []
     for t in tools_all:
         t_tp = int(tp.get(t, 0))
         t_fp = int(fp.get(t, 0))
         p = smoothed_precision(t_tp, t_fp, alpha=params.alpha, beta=params.beta)
         w = log_odds(p, p_min=params.p_min, p_max=params.p_max)
 
-        tool_stats.append(
+        tool_stats_global.append(
             {
                 "tool": t,
                 "tp": t_tp,
@@ -350,6 +475,42 @@ def build_triage_calibration(
                 "weight": _round6(w),
             }
         )
+
+    # Per-OWASP tool stats (deterministic key and list ordering).
+    tool_stats_by_owasp: Dict[str, Any] = {}
+    for n in range(1, 11):
+        oid = f"A{n:02d}"
+        if oid not in support_clusters_by_owasp:
+            continue
+
+        tp_slice = tp_by_owasp.get(oid) or {}
+        fp_slice = fp_by_owasp.get(oid) or {}
+        tools_slice = sorted(set(list(tp_slice.keys()) + list(fp_slice.keys())))
+
+        stats: List[Dict[str, Any]] = []
+        for t in tools_slice:
+            t_tp = int(tp_slice.get(t, 0))
+            t_fp = int(fp_slice.get(t, 0))
+            p = smoothed_precision(t_tp, t_fp, alpha=params.alpha, beta=params.beta)
+            w = log_odds(p, p_min=params.p_min, p_max=params.p_max)
+            stats.append(
+                {
+                    "tool": t,
+                    "tp": t_tp,
+                    "fp": t_fp,
+                    "p_smoothed": _round6(p),
+                    "weight": _round6(w),
+                }
+            )
+
+        tool_stats_by_owasp[oid] = {
+            "support": {
+                "clusters": int(support_clusters_by_owasp.get(oid, 0)),
+                "cases": int(len(support_cases_by_owasp.get(oid) or set())),
+                "gt_positive_clusters": int(overlap_sum_by_owasp.get(oid, 0)),
+            },
+            "tool_stats": stats,
+        }
 
     out_dir = suite_dir / out_dirname
     out_json = out_dir / "triage_calibration.json"
@@ -367,11 +528,16 @@ def build_triage_calibration(
         "included_cases": list(included_cases),
         "excluded_cases_no_gt": list(excluded_cases_no_gt),
         "suspicious_cases": list(suspicious_cases),
-        "tool_stats": list(tool_stats),
+        "tool_stats_global": list(tool_stats_global),
+        # Backwards compatible alias for v1 consumers/tests that still read `tool_stats`.
+        # Keep this during the v1->v2 transition so older tooling continues to work.
+        "tool_stats": list(tool_stats_global),
+        "tool_stats_by_owasp": tool_stats_by_owasp,
         "scoring": {
             "strategy": "triage_score_v1",
             "agreement_lambda": float(params.agreement_lambda),
             "severity_bonus": dict(params.severity_bonus),
+            "min_support_by_owasp": int(params.min_support_by_owasp),
         },
     }
 
@@ -383,7 +549,7 @@ def build_triage_calibration(
     if write_report_csv:
         write_csv(
             out_report,
-            tool_stats,
+            tool_stats_global,
             fieldnames=["tool", "tp", "fp", "p_smoothed", "weight"],
         )
 
@@ -395,7 +561,7 @@ def build_triage_calibration(
         lines.append(f"dataset_csv           : {dataset_csv}")
         lines.append(f"included_cases        : {len(included_cases)}")
         lines.append(f"excluded_cases_no_gt  : {len(excluded_cases_no_gt)}")
-        lines.append(f"tools                 : {len(tool_stats)}")
+        lines.append(f"tools                 : {len(tool_stats_global)}")
         lines.append(f"out_json              : {out_json}")
         if suspicious_cases:
             lines.append("")
@@ -417,6 +583,7 @@ def build_triage_calibration(
         "included_cases": list(included_cases),
         "excluded_cases_no_gt": list(excluded_cases_no_gt),
         "suspicious_cases": list(suspicious_cases),
-        "tools": int(len(tool_stats)),
+        "tools": int(len(tool_stats_global)),
+        "owasp_slices": int(len(tool_stats_by_owasp)),
         "built_at": payload.get("generated_at"),
     }
