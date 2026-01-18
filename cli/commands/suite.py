@@ -25,7 +25,7 @@ from pipeline.suites.bundles import anchor_under_repo_root, safe_name
 from pipeline.core import ROOT_DIR as PIPELINE_ROOT_DIR, repo_id_from_repo_url
 from pipeline.suites.layout import new_suite_id
 from pipeline.models import CaseSpec
-from pipeline.orchestrator import RunRequest
+from pipeline.orchestrator import AnalyzeRequest, RunRequest
 from pipeline.pipeline import SASTBenchmarkPipeline
 from pipeline.scanners import DEFAULT_SCANNERS_CSV, SUPPORTED_SCANNERS
 from pipeline.suites.suite_definition import (
@@ -866,6 +866,10 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         analysis_filter = str(args.analysis_filter)
         skip_analysis = bool(args.skip_analysis)
 
+    if qa_mode and skip_analysis:
+        print("❌ --qa-calibration cannot run with analysis skipped (suite_def.analysis.skip / --skip-analysis).")
+        return 2
+
     suite_dir = (suite_root / safe_name(suite_id)).resolve()
     suite_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1012,11 +1016,11 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
             use_suite=True,
             dry_run=bool(args.dry_run),
             quiet=bool(args.quiet),
-            skip_analysis=bool(args.skip_analysis),
-            tolerance=int(args.tolerance),
+            skip_analysis=bool(skip_analysis),
+            tolerance=int(tolerance),
             gt_tolerance=int(getattr(args, "gt_tolerance", 0)),
             gt_source=str(getattr(args, "gt_source", "auto")),
-            analysis_filter=str(args.analysis_filter),
+            analysis_filter=str(analysis_filter),
             exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
             include_harness=bool(getattr(args, "include_harness", False)),
             sonar_project_key=sc.overrides.sonar_project_key or args.sonar_project_key,
@@ -1036,7 +1040,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
     # This is intentionally filesystem-first and best-effort.
     # If some cases are missing triage_features.csv (analysis skipped/failed),
     # the builder will log them explicitly.
-    if (not bool(args.dry_run)) and (not bool(args.skip_analysis)):
+    if (not bool(args.dry_run)) and (not bool(skip_analysis)):
         try:
             from pipeline.analysis.suite_triage_dataset import build_triage_dataset
 
@@ -1131,6 +1135,75 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         except Exception as e:
             print(f"\n⚠️  Failed to build suite triage_eval: {e}")
 
+
+
+    # ------------------------------------------------------------------
+    # QA calibration runbook: second pass analyze + deterministic checklist
+    # ------------------------------------------------------------------
+    if qa_mode and (not bool(args.dry_run)) and (not bool(skip_analysis)):
+        if qa_no_reanalyze:
+            print("\n🧪 QA calibration: skipping re-analyze pass (--qa-no-reanalyze).")
+        else:
+            print("\n🔁 QA calibration: re-analyzing cases to apply triage calibration")
+            for j, rc2 in enumerate(resolved_run.cases, start=1):
+                c2 = rc2.suite_case.case
+                print("\n" + "-" * 72)
+                print(f"🔁 Analyze {j}/{len(resolved_run.cases)}: {c2.case_id}")
+
+                # Explicit case_path prevents case-id normalization surprises.
+                case_dir = (suite_dir / "cases" / safe_name(c2.case_id)).resolve()
+                try:
+                    areq = AnalyzeRequest(
+                        metric="suite",
+                        case=c2,
+                        suite_root=suite_root,
+                        suite_id=suite_id,
+                        case_path=str(case_dir),
+                        tools=tuple(scanners),
+                        tolerance=int(tolerance),
+                        gt_tolerance=int(getattr(args, "gt_tolerance", 0)),
+                        gt_source=str(getattr(args, "gt_source", "auto")),
+                        analysis_filter=str(analysis_filter),
+                        exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
+                        include_harness=bool(getattr(args, "include_harness", False)),
+                    )
+                    rc_code2 = int(pipeline.analyze(areq))
+                except Exception as e:
+                    print(f"  ❌ re-analyze failed for {c2.case_id}: {e}")
+                    rc_code2 = 2
+
+                overall = max(overall, rc_code2)
+
+        # PASS/FAIL checklist
+        try:
+            from pipeline.analysis.qa_calibration_runbook import (
+                all_ok,
+                render_checklist,
+                validate_calibration_suite_artifacts,
+            )
+
+            checks = validate_calibration_suite_artifacts(
+                suite_dir=suite_dir,
+                require_scored_queue=(not qa_no_reanalyze),
+                expect_calibration=True,
+            )
+            report = render_checklist(checks, title="QA calibration checklist")
+            print(report)
+
+            # Write next to other suite-level analysis artifacts for CI scraping.
+            try:
+                out_path = (suite_dir / "analysis" / "qa_calibration_checklist.txt").resolve()
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_text(report, encoding="utf-8")
+                print(f"\n📝 Wrote checklist: {out_path}")
+            except Exception as e:
+                print(f"\n⚠️  Failed to write checklist file: {e}")
+
+            if not all_ok(checks):
+                overall = max(overall, 2)
+        except Exception as e:
+            print(f"\n❌ QA calibration validation failed: {e}")
+            overall = max(overall, 2)
     print("\n✅ Suite complete")
     print(f"  Suite id : {suite_id}")
     print(f"  Suite dir: {suite_dir}")
