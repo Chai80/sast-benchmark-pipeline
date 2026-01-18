@@ -16,9 +16,12 @@ The design goal is **clean, non-spaghetti automation**:
 2. `pipeline/orchestrator.py` — high-level coordinator (cases/tools, manifests, errors)
 3. `pipeline/scanners.py` — scanner registry (supported tools, labels, scripts, tracks)
 4. `pipeline/core.py` — builds the subprocess commands (`tools/scan_*.py` invocations)
-5. `sast_benchmark/io/layout.py` + `pipeline/suites/layout.py` — canonical output paths + suite/case manifests
-6. `pipeline/analysis/runner.py` + `pipeline/analysis/framework/*` — stage engine for analysis
-7. `tools/scan_semgrep.py` → `tools/semgrep/*` — representative scanner adapter pattern
+5. `cli/commands/suite.py` — suite mode (resolver boundary + QA triage calibration)
+6. `sast_benchmark/io/layout.py` + `pipeline/suites/layout.py` — canonical output paths + suite/case manifests
+7. `pipeline/analysis/runner.py` + `pipeline/analysis/framework/*` — stage engine for per-case analysis
+8. `pipeline/analysis/qa_calibration_runbook.py` + `pipeline/analysis/suite_triage_*` — suite-scoped triage calibration
+9. `pipeline/scoring/gt_scorer.py` + `pipeline/scoring/gt_markers.py` — GT matching + scoring primitives
+10. `tools/scan_semgrep.py` → `tools/semgrep/*` — representative scanner adapter pattern
 
 
 ---
@@ -73,6 +76,24 @@ Silver: normalized.json (schema_version: 1.1)               (cross-tool contract
    v
 Gold: analysis/* + gt/*                                     (derived metrics)
 ```
+
+### Suite-scoped analysis artifacts (triage calibration)
+
+Most artifacts are written **per-case** under `cases/<case_id>/analysis/`.
+
+Triage calibration is suite-scoped and writes under:
+
+```text
+runs/suites/<suite_id>/analysis/
+  _tables/triage_dataset.csv
+  triage_calibration.json
+  _tables/triage_calibration_report.csv
+  _tables/triage_eval_summary.json
+```
+
+Because the calibration JSON is produced at the **suite level**, per-case triage queues
+need a second “analysis-only” pass to populate `triage_score_v1`.
+The QA helper (`--mode suite --qa-calibration`) runs that second pass automatically.
 
 ### Preferred output layout (v2 suite/case)
 
@@ -139,6 +160,29 @@ Analysis is a **stage pipeline** to keep metrics modular:
 - Entry point: `pipeline/analysis/runner.run_suite(...)`.
 
 Stages write artifacts under each case’s `analysis/` folder and record outputs in an `analysis_manifest.json`.
+
+### Triage scoring + calibration (v1 + v2)
+
+The triage pipeline produces a ranked `triage_queue.csv` per case.
+
+If a suite contains GT and has built `analysis/triage_calibration.json`, the ranking stage will:
+
+1) add a `triage_score_v1` column to the queue (schema is always present; values may be empty),
+2) sort primarily by `triage_score_v1` (descending), then fall back to deterministic legacy tie-breaks.
+
+Calibration JSON is **versioned** and supports both:
+
+- **Global weights** (`tool_stats_global`) learned across the whole suite
+- **Per-OWASP weights** (`tool_stats_by_owasp`) learned within each OWASP category slice
+
+When computing `triage_score_v1`, the scorer selects weights using:
+
+- use the case/cluster OWASP slice if it exists **and** its `support.clusters >= min_support_by_owasp`
+- else fall back to global weights
+
+The calibration builder keeps outputs deterministic via stable ordering of tools/cases and
+deterministic JSON key insertion order. A backwards-compatible alias (`tool_stats`) is also written
+for v1 consumers.
 
 ---
 

@@ -36,6 +36,20 @@ The ranked triage queue output must include (at minimum):
 
 Additional columns are allowed, but these must remain present.
 
+```mermaid
+classDiagram
+  class TriageQueueRow {
+    rank: int
+    triage_score_v1: float?
+    file_path: str
+    start_line: int
+    cluster_id: str
+    max_severity: str
+    tool_count: int
+    tools: str
+  }
+```
+
 ## Sorting rules
 
 When calibration exists (suite has `analysis/triage_calibration.json`):

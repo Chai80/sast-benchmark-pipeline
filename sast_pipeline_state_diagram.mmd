@@ -55,9 +55,17 @@ stateDiagram-v2
 
   state ResolveSuite {
     [*] --> CollectSuiteInputs
-    CollectSuiteInputs --> BuildSuiteDefinition
+    CollectSuiteInputs --> MaybeBootstrapWorktrees
+    MaybeBootstrapWorktrees --> BuildSuiteDefinition
     BuildSuiteDefinition --> WriteSuiteManifest
     WriteSuiteManifest --> [*]
+
+    note right of MaybeBootstrapWorktrees
+      Optional “bridge path” for branch-per-case suites:
+        - inputs: repo_url + branch tokens (e.g., A03,A07 or A01-A10)
+        - action: materialize worktrees under repos/worktrees/<repo_id>/...
+        - then continue as a normal --worktrees-root suite
+    end note
 
     note right of WriteSuiteManifest
       Suite scaffolding:
@@ -77,6 +85,48 @@ stateDiagram-v2
     CaseLoop --> [*]
   }
 
+  RunSuiteCases --> MaybeQACalibration
+
+  state MaybeQACalibration {
+    [*] --> Decide
+    Decide --> [*]: qa-calibration disabled
+    Decide --> QARunbook: --qa-calibration
+  }
+
+  state QARunbook {
+    [*] --> BuildSuiteDataset
+    BuildSuiteDataset --> BuildCalibration
+    BuildCalibration --> BuildEval
+    BuildEval --> MaybeReanalyze
+    MaybeReanalyze --> ValidateArtifacts
+    ValidateArtifacts --> [*]
+
+    note right of BuildSuiteDataset
+      Suite-level aggregation:
+        - analysis/_tables/triage_dataset.csv
+    end note
+
+    note right of BuildCalibration
+      Learn weights from GT:
+        - analysis/triage_calibration.json
+        - analysis/_tables/triage_calibration_report.csv
+    end note
+
+    note right of MaybeReanalyze
+      Calibration is suite-scoped, so we need
+      a second “analysis-only” pass for per-case
+      triage_queue.csv to populate triage_score_v1.
+
+      Skippable via --qa-no-reanalyze
+      (not recommended for end-to-end QA).
+    end note
+
+    note right of ValidateArtifacts
+      Deterministic PASS/FAIL checklist.
+      Validates artifacts exist under runs/suites/LATEST/...
+    end note
+  }
+
   state RunAnalyze {
     [*] --> ResolveCaseDir
     ResolveCaseDir --> DiscoverRuns
@@ -86,6 +136,13 @@ stateDiagram-v2
     note right of ResolveCaseDir
       Accepts suite_id="latest" via runs/suites/LATEST.
       Case id resolution tolerates '-' <-> '_' variants.
+    end note
+
+    note right of RunReports
+      GT scoring + matching is controlled by a tolerance knob
+      (CLI: --gt-tolerance). For calibration suites where GT
+      markers are not on the exact sink line, a non-zero
+      tolerance may be required.
     end note
   }
 

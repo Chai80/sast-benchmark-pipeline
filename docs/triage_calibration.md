@@ -47,6 +47,78 @@ The filesystem-first validator lives at:
 
 - `pipeline/analysis/qa_calibration_runbook.py`
 
+---
+
+## Calibration JSON schema (v2)
+
+The suite-level calibration output (`analysis/triage_calibration.json`) is a versioned contract.
+It contains both **global** weights and optional **per-OWASP** weights.
+
+```mermaid
+classDiagram
+  class TriageCalibration {
+    schema_version: str
+    suite_id: str
+    generated_at: str
+    input_dataset: str
+    alpha: float
+    beta: float
+    p_clamp: object
+    included_cases: string[]
+    excluded_cases_no_gt: string[]
+    suspicious_cases: object[]
+    tool_stats_global: ToolStats[]
+    tool_stats_by_owasp: map~string, OwaspSlice~
+    scoring: ScoringParams
+  }
+  class ToolStats {
+    tool: str
+    tp: int
+    fp: int
+    p_smoothed: float
+    weight: float
+  }
+  class OwaspSlice {
+    support: Support
+    tool_stats: ToolStats[]
+  }
+  class Support {
+    clusters: int
+    cases: int
+    gt_positive_clusters: int
+  }
+  class ScoringParams {
+    strategy: str
+    agreement_lambda: float
+    severity_bonus: object
+    min_support_by_owasp: int
+  }
+  TriageCalibration --> ScoringParams
+  TriageCalibration "1" --> "many" ToolStats
+  TriageCalibration "1" --> "many" OwaspSlice
+  OwaspSlice --> Support
+```
+
+### How scoring chooses weights
+
+When computing `triage_score_v1` for a cluster:
+
+1) If the cluster has an OWASP id (A01..A10) **and** that slice exists in the JSON **and**
+   `support.clusters >= min_support_by_owasp`, use that slice’s tool weights.
+2) Otherwise, fall back to `tool_stats_global`.
+
+This makes calibration robust when category-specific data is sparse.
+
+---
+
+## GT tolerance note (matching sensitivity)
+
+Calibration learns from GT overlap labels. If GT markers are not placed on the exact sink line,
+an exact location match can produce 0 overlaps and misleading weights.
+
+Use the deterministic `--gt-tolerance` knob for scored suites, and prefer a tolerance sweep
+(compare eval summaries across tolerances) instead of guessing.
+
 
 ## Notes for non-scored suites (e.g. Juice Shop)
 

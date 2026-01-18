@@ -14,7 +14,10 @@ flowchart TD
 
   subgraph Suites["Suite planning + layout (pipeline/suites/*)"]
     direction TB
-    SU0[Collect suite inputs<br/>(suite-file / CSV / worktrees / prompts)<br/>(cli/suite_sources.py)] --> SU1[Build SuiteDefinition<br/>(pipeline/suites/suite_definition.py)]
+    SU0[Collect suite inputs<br/>(suite-file / CSV / worktrees / prompts)<br/>(cli/suite_sources.py)] --> SU_BOOT{repo_url + branch tokens?}
+    SU_BOOT -->|yes| SU_BOOT2[Bootstrap worktrees (optional bridge)<br/>repos/worktrees/&lt;repo_id&gt;/...]
+    SU_BOOT -->|no| SU1
+    SU_BOOT2 --> SU1[Build SuiteDefinition<br/>(pipeline/suites/suite_definition.py)]
     SU1 --> SU2[Resolve suite run<br/>(pipeline/suites/suite_resolver.resolve_suite_run)]
     SU2 --> SU_LOOP{for each case}
   end
@@ -37,6 +40,11 @@ flowchart TD
   subgraph Analysis["Analysis (pipeline/analysis/*)"]
     direction TB
     AN0[Read normalized.json] --> AN1[Compute metrics / exports / scoring] --> AN2[Write case_dir/analysis/*]
+    ANQ[QA triage calibration runbook<br/>(pipeline/analysis/qa_calibration_runbook.py)]
+    ANDS[Build triage_dataset.csv<br/>(pipeline/analysis/suite_triage_dataset.py)]
+    ANC[Build triage_calibration.json (v2)<br/>(pipeline/analysis/suite_triage_calibration.py)]
+    ANE[Build triage_eval_summary.json<br/>(pipeline/analysis/suite_triage_eval.py)]
+    ANQ --> ANDS --> ANC --> ANE
   end
 
   subgraph Contracts["Contracts (sast_benchmark/*)"]
@@ -56,6 +64,7 @@ flowchart TD
     F3[runs/suites/{suite_id}/cases/{case_id}/case.json]
     F4[runs/suites/{suite_id}/cases/{case_id}/tool_runs/{tool}/{run_id}/]
     F5[runs/suites/{suite_id}/cases/{case_id}/analysis/]
+    FSA[runs/suites/{suite_id}/analysis/<br/>_tables/triage_dataset.csv<br/>triage_calibration.json<br/>_tables/triage_calibration_report.csv<br/>_tables/triage_eval_summary.json]
     FLEG[runs/{tool}/{repo_name}/{run_id}/...<br/>(legacy when --no-bundle)]
   end
 
@@ -69,6 +78,10 @@ flowchart TD
   SU_LOOP --> P1
   SU_LOOP --> P0
   SU_LOOP --> P2
+
+  %% QA runbook (suite-scoped) invoked from suite mode when enabled
+  CLI_SUITE -. "--qa-calibration" .-> ANQ
+  ANE --> FSA
 
   CLI_ANALYZE --> P1 --> P0 --> P3
 
@@ -97,6 +110,9 @@ flowchart TD
   %% Optional analysis
   P2 -->|optional| AN0
   AN2 --> F5
+
+  %% Re-analysis step is required for per-case triage_queue.csv to pick up suite-level calibration.
+  ANQ -. triggers .-> CLI_ANALYZE
 
   %% Analyze mode reads existing outputs
   P3 --> F1

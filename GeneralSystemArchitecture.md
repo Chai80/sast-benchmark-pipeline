@@ -52,7 +52,7 @@ We add a dedicated **Resolver** step.
 
 The resolver:
 
-* takes any suite input (suite file, CSV, discovered worktrees)
+* takes any suite input (suite file, CSV, discovered worktrees, or a repo URL + branch tokens)
 * normalizes + validates it into a single canonical plan
 * writes that plan to `runs/suites/<suite_id>/suite.json` **before execution**
 
@@ -65,6 +65,7 @@ on suite input files.
    - suite .py (portable definition)
    - CSV (local/CI work order)
    - worktrees discovery
+   - (optional bridge) repo_url + branch tokens → bootstrap worktrees
               |
               v
         [ Resolver boundary ]
@@ -96,6 +97,7 @@ on suite input files.
    [ Analysis ]
    - consumes normalized.json
    - writes analysis artifacts under the case directory
+   - (optional suite-scoped analysis) writes suite-level artifacts under `runs/suites/<suite_id>/analysis/`
 ```
 
 ### Why this prevents spaghetti
@@ -116,3 +118,45 @@ re-deriving identifiers differently in multiple modules.
 * Resolver implementation: `pipeline/suites/suite_resolver.py`
 * Suite orchestration entrypoint: `sast_cli.py` (`run_suite_mode`)
 * Suite layout helpers (dirs + incremental suite.json updates): `pipeline/suites/bundles.py`
+
+Related docs:
+
+- `docs/suite_inputs.md` (practical decision tree for suite sources)
+- `docs/triage_calibration.md` (QA runbook + artifacts + calibration schema)
+
+---
+
+## Suite-scoped analysis: triage calibration QA runbook
+
+Most analysis is **per-case** (it consumes each case’s `tool_runs/*/normalized.json` and writes
+`cases/<case_id>/analysis/*`).
+
+Triage calibration is different: it is **suite-scoped**.
+
+The QA workflow (enabled via `--mode suite --qa-calibration`) runs a deterministic sequence:
+
+1) Run the suite (scan + per-case analysis) to produce features/queues.
+2) Aggregate per-case data into a suite dataset (`analysis/_tables/triage_dataset.csv`).
+3) Learn weights and write suite calibration (`analysis/triage_calibration.json`).
+4) Evaluate strategies and write a suite summary (`analysis/_tables/triage_eval_summary.json`).
+5) Re-run **analysis-only** so per-case queues can populate `triage_score_v1`.
+6) Validate the expected artifacts exist under `runs/suites/LATEST/...`.
+
+See `docs/triage_calibration.md` for the runbook and expected artifacts.
+
+---
+
+## GT matching tolerance (why calibration can look “broken”)
+
+GT overlap is computed by matching GT markers to tool findings by location.
+
+If GT markers are placed at the top of the file (or tools report a different sink line),
+an exact line match can incorrectly produce **0 overlaps**, which in turn makes calibration
+learn “everything is FP”.
+
+This behavior is controlled by a deterministic tolerance knob (`--gt-tolerance`). For scored
+calibration suites, a non-zero tolerance is sometimes required unless GT markers are on the
+exact sink line.
+
+When in doubt, prefer a **tolerance sweep** (run analysis with multiple tolerances and compare
+the eval summary) instead of guessing.

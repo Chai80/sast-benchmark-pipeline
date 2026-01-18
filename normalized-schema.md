@@ -132,6 +132,63 @@ Top-level shape:
 }
 ```
 
+### Schema overview diagram
+
+This diagram shows the *shape* of the normalized contract at a glance.
+
+```mermaid
+classDiagram
+  class NormalizedRun {
+    schema_version: str
+    tool: str
+    tool_version: str
+    target_repo: TargetRepo
+    scan: Scan
+    run_metadata: object?
+    findings: Finding[]
+  }
+
+  class TargetRepo {
+    name: str
+    url: str
+    commit: str?
+    commit_author_name: str?
+    commit_author_email: str?
+    commit_date: str?
+  }
+
+  class Scan {
+    run_id: str
+    scan_date: str
+    command: str?
+    raw_results_path: str
+    metadata_path: str
+    scan_time_seconds: float?
+    exit_code: int?
+    log_path: str?
+  }
+
+  class Finding {
+    finding_id: str
+    rule_id: str?
+    title: str?
+    severity: str?
+    file_path: str?
+    line_number: int?
+    end_line_number: int?
+    cwe_id: str?
+    owasp_top_10_2021_canonical: object?
+    vendor: object?
+  }
+
+  NormalizedRun --> TargetRepo
+  NormalizedRun --> Scan
+  NormalizedRun "1" --> "many" Finding
+```
+
+> Note: derived analytics (triage calibration JSON, triage queues, GT scoring, packs) are not part of this schema.
+> Those are **Gold** artifacts written under `analysis/` and `gt/`.
+
 ### Top-level fields
 
 | Field | Type | Required | Notes |

@@ -15,6 +15,7 @@ LEGEND
 (module: ...)      = where the code lives (ownership)
 (Boundary)         = architectural boundary / dependency direction
 
+
 ================================================================================
 A) OWNERSHIP / LAYERING  (where everything belongs)
 ================================================================================
@@ -30,6 +31,7 @@ A) OWNERSHIP / LAYERING  (where everything belongs)
 |   - Choose mode (scan / benchmark / suite / analyze)                             |
 |   - Build CaseSpec / RepoSpec (single-case modes)                                |
 |   - Collect “suite inputs” (suite-file, worktrees-root, cases-from CSV, prompts)|
+|   - Optional bridge path: repo_url + branch tokens -> bootstrap worktrees         |
 |   - Build RunRequest / AnalyzeRequest and call the pipeline facade               |
 +------------------------------------------+---------------------------------------+
                                            |
@@ -70,9 +72,11 @@ A) OWNERSHIP / LAYERING  (where everything belongs)
                                            v
 +----------------------------------------------------------------------------------+
 | (Boundary) Analysis layer                                                        |
-|  modules: pipeline/analysis/analyze_suite.py (legacy entrypoint used by run_case)|
+|  modules: pipeline/analysis/analyze_suite.py (per-case analysis entrypoint)     |
 |           pipeline/analysis/framework/*, pipeline/analysis/stages/*              |
 |           pipeline/analysis/exports/*, pipeline/scoring/*                        |
+|           pipeline/analysis/qa_calibration_runbook.py (suite-scoped QA helper)  |
+|           pipeline/analysis/suite_triage_*.py (dataset/calibration/eval)         |
 |                                                                                  |
 |  Responsibilities:                                                               |
 |   - Read normalized outputs                                                      |
@@ -192,6 +196,7 @@ FLOW FOR suite  (multi-case)
     - --suite-file (python replay file: SUITE_RAW or SUITE_DEF)
     - --worktrees-root (auto-discover local checkouts => cases)
     - --cases-from (CSV “work order” => cases)
+    - (optional bridge) --repo-url + branch tokens -> bootstrap worktrees
     - interactive prompts (build a suite, then optionally write a replay file under:
         runs/suites/<suite_id>/replay/replay_suite.py)
   |
@@ -221,6 +226,36 @@ FLOW FOR suite  (multi-case)
   v
 [Suite complete]
   (summary/index updated under runs/suites/<suite_id>/)
+  |
+  v
+[Optional QA triage calibration runbook]
+  (enabled by: --qa-calibration)
+  |
+  v
+  [Build suite triage_dataset.csv]
+    (module: pipeline/analysis/suite_triage_dataset.py)
+    (artifact: runs/suites/<suite_id>/analysis/_tables/triage_dataset.csv)
+  |
+  v
+  [Build triage_calibration.json]
+    (module: pipeline/analysis/suite_triage_calibration.py)
+    (artifact: runs/suites/<suite_id>/analysis/triage_calibration.json)
+    (artifact: runs/suites/<suite_id>/analysis/_tables/triage_calibration_report.csv)
+  |
+  v
+  [Build triage eval summary]
+    (module: pipeline/analysis/suite_triage_eval.py)
+    (artifact: runs/suites/<suite_id>/analysis/_tables/triage_eval_summary.json)
+  |
+  v
+  [Re-analyze cases to apply calibration]
+    (module: pipeline/execution/analyze_mode.py)
+    (artifact: runs/suites/<suite_id>/cases/<case_id>/analysis/_tables/triage_queue.csv)
+  |
+  v
+  [Validate expected artifacts]
+    (module: pipeline/analysis/qa_calibration_runbook.py)
+    (prints: deterministic PASS/FAIL checklist)
   |
   v
 [EXIT]
@@ -271,6 +306,11 @@ runs/
     README.txt                                 # "start here"
     suite.json                                  # suite manifest (cases, tools, timestamps)
     summary.csv                                 # one row per case
+    analysis/                                   # suite-scoped analysis artifacts
+      _tables/triage_dataset.csv
+      triage_calibration.json
+      _tables/triage_calibration_report.csv
+      _tables/triage_eval_summary.json
     cases/<case_id>/
       case.json                                 # per-case manifest (what ran)
       tool_runs/<tool>/<run_id>/

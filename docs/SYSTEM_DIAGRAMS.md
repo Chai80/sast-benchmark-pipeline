@@ -10,10 +10,31 @@ It is intentionally **filesystem-first**: every run produces a stable set of art
 
 ```mermaid
 flowchart TD
-  A[Suite Plan<br/>optional Python replay file (.py)] -->|cases + tools| B[Orchestrator<br/>pipeline/orchestrator.py]
+  %% Inputs: suite mode accepts multiple “work order” sources.
+  subgraph Inputs[Suite inputs (work orders)]
+    direction TB
+    I1[--suite-file<br/>(python replay)]
+    I2[--cases-from<br/>(CSV work order)]
+    I3[--worktrees-root<br/>(local checkouts)]
+    I4[--repo-url + branches<br/>(optional bridge)]
+  end
+
+  I4 --> WB[Bootstrap worktrees (optional)<br/>repos/worktrees/<repo_id>/...]
+  WB --> I3
+
+  %% Resolver boundary: writes the canonical plan before execution.
+  Inputs --> R[Resolver boundary<br/>pipeline/suites/suite_resolver.py]
+  R -->|writes plan| S1[suite.json]
+
+  %% Execution: per-case tool runs.
+  R --> B[Orchestrator<br/>pipeline/orchestrator.py]
 
   subgraph SuiteLayout["runs/suites/<suite_id>/"]
     direction TB
+
+    SuiteLayout --> S1[suite.json]
+    SuiteLayout --> S2[summary.csv]
+    SuiteLayout --> SA[analysis/<br/>triage_dataset.csv<br/>triage_calibration.json<br/>triage_eval_summary.json]
 
     subgraph Case["cases/<case_id>/"]
       direction TB
@@ -22,18 +43,23 @@ flowchart TD
       C2 --> C4[raw/*]
       C2 --> C5[normalized.json]
       Case --> C6[analysis/*]
+      Case --> CG[gt/*]
     end
 
-    SuiteLayout --> S1[suite.json]
-    SuiteLayout --> S2[summary.csv]
     SuiteLayout --> R1[replay/replay_suite.py<br/>(optional; interactive replay)]
     SuiteLayout --> R2[replay/replay_command.txt<br/>(optional helper)]
   end
 
   B -->|execute tools| C2
   C2 -->|normalize| C5
-  C5 -->|analysis runner| C6
+  C5 -->|per-case analysis runner| C6
   C6 -->|export packs| D[benchmark_pack.json<br/>hotspot_drilldown_pack.json]
+
+  %% QA calibration runbook: suite-scoped build + re-analysis.
+  C6 -->|--qa-calibration| QA[QA triage calibration runbook]
+  QA --> SA
+  QA -->|reanalyze cases| C6
+
   D --> E[(DB Ingestion<br/>future)]
 ```
 
@@ -90,6 +116,15 @@ Why this matters:
 - Adding a new metric is a **new stage**, not a new ad-hoc script.
 - Stages share intermediate results through `store`, avoiding recomputation.
 - Benchmark analysis, diagnostics, and reporting are **separate concerns**.
+
+### Suite-scoped analysis (triage calibration)
+
+Triage calibration is suite-scoped and is implemented as a small, filesystem-first pipeline:
+
+`suite_triage_dataset` → `suite_triage_calibration` → `suite_triage_eval`
+
+It writes under `runs/suites/<suite_id>/analysis/` and (when enabled via `--qa-calibration`) triggers
+a second analysis-only pass so per-case `triage_queue.csv` can populate `triage_score_v1`.
 
 ---
 
