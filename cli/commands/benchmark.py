@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from cli.common import parse_csv
 from pipeline.models import CaseSpec
@@ -14,8 +15,9 @@ def run_benchmark(
     pipeline: SASTBenchmarkPipeline,
     *,
     case: CaseSpec,
+    repo_id: str,
     suite_root: Path,
-    suite_id: str,
+    suite_id: Optional[str],
 ) -> int:
     scanners_csv = args.scanners or DEFAULT_SCANNERS_CSV
     scanners = [s for s in parse_csv(scanners_csv) if s in SUPPORTED_SCANNERS]
@@ -23,7 +25,7 @@ def run_benchmark(
     req = RunRequest(
         invocation_mode="benchmark",
         case=case,
-        repo_id=str(args.repo_id),
+        repo_id=repo_id,
         scanners=scanners,
         suite_root=suite_root,
         suite_id=suite_id,

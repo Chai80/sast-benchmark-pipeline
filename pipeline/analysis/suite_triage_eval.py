@@ -50,7 +50,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
 from pipeline.analysis.suite_triage_calibration import (
     load_triage_calibration,
-    tool_weights_from_calibration,
+    tool_weights_for_owasp,
     triage_score_v1,
 )
 
@@ -280,14 +280,16 @@ def _rank_calibrated(rows: List[Dict[str, str]], *, cal: Mapping[str, Any]) -> L
     deterministic ties (mirrors triage_queue ordering).
     """
 
-    weights = tool_weights_from_calibration(cal)
-
     scoring = cal.get("scoring") if isinstance(cal, dict) else None
     agreement_lambda = float(scoring.get("agreement_lambda", 0.0)) if isinstance(scoring, dict) else 0.0
+    min_support_by_owasp = int(scoring.get("min_support_by_owasp", 10)) if isinstance(scoring, dict) else 10
     sb = scoring.get("severity_bonus") if isinstance(scoring, dict) else None
     if not isinstance(sb, dict):
         sb = {"HIGH": 0.25, "MEDIUM": 0.10, "LOW": 0.0, "UNKNOWN": 0.0}
     sev_bonus: Dict[str, float] = {str(k).upper(): float(v) for k, v in sb.items()}
+
+    # Cache weights per OWASP id to keep scoring fast and deterministic.
+    weights_cache: Dict[str, Dict[str, float]] = {}
 
     scored: List[Dict[str, str]] = []
     for r in rows:
@@ -295,6 +297,11 @@ def _rank_calibrated(rows: List[Dict[str, str]], *, cal: Mapping[str, Any]) -> L
         tools = _tools_for_row(rr)
         tool_count = _to_int(rr.get("tool_count"), default=len(tools))
         max_sev = str(rr.get("max_severity") or "UNKNOWN")
+
+        oid = str(rr.get("owasp_id") or "").strip().upper()
+        if oid not in weights_cache:
+            weights_cache[oid] = tool_weights_for_owasp(cal, owasp_id=(oid or None), min_support=min_support_by_owasp)
+        weights = weights_cache[oid]
 
         try:
             score = triage_score_v1(
@@ -319,6 +326,7 @@ def _rank_calibrated(rows: List[Dict[str, str]], *, cal: Mapping[str, Any]) -> L
             -_to_int(r.get("finding_count"), 0),
             _key_file_path(r),
             _key_start_line(r),
+            str(r.get("cluster_id") or ""),
         ),
     )
 

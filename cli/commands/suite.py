@@ -12,15 +12,17 @@ from typing import Dict, List, Optional, Tuple
 from cli.common import derive_runs_repo_name, parse_csv
 from cli.ui import choose_from_menu, _parse_index_selection, _prompt_text, _prompt_yes_no
 from cli.suite_sources import (
+    _bootstrap_worktrees_from_repo_url,
     _case_id_from_pathlike,
     _discover_git_checkouts_under,
     _load_suite_cases_from_csv,
     _load_suite_cases_from_worktrees_root,
+    _parse_branches_spec,
     _resolve_repo_for_suite_case_interactive,
     _suite_case_from_repo_path,
 )
 from pipeline.suites.bundles import anchor_under_repo_root, safe_name
-from pipeline.core import ROOT_DIR as PIPELINE_ROOT_DIR
+from pipeline.core import ROOT_DIR as PIPELINE_ROOT_DIR, repo_id_from_repo_url
 from pipeline.suites.layout import new_suite_id
 from pipeline.models import CaseSpec
 from pipeline.orchestrator import RunRequest
@@ -731,7 +733,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         # Deterministic suite definition: disallow interactive prompting.
         # If no explicit suite inputs are provided, fall back to the example
         # OWASP micro-suite inputs if present.
-        if not (args.suite_file or args.cases_from or args.worktrees_root):
+        if not (args.suite_file or args.cases_from or args.worktrees_root or getattr(args, "repo_url", None)):
             default_wt = _default_owasp_micro_suite_worktrees_root()
             default_csv = _default_owasp_micro_suite_cases_csv()
             if default_wt is not None:
@@ -743,12 +745,44 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
             else:
                 print(
                     "❌ --qa-calibration requires a non-interactive suite definition source.\n"
-                    "Provide one of: --suite-file, --cases-from, --worktrees-root."
+                    "Provide one of: --suite-file, --cases-from, --worktrees-root, or --repo-url (+ --branches)."
                 )
                 return 2
 
     # Load or build suite definition
     # Load suite definition (Python only at runtime; YAML is migration-only)
+    # ------------------------------------------------------------------
+    # Bridge path: bootstrap worktrees from --repo-url + --branches
+    #
+    # Suite mode typically expects local checkouts (worktrees) to already exist.
+    # When the user provides a repo URL and a branch set, we can create/update
+    # a deterministic worktrees root and then load cases from it.
+    #
+    # In QA mode, branches default to the requested QA slice (A03/A07 or A01..A10).
+    # ------------------------------------------------------------------
+    if getattr(args, "repo_url", None) and (not args.suite_file) and (not args.cases_from):
+        branches = _parse_branches_spec(getattr(args, "branches", None))
+        if qa_mode and not branches:
+            branches = _qa_target_owasp_ids(args)
+
+        if not branches:
+            raise SystemExit(
+                "Suite worktree bootstrap requires --branches when using --repo-url "
+                "(unless --qa-calibration is set, which derives branches from the QA scope)."
+            )
+
+        default_root = ROOT_DIR / "repos" / "worktrees" / repo_id_from_repo_url(str(args.repo_url))
+        wt_root = Path(args.worktrees_root).expanduser() if getattr(args, "worktrees_root", None) else default_root
+        wt_root = anchor_under_repo_root(wt_root)
+
+        _bootstrap_worktrees_from_repo_url(repo_url=str(args.repo_url), branches=branches, worktrees_root=wt_root)
+        args.worktrees_root = str(wt_root)
+
+        if qa_mode:
+            print(f"🧪 QA calibration: bootstrapped worktrees-root: {wt_root}")
+        else:
+            print(f"🌿 Suite worktrees ready: {wt_root}")
+
     if args.suite_file:
         p = Path(args.suite_file).expanduser().resolve()
         if p.suffix.lower() in (".yaml", ".yml"):

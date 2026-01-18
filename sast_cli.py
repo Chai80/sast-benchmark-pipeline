@@ -154,6 +154,17 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--branches",
+        dest="branches",
+        default=None,
+        help=(
+            "(suite mode) When used with --repo-url, bootstrap a git worktrees root containing these branches. "
+            "Comma-separated; supports OWASP-ish ranges like 'A01-A10'. "
+            "Example: --repo-url https://... --branches A03,A07"
+        ),
+    )
+
+    parser.add_argument(
         "--max-cases",
         dest="max_cases",
         type=int,

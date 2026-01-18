@@ -9,9 +9,10 @@ from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
 from pipeline.analysis.suite_triage_calibration import (
     load_triage_calibration,
-    tool_weights_from_calibration,
+    tool_weights_for_owasp,
     triage_score_v1,
 )
+from pipeline.analysis.utils.owasp import infer_owasp
 from pipeline.analysis.utils.signatures import cluster_locations
 
 from pipeline.scanners import DEFAULT_SCANNERS_CSV
@@ -135,6 +136,15 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     cal_weights: Dict[str, float] = {}
     agreement_lambda: float = 0.0
     severity_bonus: Dict[str, float] = {"HIGH": 0.25, "MEDIUM": 0.10, "LOW": 0.0, "UNKNOWN": 0.0}
+    min_support_by_owasp: int = 10
+
+    # Best-effort category label for selecting per-OWASP calibration weights.
+    case_owasp_id: str | None = None
+    try:
+        oid, _title = infer_owasp(ctx.case_id, out_dir=Path(ctx.out_dir))
+        case_owasp_id = oid
+    except Exception:
+        case_owasp_id = None
 
     if ctx.suite_id:
         try:
@@ -144,13 +154,19 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
                 cal_path = suite_dir / "analysis" / "triage_calibration.json"
                 cal = load_triage_calibration(cal_path)
                 if cal:
-                    cal_weights = tool_weights_from_calibration(cal)
                     scoring = cal.get("scoring") if isinstance(cal, dict) else None
                     if isinstance(scoring, dict):
                         agreement_lambda = float(scoring.get("agreement_lambda", 0.0))
+                        try:
+                            min_support_by_owasp = int(scoring.get("min_support_by_owasp", 10))
+                        except Exception:
+                            min_support_by_owasp = 10
                         sb = scoring.get("severity_bonus")
                         if isinstance(sb, dict):
                             severity_bonus = {str(k).upper(): float(v) for k, v in sb.items()}
+
+                    # Select per-OWASP weights when sufficiently supported; otherwise fall back to global.
+                    cal_weights = tool_weights_for_owasp(cal, owasp_id=case_owasp_id, min_support=min_support_by_owasp)
         except Exception:
             # Never fail per-case triage queue due to calibration issues.
             cal = None
