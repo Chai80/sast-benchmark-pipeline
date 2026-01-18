@@ -15,6 +15,8 @@ Modes
    - suites can be built interactively, loaded from CSV/worktrees, or replayed from an optional Python replay file (.py)
 4) analyze
    - compute cross-tool metrics from existing normalized runs
+5) import
+   - import legacy runs/<tool>/... outputs into suite layout (runs/suites/<suite_id>/...)
 
 Suite layout (recommended)
 --------------------------
@@ -78,7 +80,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--mode",
-        choices=["scan", "benchmark", "suite", "analyze"],
+        choices=["scan", "benchmark", "suite", "analyze", "import"],
         help=(
             "scan = one tool, benchmark = multiple tools, suite = multi-case suite run (interactive/CSV/worktrees/replay file), "
             "analyze = compute metrics from existing runs"
@@ -353,6 +355,24 @@ def parse_args() -> argparse.Namespace:
             "By default we derive it from the repo URL (e.g., juice-shop) or local folder name."
         ),
     )
+
+    # Legacy import: migrate runs/<tool>/... into suite layout
+    parser.add_argument(
+        "--import-run-id",
+        default="latest",
+        help=(
+            "(import mode) Which legacy run_id folder to import for each tool. \n            Default: 'latest'. You can also pass an explicit run id like '20260101011234'."
+        ),
+    )
+    parser.add_argument(
+        "--import-link-mode",
+        choices=["copy", "hardlink"],
+        default="copy",
+        help=(
+            "(import mode) File transfer strategy when importing legacy outputs into a suite. \n            'copy' is safest; 'hardlink' is faster and saves disk when supported."
+        ),
+    )
+
 
     # Repo selection
     parser.add_argument("--repo-key", choices=sorted(REPOS.keys()), help="Preset repo key (recommended)")

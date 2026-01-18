@@ -117,6 +117,7 @@ def dispatch(
                     "benchmark": "Run multiple scanners on a repo",
                     "suite": "Run a multi-case suite (optional YAML)",
                     "analyze": "Analyze existing normalized runs (metrics)",
+                    "import": "Import legacy runs/<tool>/... into suite layout",
                 },
             )
 
@@ -124,6 +125,13 @@ def dispatch(
     # target, so handle it before resolve_repo(...).
     if mode == "suite":
         return int(run_suite_mode(args, pipeline, repo_registry=repo_registry))
+
+    # Import mode: convert legacy runs/<tool>/... into suite layout.
+    # This is a filesystem operation and should never prompt for repo selection.
+    if mode == "import":
+        from cli.commands.import_legacy import run_import_legacy
+
+        return int(run_import_legacy(args, pipeline, repo_registry=repo_registry))
 
     # Analyze mode operates on existing filesystem artifacts. It should not
     # prompt for a repo source unless the user is explicitly scanning.
