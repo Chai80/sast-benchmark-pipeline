@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import time
 from datetime import datetime
@@ -107,6 +108,7 @@ def _run_sonar_scanner(
     project_key: str,
     cfg: SonarConfig,
     java_binaries: str,
+    working_dir: Optional[Path] = None,
     log_path: Path,
 ) -> Tuple[int, float, List[str]]:
     cmd: List[str] = [
@@ -116,6 +118,10 @@ def _run_sonar_scanner(
         f"-Dsonar.host.url={cfg.host}",
         "-Dsonar.sources=.",
     ]
+    # Keep Sonar's working files out of the repo checkout/worktree (prevents
+    # .scannerwork from polluting subsequent scanners like Semgrep).
+    if working_dir:
+        cmd.append(f"-Dsonar.working.directory={str(working_dir)}")
     if java_binaries:
         cmd.append(f"-Dsonar.java.binaries={java_binaries}")
 
@@ -234,12 +240,19 @@ def execute(
         log_path = paths.log or (paths.run_dir / "sonar_scan.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # If a previous run left a repo-local .scannerwork behind, delete it so
+        # other scanners don't waste time walking it.
+        stale_scannerwork = repo.repo_path / ".scannerwork"
+        if stale_scannerwork.exists():
+            shutil.rmtree(stale_scannerwork, ignore_errors=True)
+
         rc, elapsed, cmd = _run_sonar_scanner(
             sonar_bin=sonar_bin,
             repo_path=repo.repo_path,
             project_key=chosen_key,
             cfg=cfg,
             java_binaries=java_binaries,
+            working_dir=(paths.run_dir / ".scannerwork").resolve(),
             log_path=log_path,
         )
         scan_time = elapsed

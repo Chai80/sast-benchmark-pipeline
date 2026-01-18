@@ -14,6 +14,9 @@ from tools.core import run_cmd
 
 SEMGREP_FALLBACKS = ["/opt/homebrew/bin/semgrep", "/usr/local/bin/semgrep"]
 
+# Avoid walking large tool-generated scratch directories when scanning shared worktrees.
+DEFAULT_EXCLUDES = [".scannerwork"]
+
 
 def prepare_run_paths(output_root: str, repo_name: str) -> Tuple[str, RunPaths]:
     """Prepare per-run output paths.
@@ -40,6 +43,7 @@ def run_semgrep(
     cmd = [
         semgrep_bin,
         "--json",
+        *[arg for pat in DEFAULT_EXCLUDES for arg in ("--exclude", pat)],
         "--config",
         config,
         "--output",

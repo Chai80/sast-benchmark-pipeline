@@ -1035,12 +1035,123 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
 
 
     # ------------------------------------------------------------------
-    # Suite-level aggregation: triage dataset
+    # Suite-level aggregation: triage dataset (+ optional gt_tolerance sweep)
     # ------------------------------------------------------------------
     # This is intentionally filesystem-first and best-effort.
     # If some cases are missing triage_features.csv (analysis skipped/failed),
     # the builder will log them explicitly.
     if (not bool(args.dry_run)) and (not bool(skip_analysis)):
+
+        # Optional deterministic GT tolerance sweep (QA calibration).
+        #
+        # Why this lives here:
+        # - We want to reuse the existing per-case analyze pipeline.
+        # - We want suite-level dataset/calibration/eval snapshots per tolerance.
+        # - We cannot prompt in CI, so selection (when enabled) must be deterministic.
+        sweep_raw = getattr(args, "gt_tolerance_sweep", None)
+        sweep_auto = bool(getattr(args, "gt_tolerance_auto", False))
+        sweep_min_frac = float(getattr(args, "gt_tolerance_auto_min_fraction", 0.95) or 0.95)
+
+        if qa_mode and (sweep_raw or sweep_auto):
+            try:
+                from pipeline.analysis.gt_tolerance_sweep import (
+                    disable_suite_calibration,
+                    parse_gt_tolerance_candidates,
+                    run_gt_tolerance_sweep,
+                    select_gt_tolerance_auto,
+                    write_gt_tolerance_selection,
+                )
+
+                candidates = parse_gt_tolerance_candidates(sweep_raw)
+
+                sweep_payload = run_gt_tolerance_sweep(
+                    pipeline=pipeline,
+                    suite_root=suite_root,
+                    suite_id=suite_id,
+                    suite_dir=suite_dir,
+                    cases=[rc.suite_case.case for rc in resolved_run.cases],
+                    tools=scanners,
+                    tolerance=int(tolerance),
+                    gt_source=str(getattr(args, "gt_source", "auto")),
+                    analysis_filter=str(analysis_filter),
+                    exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
+                    include_harness=bool(getattr(args, "include_harness", False)),
+                    candidates=candidates,
+                )
+
+                if sweep_auto:
+                    sel = select_gt_tolerance_auto(
+                        sweep_payload.get("rows") or [],
+                        min_fraction=sweep_min_frac,
+                    )
+                    chosen = int(sel.get("selected_gt_tolerance", int(getattr(args, "gt_tolerance", 0))))
+
+                    # Persist the decision for CI + reproducibility.
+                    try:
+                        out_sel = write_gt_tolerance_selection(
+                            suite_dir=suite_dir,
+                            selection=sel,
+                            sweep_payload=sweep_payload,
+                        )
+                        print(f"\n✅ GT tolerance auto-selected: {chosen} (wrote {out_sel})")
+                        if sel.get("warnings"):
+                            for w in sel.get("warnings") or []:
+                                print(f"  ⚠️  {w}")
+                    except Exception as e:
+                        print(f"\n⚠️  Failed to write gt_tolerance selection file: {e}")
+
+                    # Make downstream steps (final build + re-analyze pass) use the chosen tolerance.
+                    try:
+                        setattr(args, "gt_tolerance", chosen)
+                    except Exception:
+                        pass
+                else:
+                    print("\nℹ️  GT tolerance sweep complete (no auto selection; continuing with --gt-tolerance)")
+
+                # After the sweep, rebuild canonical suite calibration artifacts once
+                # for the effective tolerance (explicit or auto-selected).
+                eff_tol = int(getattr(args, "gt_tolerance", 0))
+                print(f"\n🔁 Finalizing suite calibration build for gt_tolerance={eff_tol}")
+
+                # Ensure per-case analysis uses baseline ordering for triage_rank.
+                disable_suite_calibration(suite_dir)
+
+                # Re-analyze all cases once with the chosen tolerance (skip suite aggregation
+                # inside each analyze call; we'll build suite artifacts once below).
+                for j, rc2 in enumerate(resolved_run.cases, start=1):
+                    c2 = rc2.suite_case.case
+                    print("\n" + "-" * 72)
+                    print(f"🔁 Analyze (finalize) {j}/{len(resolved_run.cases)}: {c2.case_id}")
+
+                    case_dir = (suite_dir / "cases" / safe_name(c2.case_id)).resolve()
+                    try:
+                        areq = AnalyzeRequest(
+                            metric="suite",
+                            case=c2,
+                            suite_root=suite_root,
+                            suite_id=suite_id,
+                            case_path=str(case_dir),
+                            tools=tuple(scanners),
+                            tolerance=int(tolerance),
+                            gt_tolerance=int(eff_tol),
+                            gt_source=str(getattr(args, "gt_source", "auto")),
+                            analysis_filter=str(analysis_filter),
+                            exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
+                            include_harness=bool(getattr(args, "include_harness", False)),
+                            skip_suite_aggregate=True,
+                        )
+                        rc_code2 = int(pipeline.analyze(areq))
+                    except Exception as e:
+                        print(f"  ❌ analyze finalize failed for {c2.case_id}: {e}")
+                        rc_code2 = 2
+
+                    overall = max(overall, rc_code2)
+
+            except Exception as e:
+                print(f"\n⚠️  GT tolerance sweep failed: {e}")
+
+        # From this point on, the rest of the runbook assumes the *effective*
+        # gt_tolerance has been applied (either explicit or auto-selected).
         try:
             from pipeline.analysis.suite_triage_dataset import build_triage_dataset
 
@@ -1166,6 +1277,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                         analysis_filter=str(analysis_filter),
                         exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
                         include_harness=bool(getattr(args, "include_harness", False)),
+                        skip_suite_aggregate=True,
                     )
                     rc_code2 = int(pipeline.analyze(areq))
                 except Exception as e:

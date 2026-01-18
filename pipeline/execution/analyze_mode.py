@@ -52,6 +52,12 @@ class AnalyzeRequest:
 
     max_unique: int = 25
 
+    # Internal knob: skip suite-level aggregation rebuild (triage_dataset/
+    # triage_calibration/triage_eval). This is useful when an outer orchestrator
+    # is running multiple analyze passes (e.g., gt_tolerance sweeps) and wants
+    # to build suite-level artifacts exactly once per pass.
+    skip_suite_aggregate: bool = False
+
 
 def _effective_exclude_prefixes(req: AnalyzeRequest, *, is_suite_layout: bool) -> list[str]:
     """Merge CLI-provided prefixes with suite-layout defaults."""
@@ -136,7 +142,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
 
         # Best-effort: if this analyze run is happening inside a suite layout,
         # rebuild the suite-level triage_dataset so artifacts stay current.
-        if is_suite_layout:
+        if is_suite_layout and (not bool(req.skip_suite_aggregate)):
             try:
                 from pipeline.analysis.suite_triage_dataset import build_triage_dataset
 

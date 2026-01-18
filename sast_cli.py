@@ -296,6 +296,33 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--gt-tolerance-sweep",
+        default=None,
+        help=(
+            "(suite qa-calibration) Deterministically sweep multiple GT tolerances and write a comparison report. "
+            "Value is a comma-separated list of ints, e.g. '0,1,2,3,5,10'. "
+            "Writes runs/suites/<suite_id>/analysis/_tables/gt_tolerance_sweep_report.csv and snapshots under "
+            "runs/suites/<suite_id>/analysis/_sweeps/gt_tol_<t>/."
+        ),
+    )
+    parser.add_argument(
+        "--gt-tolerance-auto",
+        action="store_true",
+        help=(
+            "(suite qa-calibration) Pick a GT tolerance deterministically (no prompts). "
+            "Uses --gt-tolerance-sweep candidates when provided; otherwise defaults to '0,1,2,3,5,10'."
+        ),
+    )
+    parser.add_argument(
+        "--gt-tolerance-auto-min-fraction",
+        type=float,
+        default=0.95,
+        help=(
+            "(suite qa-calibration) Auto selection rule: choose the smallest tolerance achieving >= this fraction of "
+            "the maximum GT-positive clusters observed in the sweep (default: 0.95)."
+        ),
+    )
+    parser.add_argument(
         "--gt-source",
         choices=["auto", "markers", "yaml", "none"],
         default="auto",
