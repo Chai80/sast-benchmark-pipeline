@@ -140,7 +140,7 @@ The QA workflow (enabled via `--mode suite --qa-calibration`) runs a determinist
 3) Learn weights and write suite calibration (`analysis/triage_calibration.json`).
 4) Evaluate strategies and write a suite summary (`analysis/_tables/triage_eval_summary.json`).
 5) Re-run **analysis-only** so per-case queues can populate `triage_score_v1`.
-6) Validate the expected artifacts exist under `runs/suites/LATEST/...`.
+6) Validate the expected artifacts exist under `runs/suites/<suite_id>/...` (the most recent suite id is recorded in the pointer file `runs/suites/LATEST`).
 
 See `docs/triage_calibration.md` for the runbook and expected artifacts.
 

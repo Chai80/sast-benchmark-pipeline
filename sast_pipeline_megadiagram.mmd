@@ -25,7 +25,7 @@ flowchart TD
   subgraph Pipeline["Pipeline / Orchestration (pipeline/*)"]
     direction TB
     P0[SASTBenchmarkPipeline facade<br/>(pipeline/pipeline.py)]
-    P1[RunRequest / AnalyzeRequest<br/>(pipeline/models.py)]
+    P1[RunRequest / AnalyzeRequest<br/>(pipeline/orchestrator.py)]
     P2[run_tools (scan|benchmark|suite-case)<br/>(pipeline/execution/run_case.py)]
     P3[run_analyze (post-hoc)<br/>(pipeline/execution/analyze_mode.py)]
     P4[Build scan cmd<br/>(pipeline/core.build_scan_command)]
@@ -112,7 +112,7 @@ flowchart TD
   AN2 --> F5
 
   %% Re-analysis step is required for per-case triage_queue.csv to pick up suite-level calibration.
-  ANQ -. triggers .-> CLI_ANALYZE
+  ANQ -. triggers .-> P3
 
   %% Analyze mode reads existing outputs
   P3 --> F1

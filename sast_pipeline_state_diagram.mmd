@@ -123,7 +123,8 @@ stateDiagram-v2
 
     note right of ValidateArtifacts
       Deterministic PASS/FAIL checklist.
-      Validates artifacts exist under runs/suites/LATEST/...
+      Validates artifacts exist under runs/suites/<suite_id>/...
+      (the most recent suite id is stored in the pointer file runs/suites/LATEST).
     end note
   }
 

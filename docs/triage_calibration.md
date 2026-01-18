@@ -35,15 +35,20 @@ If neither exists, pass one of: `--suite-file`, `--cases-from`, or `--worktrees-
 
 ## Expected artifacts
 
-After the QA command completes, it validates these artifacts exist under `runs/suites/LATEST/...`:
+After the QA command completes, it validates these artifacts exist under `runs/suites/<suite_id>/...`
+(where the most recent suite id is stored in the pointer file `runs/suites/LATEST`):
 
-- `analysis/_tables/triage_dataset.csv`
-- `analysis/triage_calibration.json`
-- `analysis/_tables/triage_calibration_report.csv`
-- at least one case `triage_queue.csv` contains a `triage_score_v1` column
-- the suite triage eval summary includes the `calibrated` strategy
+- `analysis/_tables/triage_dataset.csv` exists
+- `analysis/triage_calibration.json` exists
+- `triage_calibration.json` includes **>= 1 GT-supported case** (included_cases is non-empty)
+- `analysis/_tables/triage_calibration_report.csv` exists
+- per-case `triage_queue.csv` exists for all cases
+- per-case `triage_queue.csv` contains the column `triage_score_v1`
+- if re-analyze is enabled (default), at least one `triage_score_v1` value is non-empty
+- the suite `triage_eval_summary.json` includes the `calibrated` strategy
 
 The filesystem-first validator lives at:
+
 
 - `pipeline/analysis/qa_calibration_runbook.py`
 

@@ -34,7 +34,7 @@ flowchart TD
 
     SuiteLayout --> S1[suite.json]
     SuiteLayout --> S2[summary.csv]
-    SuiteLayout --> SA[analysis/<br/>triage_dataset.csv<br/>triage_calibration.json<br/>triage_eval_summary.json]
+    SuiteLayout --> SA[analysis/<br/>_tables/triage_dataset.csv<br/>triage_calibration.json<br/>_tables/triage_calibration_report.csv<br/>_tables/triage_eval_summary.json<br/>qa_calibration_checklist.txt]
 
     subgraph Case["cases/<case_id>/"]
       direction TB
@@ -82,15 +82,22 @@ flowchart LR
   A --> C[ArtifactStore<br/>store]
 
   subgraph Pipelines["Pipelines (ordered stage lists)"]
-    P1[benchmark] --> S1[overview]
-    S1 --> S2[tool_profile]
-    S2 --> S3[location_matrix]
-    S3 --> S4[pairwise_agreement]
-    S4 --> S5[taxonomy]
-    S5 --> S6[triage_queue]
+    P1[benchmark] --> B0[diagnostics_case_context]
+    B0 --> B1[overview]
+    B1 --> B2[tool_profile]
+    B2 --> B3[location_matrix]
+    B3 --> B4[pairwise_agreement]
+    B4 --> B5[taxonomy]
+    B5 --> B6[triage_queue]
+    B6 --> B7[consensus_queue]
+    B7 --> B8[gt_score]
+    B8 --> B9[triage_features]
+
     P2[reporting] --> R1[benchmark_pack]
     R1 --> R2[hotspot_drilldown_pack]
-    P3[diagnostics] --> D1[diagnostics_schema]
+
+    P3[diagnostics] --> D0[diagnostics_case_context]
+    D0 --> D1[diagnostics_schema]
     D1 --> D2[diagnostics_empty_runs]
   end
 
@@ -98,14 +105,19 @@ flowchart LR
     SR[register_stage(name) decorator]
   end
 
-  SR --> S1
-  SR --> S2
-  SR --> S3
-  SR --> S4
-  SR --> S5
-  SR --> S6
+  SR --> B0
+  SR --> B1
+  SR --> B2
+  SR --> B3
+  SR --> B4
+  SR --> B5
+  SR --> B6
+  SR --> B7
+  SR --> B8
+  SR --> B9
   SR --> R1
   SR --> R2
+  SR --> D0
   SR --> D1
   SR --> D2
 
