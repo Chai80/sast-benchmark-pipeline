@@ -34,7 +34,7 @@ flowchart TD
 
     SuiteLayout --> S1[suite.json]
     SuiteLayout --> S2[summary.csv]
-    SuiteLayout --> SA[analysis/<br/>_tables/triage_dataset.csv<br/>triage_calibration.json<br/>_tables/triage_calibration_report.csv<br/>_tables/triage_eval_summary.json<br/>qa_calibration_checklist.txt<br/>qa_manifest.json]
+    SuiteLayout --> SA[analysis/<br/>_tables/triage_dataset.csv<br/>triage_calibration.json<br/>_tables/triage_calibration_report.csv<br/>_tables/triage_eval_summary.json<br/>qa_calibration_checklist.txt<br/>qa_manifest.json<br/>_tables/gt_tolerance_sweep_report.csv<br/>_tables/gt_tolerance_sweep_tool_stats.csv<br/>gt_tolerance_sweep.json<br/>gt_tolerance_selection.json<br/>_sweeps/gt_tol_<t>/analysis/...]
 
     subgraph Case["cases/<case_id>/"]
       direction TB

@@ -91,6 +91,13 @@ runs/suites/<suite_id>/analysis/
   _tables/triage_eval_summary.json
   qa_calibration_checklist.txt
   qa_manifest.json     # QA "receipt": inputs + GT tolerance policy + artifact paths
+
+  # Optional (when --gt-tolerance-sweep / --gt-tolerance-auto is used):
+  _tables/gt_tolerance_sweep_report.csv
+  _tables/gt_tolerance_sweep_tool_stats.csv
+  gt_tolerance_sweep.json
+  gt_tolerance_selection.json
+  _sweeps/gt_tol_<t>/analysis/...
 ```
 
 Because the calibration JSON is produced at the **suite level**, per-case triage queues

@@ -160,3 +160,11 @@ exact sink line.
 
 When in doubt, prefer a **tolerance sweep** (run analysis with multiple tolerances and compare
 the eval summary) instead of guessing.
+
+A sweep is deterministic and writes suite-level artifacts under `runs/suites/<suite_id>/...`:
+
+- `analysis/_tables/gt_tolerance_sweep_report.csv` (comparison report)
+- `analysis/_tables/gt_tolerance_sweep_tool_stats.csv` (per-tool TP/FP stats by tolerance)
+- `analysis/gt_tolerance_sweep.json` (payload)
+- `analysis/gt_tolerance_selection.json` (when auto-select is enabled)
+- snapshots under `analysis/_sweeps/gt_tol_<t>/analysis/...`

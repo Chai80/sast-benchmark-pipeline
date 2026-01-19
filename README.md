@@ -195,6 +195,13 @@ Suite-level triage calibration artifacts (when using `--qa-calibration`):
 - `runs/suites/<suite_id>/analysis/qa_manifest.json` - QA runbook manifest ("receipt" for inputs + selected GT tolerance + artifact paths)
   - Legacy alias: `analysis/qa_calibration_manifest.json`
 
+Optional GT tolerance sweep artifacts (when using `--gt-tolerance-sweep` / `--gt-tolerance-auto`):
+- `runs/suites/<suite_id>/analysis/_tables/gt_tolerance_sweep_report.csv`
+- `runs/suites/<suite_id>/analysis/_tables/gt_tolerance_sweep_tool_stats.csv`
+- `runs/suites/<suite_id>/analysis/gt_tolerance_sweep.json`
+- `runs/suites/<suite_id>/analysis/gt_tolerance_selection.json`
+- snapshots under `runs/suites/<suite_id>/analysis/_sweeps/gt_tol_<t>/analysis/...`
+
 **What is `qa_manifest.json`?**
 
 `qa_manifest.json` is a small, deterministic "receipt" for a QA calibration run. It records:

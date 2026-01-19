@@ -42,15 +42,20 @@ After the QA command completes, it validates these artifacts exist under `runs/s
 - `analysis/triage_calibration.json` exists
 - `triage_calibration.json` includes **>= 1 GT-supported case** (included_cases is non-empty)
 - `analysis/_tables/triage_calibration_report.csv` exists
+- `analysis/_tables/triage_eval_summary.json` exists and includes the `calibrated` strategy
+- `analysis/qa_calibration_checklist.txt` exists (PASS/FAIL checklist for CI)
 - `analysis/qa_manifest.json` exists (QA "receipt" for CI and debugging)
 - per-case `triage_queue.csv` exists for all cases
 - per-case `triage_queue.csv` contains the column `triage_score_v1`
 - if re-analyze is enabled (default), at least one `triage_score_v1` value is non-empty
-- the suite `triage_eval_summary.json` includes the `calibrated` strategy
 
-In addition, the QA runbook writes a small manifest (a "receipt" for the run):
+Optional (when using `--gt-tolerance-sweep` or `--gt-tolerance-auto`):
+- `analysis/_tables/gt_tolerance_sweep_report.csv` exists
+- `analysis/_tables/gt_tolerance_sweep_tool_stats.csv` exists
+- `analysis/gt_tolerance_sweep.json` exists (payload)
+- `analysis/gt_tolerance_selection.json` exists (when auto-select is enabled)
+- snapshots exist under `analysis/_sweeps/gt_tol_<t>/analysis/...`
 
-- `analysis/qa_manifest.json`
 
 The filesystem-first validator lives at:
 
