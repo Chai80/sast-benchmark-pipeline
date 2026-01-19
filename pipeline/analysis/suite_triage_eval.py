@@ -126,6 +126,7 @@ Both are useful:
 - triage_eval_summary.json: suite-level macro/micro summaries + warnings
 - triage_tool_utility.csv: tool contribution (unique GT coverage) vs noise (exclusive negatives)
 - triage_eval_topk.csv: top-ranked clusters per case/strategy (up to max(K))
+- triage_eval_deltas_by_case.csv: per-case deltas vs baseline (helps interpret lifts per case)
 """
 
     readme_path.write_text(content, encoding="utf-8")
@@ -445,6 +446,7 @@ def build_triage_eval(
     out_summary_json = out_tables / "triage_eval_summary.json"
     out_tool_csv = out_tables / "triage_tool_utility.csv"
     out_topk_csv = out_tables / "triage_eval_topk.csv"
+    out_deltas_by_case_csv = out_tables / "triage_eval_deltas_by_case.csv"
     out_log = out_dir / "triage_eval.log"
 
 
@@ -610,6 +612,72 @@ def build_triage_eval(
                         if len(tools) == 1:
                             tool_excl_neg_clusters[tools[0]] += 1
 
+
+
+    # --- Per-case deltas vs baseline --------------------------------------
+    # These make it easy to see whether a new ranking strategy actually
+    # improves metrics on a per-case basis (instead of only macro/micro).
+
+    def _opt_float(v: Any) -> Optional[float]:
+        if v is None:
+            return None
+        s = str(v).strip()
+        if s == "":
+            return None
+        try:
+            return float(s)
+        except Exception:
+            return None
+
+    baseline_index: Dict[Tuple[str, int], Dict[str, Any]] = {}
+    for r in by_case_rows:
+        if str(r.get("strategy")) != "baseline":
+            continue
+        cid = str(r.get("case_id") or "").strip()
+        k = _to_int(r.get("k"), 0)
+        if cid and k:
+            baseline_index[(cid, k)] = r
+
+    deltas_rows: List[Dict[str, Any]] = []
+    for r in by_case_rows:
+        strat = str(r.get("strategy") or "")
+        if strat == "baseline":
+            continue
+
+        cid = str(r.get("case_id") or "").strip()
+        k = _to_int(r.get("k"), 0)
+        base = baseline_index.get((cid, k))
+        if not base:
+            continue
+
+        base_prec = _opt_float(base.get("precision"))
+        strat_prec = _opt_float(r.get("precision"))
+        base_cov = _opt_float(base.get("gt_coverage"))
+        strat_cov = _opt_float(r.get("gt_coverage"))
+
+        prec_delta = (strat_prec - base_prec) if (base_prec is not None and strat_prec is not None) else None
+        cov_delta = (strat_cov - base_cov) if (base_cov is not None and strat_cov is not None) else None
+
+        deltas_rows.append(
+            {
+                "suite_id": sid,
+                "case_id": cid,
+                "strategy": strat,
+                "k": int(k),
+                "n_clusters": _to_int(r.get("n_clusters"), 0),
+                "has_gt": _to_int(r.get("has_gt"), 0),
+                "gt_total": _to_int(r.get("gt_total"), 0),
+                "baseline_precision": "" if base_prec is None else round(float(base_prec), 6),
+                "strategy_precision": "" if strat_prec is None else round(float(strat_prec), 6),
+                "precision_delta": "" if prec_delta is None else round(float(prec_delta), 6),
+                "baseline_gt_coverage": "" if base_cov is None else round(float(base_cov), 6),
+                "strategy_gt_coverage": "" if strat_cov is None else round(float(strat_cov), 6),
+                "gt_coverage_delta": "" if cov_delta is None else round(float(cov_delta), 6),
+            }
+        )
+
+    # Stable order for diffs.
+    deltas_rows.sort(key=lambda r: (str(r.get("case_id") or ""), str(r.get("strategy") or ""), int(r.get("k") or 0)))
     # --- Suite summary --------------------------------------------------
     def _safe_div(num: int, den: int) -> Optional[float]:
         if den <= 0:
@@ -651,6 +719,48 @@ def build_triage_eval(
                 "gt_total": int(total_gt),
             }
 
+
+
+    # --- Deltas vs baseline (macro + micro) -------------------------------
+    # Additive summary to make improvements obvious without external scripts.
+    delta_vs_baseline: Dict[str, Any] = {"macro": {}, "micro": {}}
+
+    def _delta(a: Any, b: Any) -> Optional[float]:
+        if a is None or b is None:
+            return None
+        try:
+            return round(float(a) - float(b), 6)
+        except Exception:
+            return None
+
+    for strat in strategies.keys():
+        if strat == "baseline":
+            continue
+        # Only compute deltas when both sides exist (calibrated may be absent).
+        if strat not in macro or "baseline" not in macro:
+            continue
+
+        m_out: Dict[str, Any] = {}
+        mi_out: Dict[str, Any] = {}
+
+        for k in k_list:
+            kk = str(k)
+            base_m = macro.get("baseline", {}).get(kk, {})
+            cur_m = macro.get(strat, {}).get(kk, {})
+            base_mi = micro.get("baseline", {}).get(kk, {})
+            cur_mi = micro.get(strat, {}).get(kk, {})
+
+            m_out[kk] = {
+                "precision": _delta(cur_m.get("precision"), base_m.get("precision")),
+                "gt_coverage": _delta(cur_m.get("gt_coverage"), base_m.get("gt_coverage")),
+            }
+            mi_out[kk] = {
+                "precision": _delta(cur_mi.get("precision"), base_mi.get("precision")),
+                "gt_coverage": _delta(cur_mi.get("gt_coverage"), base_mi.get("gt_coverage")),
+            }
+
+        delta_vs_baseline["macro"][strat] = m_out
+        delta_vs_baseline["micro"][strat] = mi_out
     # --- Tool utility ---------------------------------------------------
     unique_gt_by_tool: Dict[str, int] = defaultdict(int)
     total_gt_by_tool: Dict[str, int] = defaultdict(int)
@@ -737,6 +847,29 @@ def build_triage_eval(
         ],
     )
 
+
+
+    # Per-case deltas vs baseline (additive table for easy inspection).
+    if deltas_rows:
+        write_csv(
+            out_deltas_by_case_csv,
+            deltas_rows,
+            fieldnames=[
+                "suite_id",
+                "case_id",
+                "strategy",
+                "k",
+                "n_clusters",
+                "has_gt",
+                "gt_total",
+                "baseline_precision",
+                "strategy_precision",
+                "precision_delta",
+                "baseline_gt_coverage",
+                "strategy_gt_coverage",
+                "gt_coverage_delta",
+            ],
+        )
     summary: Dict[str, Any] = {
         "suite_id": sid,
         "suite_dir": str(suite_dir),
@@ -752,10 +885,12 @@ def build_triage_eval(
         "cases_with_gt_but_no_overlaps": list(cases_with_gt_but_no_overlaps),
         "macro": macro,
         "micro": micro,
+        "delta_vs_baseline": delta_vs_baseline,
         "out_by_case_csv": str(out_by_case_csv),
         "out_summary_json": str(out_summary_json),
         "out_tool_utility_csv": str(out_tool_csv),
         "out_topk_csv": str(out_topk_csv),
+        "out_deltas_by_case_csv": (str(out_deltas_by_case_csv) if deltas_rows else ""),
         "out_readme_md": "" if readme_path is None else str(readme_path),
     }
 
