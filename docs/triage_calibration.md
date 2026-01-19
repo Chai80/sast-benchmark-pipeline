@@ -42,15 +42,47 @@ After the QA command completes, it validates these artifacts exist under `runs/s
 - `analysis/triage_calibration.json` exists
 - `triage_calibration.json` includes **>= 1 GT-supported case** (included_cases is non-empty)
 - `analysis/_tables/triage_calibration_report.csv` exists
+- `analysis/qa_manifest.json` exists (QA "receipt" for CI and debugging)
 - per-case `triage_queue.csv` exists for all cases
 - per-case `triage_queue.csv` contains the column `triage_score_v1`
 - if re-analyze is enabled (default), at least one `triage_score_v1` value is non-empty
 - the suite `triage_eval_summary.json` includes the `calibrated` strategy
 
+In addition, the QA runbook writes a small manifest (a "receipt" for the run):
+
+- `analysis/qa_manifest.json`
+
 The filesystem-first validator lives at:
 
 
 - `pipeline/analysis/qa_calibration_runbook.py`
+
+---
+
+## QA manifest (`analysis/qa_manifest.json`)
+
+The QA calibration flow is designed to be **non-interactive** and **CI-friendly**.
+When something changes (a scanner version, a GT tolerance, a calibration parameter), you want to
+answer quickly:
+
+- *What inputs did this QA run use?*
+- *What GT tolerance was actually applied (explicit vs sweep vs auto-selected)?*
+- *Where are the canonical artifacts (dataset, calibration, eval, checklist, sweep report)?*
+
+`analysis/qa_manifest.json` is a small, deterministic JSON file that captures exactly that.
+
+Why it matters:
+
+- It prevents **"silent success"** (e.g., someone requested a sweep/auto-select but the sweep artifacts
+  are missing — CI should fail, not pass).
+- It makes runs **reproducible** and **diffable**: compare two manifests to see what changed.
+- It provides a single stable location for downstream tooling (and humans) to scrape the QA run
+  outcome and artifact paths.
+
+Backward compatibility note:
+
+- The canonical file is `analysis/qa_manifest.json` (CI should scrape this).
+- For backward compatibility, the pipeline also writes the same payload to `analysis/qa_calibration_manifest.json`.
 
 ---
 
@@ -138,3 +170,5 @@ for example:
 - skip (or soft-warn) on calibration/eval expectations
 
 This doc is the canonical place to keep those future adjustments.
+
+

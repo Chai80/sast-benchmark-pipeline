@@ -228,6 +228,11 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             gt_tolerance=0,
             gt_source="auto",
 
+            # (QA) Optional deterministic sweep + auto-selection
+            gt_tolerance_sweep=None,
+            gt_tolerance_auto=False,
+            gt_tolerance_auto_min_fraction=0.95,
+
             # Analysis selectors
             exclude_prefixes=(),
             include_harness=False,
@@ -299,6 +304,73 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
             checklist = checklist_path.read_text(encoding="utf-8")
             self.assertIn("Overall: FAIL", checklist)
+
+
+    def test_qa_calibration_sweep_auto_writes_selection_and_manifest(self) -> None:
+        """QA calibration with GT tolerance sweep/auto should persist sweep+selection+manifest artifacts."""
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            worktrees_root = self._make_minimal_worktrees_root(root)
+            suite_root = root / "runs" / "suites"
+            suite_id = "qa_sweep_auto"
+
+            args = self._make_args(
+                suite_root=suite_root,
+                worktrees_root=worktrees_root,
+                suite_id=suite_id,
+            )
+
+            # Enable sweep + auto-selection.
+            args.gt_tolerance_sweep = "0,1"
+            args.gt_tolerance_auto = True
+            args.gt_tolerance_auto_min_fraction = 0.95
+
+            pipeline = FakePipeline(nonempty_score=True)
+
+            buf = StringIO()
+            with redirect_stdout(buf):
+                rc = int(run_suite_mode(args, pipeline, repo_registry={}))
+
+            self.assertEqual(rc, 0, f"Expected success. Output:\n{buf.getvalue()}")
+
+            suite_dir = suite_root / safe_name(suite_id)
+
+            # Sweep artifacts
+            self.assertTrue(
+                (suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").exists(),
+                "Expected sweep report CSV",
+            )
+            self.assertTrue(
+                (suite_dir / "analysis" / "gt_tolerance_sweep.json").exists(),
+                "Expected sweep JSON payload",
+            )
+
+            # Selection artifact
+            sel_path = suite_dir / "analysis" / "gt_tolerance_selection.json"
+            self.assertTrue(sel_path.exists(), "Expected gt_tolerance_selection.json")
+            sel = json.loads(sel_path.read_text(encoding="utf-8"))
+            self.assertEqual(sel.get("selected_gt_tolerance"), 0, "With identical rows, auto should pick smallest")
+
+            # QA manifest artifact (canonical)
+            manifest_path = suite_dir / "analysis" / "qa_manifest.json"
+            self.assertTrue(manifest_path.exists(), "Expected qa_manifest.json")
+            man = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(man.get("schema_version"), "qa_calibration_manifest_v1")
+            gt_policy = (man.get("inputs") or {}).get("gt_tolerance_policy") or {}
+            self.assertEqual(gt_policy.get("effective_gt_tolerance"), 0)
+            sweep = gt_policy.get("sweep") or {}
+            self.assertEqual(sweep.get("candidates"), [0, 1])
+
+            # Legacy alias (backward compatibility)
+            legacy_path = suite_dir / "analysis" / "qa_calibration_manifest.json"
+            self.assertTrue(legacy_path.exists(), "Expected legacy qa_calibration_manifest.json alias")
+
+            # The sweep+finalize+reanalyze flow should call analyze() multiple times.
+            # candidates=2, cases=2 => sweep analyze=4
+            # finalize analyze=2
+            # QA reanalyze=2
+            self.assertEqual(len(pipeline.analyze_calls), 8)
 
 
 if __name__ == "__main__":

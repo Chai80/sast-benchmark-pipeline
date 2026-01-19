@@ -715,6 +715,25 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
     # ------------------------------------------------------------------
     qa_mode = bool(getattr(args, "qa_calibration", False))
     qa_no_reanalyze = bool(getattr(args, "qa_no_reanalyze", False))
+
+    # Capture GT tolerance input *before* any sweep/auto-selection mutates args.
+    gt_tolerance_initial = int(getattr(args, "gt_tolerance", 0) or 0)
+
+    # Best-effort capture of sweep/auto state for a QA manifest.
+    # (Written at the end of the runbook when suite_id/suite_dir are finalized.)
+    gt_sweep_enabled = False
+    gt_sweep_candidates: List[int] = []
+    gt_sweep_report_csv: Optional[str] = None
+    gt_sweep_payload_json: Optional[str] = None
+    gt_selection_path: Optional[str] = None
+    gt_selection_warnings: List[str] = []
+
+    # Captured (best-effort) sweep payload + selection decision for later writing
+    # to analysis/gt_tolerance_selection.json (and for the QA manifest).
+    gt_sweep_payload = None
+    gt_tolerance_selection = None
+
+    qa_checklist_pass: Optional[bool] = None
     if qa_mode:
         # QA requires artifacts on disk.
         if args.dry_run:
@@ -1053,16 +1072,23 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         sweep_min_frac = float(getattr(args, "gt_tolerance_auto_min_fraction", 0.95) or 0.95)
 
         if qa_mode and (sweep_raw or sweep_auto):
+            # Mark as "requested" immediately so the QA manifest can record intent
+            # even if the sweep fails early.
+            gt_sweep_enabled = True
+            gt_sweep_report_csv = str((suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").resolve())
+            gt_sweep_payload_json = str((suite_dir / "analysis" / "gt_tolerance_sweep.json").resolve())
+
             try:
                 from pipeline.analysis.gt_tolerance_sweep import (
                     disable_suite_calibration,
                     parse_gt_tolerance_candidates,
                     run_gt_tolerance_sweep,
                     select_gt_tolerance_auto,
-                    write_gt_tolerance_selection,
                 )
 
                 candidates = parse_gt_tolerance_candidates(sweep_raw)
+
+                gt_sweep_candidates = list(candidates)
 
                 sweep_payload = run_gt_tolerance_sweep(
                     pipeline=pipeline,
@@ -1079,6 +1105,12 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                     candidates=candidates,
                 )
 
+                # Record the emitted report path (should match the canonical path).
+                gt_sweep_report_csv = str(sweep_payload.get("out_report_csv") or gt_sweep_report_csv)
+
+                # Persist sweep payload for later selection/manifest writing.
+                gt_sweep_payload = sweep_payload
+
                 if sweep_auto:
                     sel = select_gt_tolerance_auto(
                         sweep_payload.get("rows") or [],
@@ -1086,19 +1118,15 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                     )
                     chosen = int(sel.get("selected_gt_tolerance", int(getattr(args, "gt_tolerance", 0))))
 
-                    # Persist the decision for CI + reproducibility.
-                    try:
-                        out_sel = write_gt_tolerance_selection(
-                            suite_dir=suite_dir,
-                            selection=sel,
-                            sweep_payload=sweep_payload,
-                        )
-                        print(f"\n✅ GT tolerance auto-selected: {chosen} (wrote {out_sel})")
-                        if sel.get("warnings"):
-                            for w in sel.get("warnings") or []:
-                                print(f"  ⚠️  {w}")
-                    except Exception as e:
-                        print(f"\n⚠️  Failed to write gt_tolerance selection file: {e}")
+                    # Record decision (we write the selection file later so the QA checklist
+                    # can enforce it regardless of auto vs explicit selection).
+                    gt_tolerance_selection = dict(sel)
+                    gt_selection_warnings = [str(w) for w in (sel.get("warnings") or []) if str(w).strip()]
+
+                    print(f"\n✅ GT tolerance auto-selected: {chosen}")
+                    if gt_selection_warnings:
+                        for w in gt_selection_warnings:
+                            print(f"  ⚠️  {w}")
 
                     # Make downstream steps (final build + re-analyze pass) use the chosen tolerance.
                     try:
@@ -1106,6 +1134,13 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                     except Exception:
                         pass
                 else:
+                    # Explicit tolerance path: still record for CI reproducibility.
+                    gt_tolerance_selection = {
+                        "schema_version": "gt_tolerance_selection_v1",
+                        "selected_gt_tolerance": int(getattr(args, "gt_tolerance", 0) or 0),
+                        "mode": "explicit",
+                        "warnings": [],
+                    }
                     print("\nℹ️  GT tolerance sweep complete (no auto selection; continuing with --gt-tolerance)")
 
                 # After the sweep, rebuild canonical suite calibration artifacts once
@@ -1148,7 +1183,10 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                     overall = max(overall, rc_code2)
 
             except Exception as e:
-                print(f"\n⚠️  GT tolerance sweep failed: {e}")
+                print(f"\n❌ GT tolerance sweep failed: {e}")
+                # In QA mode, requested sweeps are first-class; fail the run (but keep going to emit whatever artifacts we can).
+                overall = max(overall, 2)
+                gt_selection_warnings = list(gt_selection_warnings or []) + [f"sweep_failed: {e}"]
 
         # From this point on, the rest of the runbook assumes the *effective*
         # gt_tolerance has been applied (either explicit or auto-selected).
@@ -1287,6 +1325,52 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 overall = max(overall, rc_code2)
 
         # PASS/FAIL checklist
+        # Write GT tolerance selection/policy artifact for CI reproducibility.
+        #
+        # This is required in QA mode so that CI can recover the effective
+        # gt_tolerance (explicit vs sweep vs auto) without parsing stdout.
+        try:
+            from pipeline.analysis.gt_tolerance_sweep import write_gt_tolerance_selection
+
+            eff_tol = int(getattr(args, "gt_tolerance", 0) or 0)
+
+            selection = dict(gt_tolerance_selection or {}) if isinstance(gt_tolerance_selection, dict) else {}
+            if not selection:
+                selection = {
+                    "schema_version": "gt_tolerance_selection_v1",
+                    "selected_gt_tolerance": int(eff_tol),
+                    "mode": "explicit",
+                    "warnings": [],
+                }
+
+            # Always update to the effective tolerance at the time of writing.
+            selection["selected_gt_tolerance"] = int(eff_tol)
+
+            # Record the policy inputs that influence selection (small + stable).
+            selection.setdefault("policy", {})
+            selection["policy"].update(
+                {
+                    "initial_gt_tolerance": int(gt_tolerance_initial),
+                    "effective_gt_tolerance": int(eff_tol),
+                    "sweep_raw": str(sweep_raw) if sweep_raw is not None else None,
+                    "sweep_candidates": [int(x) for x in (gt_sweep_candidates or [])] if bool(gt_sweep_enabled) else [],
+                    "auto_enabled": bool(sweep_auto),
+                    "auto_min_fraction": float(sweep_min_frac) if bool(sweep_auto) else None,
+                    "gt_source": str(getattr(args, "gt_source", "auto")),
+                }
+            )
+
+            out_sel = write_gt_tolerance_selection(
+                suite_dir=suite_dir,
+                selection=selection,
+                sweep_payload=gt_sweep_payload,
+            )
+            gt_selection_path = str(out_sel)
+            print(f"\n🧾 Wrote GT tolerance selection: {out_sel}")
+        except Exception as e:
+            print(f"\n❌ Failed to write GT tolerance selection file: {e}")
+            overall = max(overall, 2)
+
         try:
             from pipeline.analysis.qa_calibration_runbook import (
                 all_ok,
@@ -1298,7 +1382,10 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 suite_dir=suite_dir,
                 require_scored_queue=(not qa_no_reanalyze),
                 expect_calibration=True,
+                expect_gt_tolerance_sweep=bool(sweep_raw or sweep_auto),
+                expect_gt_tolerance_selection=True,
             )
+            qa_checklist_pass = bool(all_ok(checks))
             report = render_checklist(checks, title="QA calibration checklist")
             print(report)
 
@@ -1315,6 +1402,81 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 overall = max(overall, 2)
         except Exception as e:
             print(f"\n❌ QA calibration validation failed: {e}")
+            overall = max(overall, 2)
+
+        # QA manifest (best-effort). Write even on FAIL for CI scraping.
+        try:
+            from pipeline.analysis.qa_calibration_manifest import (
+                GTTolerancePolicyRecord,
+                build_qa_calibration_manifest,
+                write_qa_calibration_manifest,
+            )
+
+            # Canonical artifact locations (relative paths are normalized in the writer).
+            artifacts = {
+                "triage_dataset_csv": str((suite_dir / "analysis" / "_tables" / "triage_dataset.csv").resolve()),
+                "triage_calibration_json": str((suite_dir / "analysis" / "triage_calibration.json").resolve()),
+                "triage_eval_summary_json": str((suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").resolve()),
+                "qa_checklist_txt": str((suite_dir / "analysis" / "qa_calibration_checklist.txt").resolve()),
+                "gt_tolerance_selection_json": gt_selection_path,
+            }
+
+            if gt_sweep_enabled:
+                artifacts.update(
+                    {
+                        "gt_tolerance_sweep_report_csv": gt_sweep_report_csv,
+                        "gt_tolerance_sweep_payload_json": gt_sweep_payload_json,
+                        "gt_tolerance_sweep_tool_stats_csv": str(
+                            (suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_tool_stats.csv").resolve()
+                        ),
+                    }
+                )
+
+            gt_policy = GTTolerancePolicyRecord(
+                initial_gt_tolerance=int(gt_tolerance_initial),
+                effective_gt_tolerance=int(getattr(args, "gt_tolerance", 0) or 0),
+                sweep_enabled=bool(gt_sweep_enabled),
+                sweep_candidates=[int(x) for x in (gt_sweep_candidates or [])],
+                auto_enabled=bool(getattr(args, "gt_tolerance_auto", False)),
+                auto_min_fraction=float(getattr(args, "gt_tolerance_auto_min_fraction", 0.95) or 0.95)
+                if bool(getattr(args, "gt_tolerance_auto", False))
+                else None,
+                selection_path=gt_selection_path,
+                sweep_report_csv=gt_sweep_report_csv,
+                sweep_payload_json=gt_sweep_payload_json,
+                selection_warnings=list(gt_selection_warnings or []),
+            )
+
+            manifest = build_qa_calibration_manifest(
+                suite_id=str(suite_id),
+                suite_dir=suite_dir,
+                argv=list(sys.argv),
+                scanners=list(scanners),
+                tolerance=int(tolerance),
+                analysis_filter=str(analysis_filter),
+                gt_source=str(getattr(args, "gt_source", "auto")),
+                exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
+                include_harness=bool(getattr(args, "include_harness", False)),
+                qa_scope=getattr(args, "qa_scope", None),
+                qa_owasp=getattr(args, "qa_owasp", None),
+                qa_cases=getattr(args, "qa_cases", None),
+                qa_no_reanalyze=bool(qa_no_reanalyze),
+                gt_policy=gt_policy,
+                artifacts=artifacts,
+                exit_code=int(overall),
+                checklist_pass=qa_checklist_pass,
+            )
+
+            out_manifest = write_qa_calibration_manifest(suite_dir=suite_dir, manifest=manifest)
+            print(f"\n🧾 Wrote QA manifest: {out_manifest}")
+
+            # Backward-compatible alias (best-effort)
+            legacy_path = (suite_dir / "analysis" / "qa_calibration_manifest.json").resolve()
+            if legacy_path.exists() and str(legacy_path) != str(out_manifest):
+                print(f"   (legacy alias) {legacy_path}")
+
+        except Exception as e:
+            print(f"\n❌ Failed to write QA manifest: {e}")
             overall = max(overall, 2)
     print("\n✅ Suite complete")
     print(f"  Suite id : {suite_id}")

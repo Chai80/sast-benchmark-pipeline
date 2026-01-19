@@ -133,6 +133,8 @@ def validate_calibration_suite_artifacts(
     *,
     require_scored_queue: bool = True,
     expect_calibration: bool = True,
+    expect_gt_tolerance_sweep: bool = False,
+    expect_gt_tolerance_selection: bool = False,
 ) -> List[QACheck]:
     """Validate suite-level artifacts for the triage calibration workflow.
 
@@ -159,6 +161,72 @@ def validate_calibration_suite_artifacts(
 
     analysis_dir = suite_dir / "analysis"
     tables_dir = analysis_dir / "_tables"
+
+    # --- GT tolerance artifacts (optional, QA-driven) ----------------------
+    # These are produced by the GT tolerance sweep/auto-selection flow.
+    # They are only required when the caller explicitly expects them.
+
+    sel_json = analysis_dir / "gt_tolerance_selection.json"
+    if expect_gt_tolerance_selection:
+        out.append(
+            QACheck(
+                name="analysis/gt_tolerance_selection.json exists",
+                ok=sel_json.exists(),
+                path=str(sel_json),
+                detail="" if sel_json.exists() else "missing",
+            )
+        )
+
+        if sel_json.exists():
+            try:
+                payload = _read_json(sel_json)
+            except Exception as e:  # pragma: no cover
+                out.append(
+                    QACheck(
+                        name="analysis/gt_tolerance_selection.json parses",
+                        ok=False,
+                        path=str(sel_json),
+                        detail=str(e),
+                    )
+                )
+            else:
+                sel_val = payload.get("selected_gt_tolerance") if isinstance(payload, dict) else None
+                ok_val = False
+                try:
+                    int(sel_val)
+                    ok_val = True
+                except Exception:
+                    ok_val = False
+
+                out.append(
+                    QACheck(
+                        name="gt_tolerance_selection records selected_gt_tolerance",
+                        ok=ok_val,
+                        path=str(sel_json),
+                        detail="" if ok_val else f"selected_gt_tolerance={sel_val!r}",
+                    )
+                )
+
+    sweep_report = tables_dir / "gt_tolerance_sweep_report.csv"
+    sweep_json = analysis_dir / "gt_tolerance_sweep.json"
+    if expect_gt_tolerance_sweep:
+        out.append(
+            QACheck(
+                name="analysis/_tables/gt_tolerance_sweep_report.csv exists",
+                ok=sweep_report.exists(),
+                path=str(sweep_report),
+                detail="" if sweep_report.exists() else "missing",
+            )
+        )
+        out.append(
+            QACheck(
+                name="analysis/gt_tolerance_sweep.json exists",
+                ok=sweep_json.exists(),
+                path=str(sweep_json),
+                detail="" if sweep_json.exists() else "missing",
+            )
+        )
+
 
     # --- Expected suite-level artifacts ---------------------------------
     triage_dataset = tables_dir / "triage_dataset.csv"

@@ -89,11 +89,21 @@ runs/suites/<suite_id>/analysis/
   triage_calibration.json
   _tables/triage_calibration_report.csv
   _tables/triage_eval_summary.json
+  qa_calibration_checklist.txt
+  qa_manifest.json     # QA "receipt": inputs + GT tolerance policy + artifact paths
 ```
 
 Because the calibration JSON is produced at the **suite level**, per-case triage queues
 need a second “analysis-only” pass to populate `triage_score_v1`.
 The QA helper (`--mode suite --qa-calibration`) runs that second pass automatically.
+
+`qa_manifest.json` is a small, deterministic "receipt" for the QA runbook. It records:
+- the effective GT tolerance policy (explicit vs sweep vs auto-select)
+- the knobs that affect calibration/eval
+- canonical paths to the runbook artifacts
+- PASS/FAIL state (exit code + checklist)
+
+This makes CI runs auditable and makes it easy to diff “what changed?” across QA runs.
 
 ### Preferred output layout (v2 suite/case)
 

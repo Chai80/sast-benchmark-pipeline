@@ -192,6 +192,22 @@ Suite-level triage calibration artifacts (when using `--qa-calibration`):
 - `runs/suites/<suite_id>/analysis/_tables/triage_calibration_report.csv`
 - `runs/suites/<suite_id>/analysis/_tables/triage_eval_summary.json`
 - `runs/suites/<suite_id>/analysis/qa_calibration_checklist.txt`
+- `runs/suites/<suite_id>/analysis/qa_manifest.json` - QA runbook manifest ("receipt" for inputs + selected GT tolerance + artifact paths)
+  - Legacy alias: `analysis/qa_calibration_manifest.json`
+
+**What is `qa_manifest.json`?**
+
+`qa_manifest.json` is a small, deterministic "receipt" for a QA calibration run. It records:
+
+- the **inputs/policy** used (including GT tolerance policy: explicit vs sweep vs auto-select)
+- the **effective** `gt_tolerance` that was actually applied
+- the **canonical paths** to the artifacts produced (dataset, calibration, eval summary, checklist, sweep reports)
+
+This makes CI runs auditable (no silent skips) and makes debugging diffs much faster:
+you can answer “what changed?” by comparing two manifests instead of hunting through logs.
+
+Note: for backward compatibility the pipeline also writes the same payload to
+`runs/suites/<suite_id>/analysis/qa_calibration_manifest.json`.
 
 ### "Latest suite" pointer
 `runs/suites/LATEST` is a small file containing the most recent suite id.
