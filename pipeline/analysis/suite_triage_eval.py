@@ -30,6 +30,9 @@ Written under runs/suites/<suite_id>/analysis/_tables/:
       - gt_ids_covered / unique_gt_ids (marginal GT recall)
       - neg_clusters / exclusive_neg_clusters (noise attribution)
 
+- triage_tool_marginal.csv
+    Drop-one tool marginal value (micro Precision@K / Coverage@K deltas when a tool is removed).
+
 Notes
 -----
 - "macro" averages treat each case equally.
@@ -125,6 +128,7 @@ Both are useful:
 - triage_eval_by_case.csv: per-case metrics for each strategy and K
 - triage_eval_summary.json: suite-level macro/micro summaries + warnings
 - triage_tool_utility.csv: tool contribution (unique GT coverage) vs noise (exclusive negatives)
+- triage_tool_marginal.csv: drop-one tool marginal value (micro Precision@K / Coverage@K deltas)
 - triage_eval_topk.csv: top-ranked clusters per case/strategy (up to max(K))
 - triage_eval_deltas_by_case.csv: per-case deltas vs baseline (helps interpret lifts per case)
 """
@@ -373,6 +377,7 @@ def build_triage_eval(
     suite_id: Optional[str] = None,
     ks: Sequence[int] = (1, 3, 5, 10, 25),
     out_dirname: str = "analysis",
+    include_tool_marginal: bool = True,
     dataset_relpath: str = "analysis/_tables/triage_dataset.csv",
 ) -> Dict[str, Any]:
     """Compute suite-level triage evaluation metrics.
@@ -445,6 +450,7 @@ def build_triage_eval(
     out_by_case_csv = out_tables / "triage_eval_by_case.csv"
     out_summary_json = out_tables / "triage_eval_summary.json"
     out_tool_csv = out_tables / "triage_tool_utility.csv"
+    out_tool_marginal_csv = out_tables / "triage_tool_marginal.csv"
     out_topk_csv = out_tables / "triage_eval_topk.csv"
     out_deltas_by_case_csv = out_tables / "triage_eval_deltas_by_case.csv"
     out_log = out_dir / "triage_eval.log"
@@ -464,6 +470,10 @@ def build_triage_eval(
     cases_no_clusters: List[str] = []
     cases_with_gt_but_no_clusters: List[str] = []
     cases_with_gt_but_no_overlaps: List[str] = []
+
+    # Per-case GT presence/size (used by additive analyses like tool marginal value).
+    case_has_gt: Dict[str, bool] = {}
+    case_gt_total: Dict[str, int] = {}
 
     # Drilldown: ranked rows (per case+strategy) up to max(ks)
     topk_rows: List[Dict[str, Any]] = []
@@ -496,6 +506,9 @@ def build_triage_eval(
             cases_with_gt.append(case_id)
         else:
             cases_without_gt.append(case_id)
+
+        case_has_gt[case_id] = bool(has_gt)
+        case_gt_total[case_id] = int(gt_total)
 
 
         if has_gt and n_clusters == 0:
@@ -784,6 +797,239 @@ def build_triage_eval(
             }
         )
 
+
+
+    # --- Tool marginal value (drop-one) -----------------------------------
+    #
+    # This answers: "What happens to top-K metrics if tool X is removed?"
+    #
+    # We do NOT re-run scanners or recluster. Instead, we deterministically
+    # transform the suite triage dataset by removing a tool from each cluster's
+    # tool set (using tool_counts_json when available), then re-rank and recompute
+    # micro Precision@K / GT coverage@K.
+    #
+    # Notes:
+    # - In suites without calibration, baseline ranking may use triage_rank, which
+    #   is computed on the *full* dataset. After removing a tool, triage_rank is
+    #   stale. For tool-marginal analysis we therefore always rank baseline using
+    #   the deterministic tie-breaks (use_triage_rank=False).
+    # - During GT tolerance sweeps, callers should disable this via
+    #   include_tool_marginal=False to keep sweeps fast.
+
+    tool_marginal_rows: List[Dict[str, Any]] = []
+
+    if include_tool_marginal and all_tools and cases_with_gt:
+        tool_utility_by_tool: Dict[str, Dict[str, Any]] = {str(r.get("tool") or ""): r for r in tool_rows}
+
+        def _stable_tool_counts_json(counts: Dict[str, int]) -> str:
+            return json.dumps({k: int(v) for k, v in sorted(counts.items())}, sort_keys=True)
+
+        def _parse_tool_counts_json(raw: str, fallback_tools: List[str]) -> Dict[str, int]:
+            if raw:
+                try:
+                    obj = json.loads(raw)
+                    if isinstance(obj, dict):
+                        out: Dict[str, int] = {}
+                        for k, v in obj.items():
+                            kk = str(k).strip()
+                            if not kk:
+                                continue
+                            out[kk] = _to_int(v, 0)
+                        out = {k: int(v) for k, v in out.items() if int(v) > 0}
+                        if out:
+                            return out
+                except Exception:
+                    pass
+            # Fallback: treat each listed tool as one finding.
+            return {t: 1 for t in sorted(set(fallback_tools)) if t}
+
+        def _drop_tool_from_row(row: Dict[str, str], tool: str) -> Optional[Dict[str, str]]:
+            tools = _tools_for_row(row)
+            if tool not in tools:
+                return dict(row)
+
+            counts = _parse_tool_counts_json(str(row.get("tool_counts_json") or ""), tools)
+            counts.pop(tool, None)
+            counts = {k: int(v) for k, v in counts.items() if int(v) > 0}
+            if not counts:
+                # Cluster would disappear if it only existed because of this tool.
+                return None
+
+            rr = dict(row)
+            new_tools = sorted(counts.keys())
+
+            rr["tool_counts_json"] = _stable_tool_counts_json(counts)
+            rr["tools_json"] = json.dumps(new_tools, ensure_ascii=False)
+            rr["tools"] = ",".join(new_tools)
+            rr["tool_count"] = str(int(len(new_tools)))
+            rr["finding_count"] = str(int(sum(int(v) for v in counts.values())))
+
+            # Force re-score under calibrated ranking.
+            if "triage_score_v1" in rr:
+                rr["triage_score_v1"] = ""
+
+            return rr
+
+        # Ranking strategies for marginal analysis.
+        strategies_marginal: Dict[str, Any] = {
+            "baseline": (lambda rows: _rank_baseline(rows, use_triage_rank=False)),
+            "agreement": _rank_agreement,
+        }
+        if cal:
+            def _rank_cal_m(rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal) -> List[Dict[str, str]]:
+                return _rank_calibrated(rows, cal=_cal)
+
+            strategies_marginal["calibrated"] = _rank_cal_m
+
+        def _micro_totals_for_rows(
+            *,
+            rows_by_case: Dict[str, List[Dict[str, str]]],
+            rank_fn: Any,
+        ) -> Dict[int, Dict[str, int]]:
+            # Returns totals per k: tp, denom, covered, gt_total, neg_in_topk
+            out: Dict[int, Dict[str, int]] = {int(k): {"tp": 0, "denom": 0, "covered": 0, "gt_total": 0, "neg": 0} for k in k_list}
+
+            for cid in case_ids:
+                if not case_has_gt.get(cid, False):
+                    continue
+                gt_total = int(case_gt_total.get(cid, 0) or 0)
+
+                case_rows = list(rows_by_case.get(cid) or [])
+                ordered = rank_fn(case_rows) if case_rows else []
+
+                for k in k_list:
+                    kk = int(k)
+                    k_eff = min(kk, len(ordered))
+                    top = ordered[:k_eff]
+
+                    tp = sum(1 for r in top if _to_int(r.get("gt_overlap"), 0) == 1)
+                    neg = sum(1 for r in top if _to_int(r.get("gt_overlap"), 0) == 0)
+
+                    covered_ids: Set[str] = set()
+                    if gt_total > 0:
+                        for r in top:
+                            covered_ids.update(_gt_ids_for_row(r))
+                    covered = int(len(covered_ids)) if gt_total > 0 else 0
+
+                    out[kk]["tp"] += int(tp)
+                    out[kk]["denom"] += int(k_eff)
+                    out[kk]["neg"] += int(neg)
+                    if gt_total > 0:
+                        out[kk]["covered"] += int(covered)
+                        out[kk]["gt_total"] += int(gt_total)
+
+            return out
+
+        def _metrics_from_totals(t: Dict[str, int]) -> Dict[str, Any]:
+            denom = int(t.get("denom", 0) or 0)
+            gt_total = int(t.get("gt_total", 0) or 0)
+            tp = int(t.get("tp", 0) or 0)
+            covered = int(t.get("covered", 0) or 0)
+            neg = int(t.get("neg", 0) or 0)
+            return {
+                "precision": None if denom == 0 else float(tp) / float(denom),
+                "gt_coverage": None if gt_total == 0 else float(covered) / float(gt_total),
+                "neg_in_topk": int(neg),
+            }
+
+        # FULL totals (once) using marginal ranking strategies.
+        full_totals: Dict[str, Dict[int, Dict[str, int]]] = {}
+        for strat, rank_fn in strategies_marginal.items():
+            full_totals[strat] = _micro_totals_for_rows(rows_by_case=by_case, rank_fn=rank_fn)
+
+        # Tool-level counts that help interpret deltas.
+        tool_cluster_counts: Dict[str, Dict[str, int]] = {}
+        for tool in all_tools:
+            clusters_with_tool = 0
+            excl_total = 0
+            excl_pos = 0
+            excl_neg = 0
+            for cid in case_ids:
+                if not case_has_gt.get(cid, False):
+                    continue
+                for r in (by_case.get(cid) or []):
+                    tools = _tools_for_row(r)
+                    if tool in tools:
+                        clusters_with_tool += 1
+                    if len(tools) == 1 and tools and tools[0] == tool:
+                        excl_total += 1
+                        if _to_int(r.get("gt_overlap"), 0) == 1:
+                            excl_pos += 1
+                        else:
+                            excl_neg += 1
+            tool_cluster_counts[tool] = {
+                "clusters_with_tool": int(clusters_with_tool),
+                "clusters_exclusive_total": int(excl_total),
+                "clusters_exclusive_pos": int(excl_pos),
+                "clusters_exclusive_neg": int(excl_neg),
+            }
+
+        # DROP-ONE evaluation per tool.
+        for tool in all_tools:
+            # Build a dropped view of rows-by-case.
+            dropped_by_case: Dict[str, List[Dict[str, str]]] = {}
+            for cid, case_rows in by_case.items():
+                if not case_has_gt.get(cid, False):
+                    continue
+                new_rows: List[Dict[str, str]] = []
+                for r in case_rows:
+                    rr = _drop_tool_from_row(r, tool)
+                    if rr is not None:
+                        new_rows.append(rr)
+                dropped_by_case[cid] = new_rows
+
+            drop_totals: Dict[str, Dict[int, Dict[str, int]]] = {}
+            for strat, rank_fn in strategies_marginal.items():
+                drop_totals[strat] = _micro_totals_for_rows(rows_by_case=dropped_by_case, rank_fn=rank_fn)
+
+            util = tool_utility_by_tool.get(tool, {})
+            cc = tool_cluster_counts.get(tool, {})
+
+            for strat in strategies_marginal.keys():
+                for k in k_list:
+                    kk = int(k)
+                    full_m = _metrics_from_totals(full_totals[strat].get(kk, {}))
+                    drop_m = _metrics_from_totals(drop_totals[strat].get(kk, {}))
+
+                    p_full = full_m.get("precision")
+                    p_drop = drop_m.get("precision")
+                    c_full = full_m.get("gt_coverage")
+                    c_drop = drop_m.get("gt_coverage")
+
+                    dp = (float(p_drop) - float(p_full)) if (p_full is not None and p_drop is not None) else None
+                    dc = (float(c_drop) - float(c_full)) if (c_full is not None and c_drop is not None) else None
+
+                    tool_marginal_rows.append(
+                        {
+                            "suite_id": sid,
+                            "tool": str(tool),
+                            "strategy": str(strat),
+                            "k": int(kk),
+                            "precision_full": "" if p_full is None else round(float(p_full), 6),
+                            "precision_drop": "" if p_drop is None else round(float(p_drop), 6),
+                            "delta_precision": "" if dp is None else round(float(dp), 6),
+                            "gt_coverage_full": "" if c_full is None else round(float(c_full), 6),
+                            "gt_coverage_drop": "" if c_drop is None else round(float(c_drop), 6),
+                            "delta_gt_coverage": "" if dc is None else round(float(dc), 6),
+                            "neg_in_topk_full": int(full_m.get("neg_in_topk") or 0),
+                            "neg_in_topk_drop": int(drop_m.get("neg_in_topk") or 0),
+                            "delta_neg_in_topk": int(drop_m.get("neg_in_topk") or 0) - int(full_m.get("neg_in_topk") or 0),
+                            # Context from tool utility (cluster-based).
+                            "gt_ids_covered": int(util.get("gt_ids_covered") or 0),
+                            "unique_gt_ids": int(util.get("unique_gt_ids") or 0),
+                            "neg_clusters": int(util.get("neg_clusters") or 0),
+                            "exclusive_neg_clusters": int(util.get("exclusive_neg_clusters") or 0),
+                            # Cluster counts.
+                            "clusters_with_tool": int(cc.get("clusters_with_tool") or 0),
+                            "clusters_exclusive_total": int(cc.get("clusters_exclusive_total") or 0),
+                            "clusters_exclusive_pos": int(cc.get("clusters_exclusive_pos") or 0),
+                            "clusters_exclusive_neg": int(cc.get("clusters_exclusive_neg") or 0),
+                        }
+                    )
+
+        # Stable sort for diffs.
+        strat_order = {name: idx for idx, name in enumerate(["baseline", "agreement", "calibrated"], start=1)}
+        tool_marginal_rows.sort(key=lambda r: (str(r.get("tool") or ""), int(strat_order.get(str(r.get("strategy") or ""), 99)), int(r.get("k") or 0)))
     # --- Write outputs --------------------------------------------------
     write_csv(
         out_by_case_csv,
@@ -816,6 +1062,36 @@ def build_triage_eval(
             "exclusive_neg_clusters",
         ],
     )
+
+    # Tool marginal value (drop-one) table (optional; may be disabled for sweeps).
+    if tool_marginal_rows:
+        write_csv(
+            out_tool_marginal_csv,
+            tool_marginal_rows,
+            fieldnames=[
+                "suite_id",
+                "tool",
+                "strategy",
+                "k",
+                "precision_full",
+                "precision_drop",
+                "delta_precision",
+                "gt_coverage_full",
+                "gt_coverage_drop",
+                "delta_gt_coverage",
+                "neg_in_topk_full",
+                "neg_in_topk_drop",
+                "delta_neg_in_topk",
+                "gt_ids_covered",
+                "unique_gt_ids",
+                "neg_clusters",
+                "exclusive_neg_clusters",
+                "clusters_with_tool",
+                "clusters_exclusive_total",
+                "clusters_exclusive_pos",
+                "clusters_exclusive_neg",
+            ],
+        )
 
     write_csv(
         out_topk_csv,
@@ -889,6 +1165,7 @@ def build_triage_eval(
         "out_by_case_csv": str(out_by_case_csv),
         "out_summary_json": str(out_summary_json),
         "out_tool_utility_csv": str(out_tool_csv),
+        "out_tool_marginal_csv": (str(out_tool_marginal_csv) if tool_marginal_rows else ""),
         "out_topk_csv": str(out_topk_csv),
         "out_deltas_by_case_csv": (str(out_deltas_by_case_csv) if deltas_rows else ""),
         "out_readme_md": "" if readme_path is None else str(readme_path),

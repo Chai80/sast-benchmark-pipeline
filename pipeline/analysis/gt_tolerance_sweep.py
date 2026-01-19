@@ -482,7 +482,7 @@ def run_gt_tolerance_sweep(
         # Build suite-level artifacts for THIS tolerance.
         ds = build_triage_dataset(suite_dir=suite_dir, suite_id=str(suite_id))
         cal = build_triage_calibration(suite_dir=suite_dir, suite_id=str(suite_id))
-        ev = build_triage_eval(suite_dir=suite_dir, suite_id=str(suite_id))
+        ev = build_triage_eval(suite_dir=suite_dir, suite_id=str(suite_id), include_tool_marginal=False)
 
         dataset_csv = Path(str(ds.get("out_csv") or (analysis_dir / "_tables" / "triage_dataset.csv"))).resolve()
 
