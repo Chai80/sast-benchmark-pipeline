@@ -224,13 +224,19 @@ def _key_start_line(r: Dict[str, str]) -> int:
     return _to_int(r.get("start_line"), 0)
 
 
-def _rank_baseline(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def _rank_baseline(rows: List[Dict[str, str]], *, use_triage_rank: bool = True) -> List[Dict[str, str]]:
     """Baseline ranking.
 
-    Prefer triage_rank if present. Otherwise, mirror triage_queue tie-breaks.
+    Prefer triage_rank if present *and allowed*. Otherwise, mirror triage_queue tie-breaks.
+
+    Note
+    ----
+    When suite calibration exists, per-case triage_rank may already reflect a
+    calibrated ordering. Callers should pass use_triage_rank=False to keep
+    baseline metrics uncontaminated.
     """
     # If at least one row has a positive triage_rank, use it.
-    any_rank = any(_to_int(r.get("triage_rank"), 0) > 0 for r in rows)
+    any_rank = bool(use_triage_rank) and any(_to_int(r.get("triage_rank"), 0) > 0 for r in rows)
     if any_rank:
         return sorted(rows, key=lambda r: _to_int(r.get("triage_rank"), 10**9))
 
@@ -242,6 +248,7 @@ def _rank_baseline(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
             -_to_int(r.get("finding_count"), 0),
             _key_file_path(r),
             _key_start_line(r),
+            str(r.get("cluster_id") or ""),
         ),
     )
 
@@ -259,6 +266,7 @@ def _rank_agreement(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
             -_to_int(r.get("finding_count"), 0),
             _key_file_path(r),
             _key_start_line(r),
+            str(r.get("cluster_id") or ""),
         ),
     )
 
@@ -397,15 +405,26 @@ def build_triage_eval(
         # Fall back to dataset-derived ids.
         case_ids = sorted(by_case.keys())
 
-    strategies = {
-        "baseline": _rank_baseline,
-        "agreement": _rank_agreement,
-    }
-
     # Optional suite-level calibration strategy.
     #
     # This is enabled when runs/suites/<suite_id>/analysis/triage_calibration.json exists.
     cal = _load_suite_calibration(suite_dir, out_dirname=out_dirname)
+
+    # Baseline evaluation must not be contaminated by calibration.
+    #
+    # If a suite calibration exists, per-case triage_rank (if present) may
+    # already represent a calibrated ordering. In that situation, we ignore
+    # triage_rank and mirror the baseline tie-breaks instead.
+    use_triage_rank_for_baseline = not bool(cal)
+
+    def _rank_base(rows: List[Dict[str, str]], *, _use: bool = use_triage_rank_for_baseline) -> List[Dict[str, str]]:
+        return _rank_baseline(rows, use_triage_rank=_use)
+
+    strategies = {
+        "baseline": _rank_base,
+        "agreement": _rank_agreement,
+    }
+
     if cal:
         # Capture cal in a default argument to keep behavior deterministic.
         def _rank_cal(rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal) -> List[Dict[str, str]]:

@@ -210,6 +210,36 @@ class DatasetOverlapStats:
     max_gt_ids_per_cluster: int
 
 
+def ambiguity_warnings_from_overlap_stats(stats: DatasetOverlapStats) -> List[str]:
+    """Derive deterministic ambiguity warnings from overlap stats.
+
+    These warnings are meant to surface *many-to-one* and *one-to-many*
+    relationships between GT IDs and clusters that become more common at
+    higher tolerances.
+
+    The caller is responsible for recording counts separately. This function
+    only produces short, stable warning strings suitable for CSV/JSON outputs.
+    """
+
+    warnings: List[str] = []
+
+    # Many-to-one: one cluster overlaps multiple GT IDs.
+    if int(stats.clusters_multi_gt) > 0:
+        warnings.append(f"many_to_one_clusters={int(stats.clusters_multi_gt)}")
+
+    # One-to-many: one GT ID overlaps multiple clusters.
+    if int(stats.gt_ids_multi_cluster) > 0:
+        warnings.append(f"one_to_many_gt_ids={int(stats.gt_ids_multi_cluster)}")
+
+    # Shape indicators (helpful to understand severity).
+    if int(stats.max_gt_ids_per_cluster) > 1:
+        warnings.append(f"max_gt_ids_per_cluster={int(stats.max_gt_ids_per_cluster)}")
+    if int(stats.max_clusters_per_gt_id) > 1:
+        warnings.append(f"max_clusters_per_gt_id={int(stats.max_clusters_per_gt_id)}")
+
+    return warnings
+
+
 def _compute_dataset_overlap_stats(dataset_csv: Path) -> DatasetOverlapStats:
     rows = _read_csv_rows(dataset_csv)
 
@@ -458,6 +488,11 @@ def run_gt_tolerance_sweep(
 
         stats = _compute_dataset_overlap_stats(dataset_csv)
 
+        # Ambiguity warnings (many-to-one / one-to-many). Keep both counts and
+        # human-readable warnings in the sweep outputs so CI/users can spot
+        # tolerance-induced matching ambiguity.
+        amb_warnings = ambiguity_warnings_from_overlap_stats(stats)
+
         # Tool stats (for a separate tool-stats table)
         cal_json_path = analysis_dir / "triage_calibration.json"
         cal_obj: Dict[str, Any] = {}
@@ -519,10 +554,23 @@ def run_gt_tolerance_sweep(
             "gt_overlap_0": int(stats.gt_overlap_0),
             "gt_overlap_rate": float(stats.gt_overlap_rate),
             "gt_ids_covered": int(stats.gt_ids_covered),
+
+            # Explicit ambiguity fields (aliases make the meaning obvious).
+            # - many_to_one: a single cluster overlaps multiple GT IDs
+            # - one_to_many: a single GT ID overlaps multiple clusters
+            "many_to_one_clusters": int(stats.clusters_multi_gt),
+            "one_to_many_gt_ids": int(stats.gt_ids_multi_cluster),
+
             "clusters_multi_gt": int(stats.clusters_multi_gt),
             "gt_ids_multi_cluster": int(stats.gt_ids_multi_cluster),
             "max_clusters_per_gt_id": int(stats.max_clusters_per_gt_id),
             "max_gt_ids_per_cluster": int(stats.max_gt_ids_per_cluster),
+
+            # Warning summary (stable strings, safe to parse).
+            "gt_ambiguity_warning": 1 if amb_warnings else 0,
+            "gt_ambiguity_warning_count": int(len(amb_warnings)),
+            "gt_ambiguity_warnings_json": json.dumps(amb_warnings, ensure_ascii=False),
+
             "snapshot_dir": str(snap_dir),
         }
         row.update(metrics)

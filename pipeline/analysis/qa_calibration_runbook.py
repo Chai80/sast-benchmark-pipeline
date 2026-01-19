@@ -39,6 +39,7 @@ class QACheck:
     ok: bool
     path: str = ""
     detail: str = ""
+    warn: bool = False
 
 
 def render_checklist(checks: List[QACheck], *, title: str = "QA calibration checklist") -> str:
@@ -47,10 +48,10 @@ def render_checklist(checks: List[QACheck], *, title: str = "QA calibration chec
     lines: List[str] = []
     lines.append(f"\n🔎 {title}")
     for c in checks:
-        icon = "✅" if c.ok else "❌"
+        icon = "❌" if (not c.ok) else ("⚠️" if bool(getattr(c, "warn", False)) else "✅")
         lines.append(f"{icon} {c.name}")
-        # Only show details for failures to keep output concise.
-        if not c.ok:
+        # Show details for failures and warnings.
+        if (not c.ok) or bool(getattr(c, "warn", False)):
             if c.path:
                 lines.append(f"    path: {c.path}")
             if c.detail:
@@ -69,7 +70,7 @@ def print_checklist(checks: Sequence[QACheck]) -> None:
     """Print a compact PASS/FAIL checklist."""
 
     for c in checks:
-        status = "PASS" if c.ok else "FAIL"
+        status = "FAIL" if (not c.ok) else ("WARN" if bool(getattr(c, "warn", False)) else "PASS")
         suffix = ""
         if c.path:
             suffix += f"  [{c.path}]"
@@ -88,6 +89,92 @@ def _read_csv_header(path: Path) -> List[str]:
         reader = csv.reader(f)
         header = next(reader, [])
     return [str(h).strip() for h in (header or []) if str(h).strip()]
+
+
+def _read_csv_dict_rows(path: Path) -> List[Dict[str, str]]:
+    p = Path(path)
+    with p.open("r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        return [dict(r) for r in reader if isinstance(r, dict)]
+
+
+def _parse_json_list(raw: str) -> List[str]:
+    s = str(raw or "").strip()
+    if not s:
+        return []
+    try:
+        v = json.loads(s)
+        if isinstance(v, list):
+            return [str(x) for x in v if str(x).strip()]
+    except Exception:
+        return []
+    return []
+
+
+def _compute_gt_ambiguity_stats(dataset_csv: Path) -> Dict[str, int]:
+    """Compute many-to-one / one-to-many ambiguity stats from triage_dataset.csv.
+
+    This intentionally mirrors the sweep's ambiguity counters, but stays local
+    to the QA checklist so we can surface warnings even when no sweep ran.
+    """
+
+    rows = _read_csv_dict_rows(dataset_csv)
+
+    gt_id_to_cluster_count: Dict[str, int] = {}
+    clusters_multi_gt = 0
+    max_gt_ids_per_cluster = 0
+
+    for r in rows:
+        ids: List[str] = []
+
+        raw_ids_json = str(r.get("gt_overlap_ids_json") or "").strip()
+        if raw_ids_json:
+            ids = _parse_json_list(raw_ids_json)
+
+        # Fallback: semicolon list
+        if not ids:
+            raw_ids = str(r.get("gt_overlap_ids") or "").strip()
+            if raw_ids:
+                ids = [p.strip() for p in raw_ids.split(";") if p.strip()]
+
+        if not ids:
+            continue
+
+        uniq = sorted(set(ids))
+        if len(uniq) > 1:
+            clusters_multi_gt += 1
+        max_gt_ids_per_cluster = max(max_gt_ids_per_cluster, len(uniq))
+        for gid in uniq:
+            gt_id_to_cluster_count[gid] = int(gt_id_to_cluster_count.get(gid, 0)) + 1
+
+    gt_ids_covered = len(gt_id_to_cluster_count)
+    gt_ids_multi_cluster = sum(1 for _gid, c in gt_id_to_cluster_count.items() if int(c) > 1)
+    max_clusters_per_gt_id = max([int(c) for c in gt_id_to_cluster_count.values()], default=0)
+
+    return {
+        "gt_ids_covered": int(gt_ids_covered),
+        "clusters_multi_gt": int(clusters_multi_gt),
+        "gt_ids_multi_cluster": int(gt_ids_multi_cluster),
+        "max_gt_ids_per_cluster": int(max_gt_ids_per_cluster),
+        "max_clusters_per_gt_id": int(max_clusters_per_gt_id),
+    }
+
+
+def _to_int(x: Any, default: int = 0) -> int:
+    """Best-effort int parsing for checklist validation.
+
+    Accepts strings, floats, ints; returns default on failure.
+    """
+
+    try:
+        if x is None:
+            return int(default)
+        if isinstance(x, bool):
+            return int(x)
+        return int(float(str(x)))
+    except Exception:
+        return int(default)
+
 
 
 def _csv_has_any_nonempty_value(path: Path, *, column: str) -> bool:
@@ -167,6 +254,7 @@ def validate_calibration_suite_artifacts(
     # They are only required when the caller explicitly expects them.
 
     sel_json = analysis_dir / "gt_tolerance_selection.json"
+    selected_gt_tolerance: Optional[int] = None
     if expect_gt_tolerance_selection:
         out.append(
             QACheck(
@@ -198,12 +286,45 @@ def validate_calibration_suite_artifacts(
                 except Exception:
                     ok_val = False
 
+                if ok_val:
+                    try:
+                        selected_gt_tolerance = int(sel_val)  # type: ignore[arg-type]
+                    except Exception:
+                        selected_gt_tolerance = None
+
                 out.append(
                     QACheck(
                         name="gt_tolerance_selection records selected_gt_tolerance",
                         ok=ok_val,
                         path=str(sel_json),
                         detail="" if ok_val else f"selected_gt_tolerance={sel_val!r}",
+                    )
+                )
+
+                # Surface any selection warnings (non-fatal) directly in the checklist.
+                # This is important for CI: ambiguous GT matching should be visible
+                # without manually opening JSON artifacts.
+                warnings_list: List[str] = []
+                if isinstance(payload, dict):
+                    # The writer nests the strategy output under selection{}.
+                    sel_obj = payload.get("selection")
+                    if isinstance(sel_obj, dict):
+                        raw_warn = sel_obj.get("warnings")
+                        if isinstance(raw_warn, list):
+                            warnings_list = [str(w) for w in raw_warn if str(w).strip()]
+                    # Backward compatibility: some older payloads may store warnings at the top level.
+                    if not warnings_list:
+                        raw_warn2 = payload.get("warnings")
+                        if isinstance(raw_warn2, list):
+                            warnings_list = [str(w) for w in raw_warn2 if str(w).strip()]
+
+                out.append(
+                    QACheck(
+                        name="gt_tolerance_selection warnings",
+                        ok=True,
+                        warn=bool(warnings_list),
+                        path=str(sel_json),
+                        detail="; ".join(warnings_list) if warnings_list else "",
                     )
                 )
 
@@ -228,6 +349,52 @@ def validate_calibration_suite_artifacts(
         )
 
 
+        # The sweep report is only trustworthy if the underlying per-case analyze
+        # calls succeeded for each candidate tolerance. In QA mode, we treat any
+        # non-zero analysis_rc in the sweep payload as a failure.
+        if sweep_json.exists():
+            try:
+                payload = _read_json(sweep_json)
+            except Exception as e:
+                out.append(
+                    QACheck(
+                        name="analysis/gt_tolerance_sweep.json parses",
+                        ok=False,
+                        path=str(sweep_json),
+                        detail=str(e),
+                    )
+                )
+            else:
+                rows = payload.get("rows") if isinstance(payload, dict) else None
+                if not isinstance(rows, list):
+                    out.append(
+                        QACheck(
+                            name="gt_tolerance_sweep has analysis_rc=0 for all candidates",
+                            ok=False,
+                            path=str(sweep_json),
+                            detail="missing or invalid rows[] in sweep payload",
+                        )
+                    )
+                else:
+                    bad: List[str] = []
+                    for r in rows:
+                        if not isinstance(r, dict):
+                            continue
+                        t = _to_int(r.get("gt_tolerance"), 0)
+                        rc = _to_int(r.get("analysis_rc"), 0)
+                        if rc != 0:
+                            bad.append(f"{t}:{rc}")
+
+                    ok_rc = len(bad) == 0
+                    out.append(
+                        QACheck(
+                            name="gt_tolerance_sweep has analysis_rc=0 for all candidates",
+                            ok=ok_rc,
+                            path=str(sweep_json),
+                            detail="" if ok_rc else f"non-zero analysis_rc for tolerances: {', '.join(bad)}",
+                        )
+                    )
+
     # --- Expected suite-level artifacts ---------------------------------
     triage_dataset = tables_dir / "triage_dataset.csv"
     out.append(
@@ -238,6 +405,44 @@ def validate_calibration_suite_artifacts(
             detail="" if triage_dataset.exists() else "missing",
         )
     )
+
+    # --- GT ambiguity safety -------------------------------------------
+    # High gt_tolerance values can create ambiguous GT matches:
+    # - many-to-one: a single cluster overlaps multiple GT IDs
+    # - one-to-many: a single GT ID overlaps multiple clusters
+    # These are *warnings* (non-fatal) but should be visible in the checklist.
+    if triage_dataset.exists():
+        try:
+            amb = _compute_gt_ambiguity_stats(triage_dataset)
+        except Exception as e:  # pragma: no cover
+            out.append(
+                QACheck(
+                    name="GT ambiguity stats computed",
+                    ok=False,
+                    path=str(triage_dataset),
+                    detail=str(e),
+                )
+            )
+        else:
+            warn_amb = (int(amb.get("clusters_multi_gt", 0)) > 0) or (int(amb.get("gt_ids_multi_cluster", 0)) > 0)
+
+            tol_suffix = f" (gt_tolerance={selected_gt_tolerance})" if selected_gt_tolerance is not None else ""
+            detail = (
+                f"many_to_one_clusters={int(amb.get('clusters_multi_gt', 0))}; "
+                f"one_to_many_gt_ids={int(amb.get('gt_ids_multi_cluster', 0))}; "
+                f"max_gt_ids_per_cluster={int(amb.get('max_gt_ids_per_cluster', 0))}; "
+                f"max_clusters_per_gt_id={int(amb.get('max_clusters_per_gt_id', 0))}"
+            )
+
+            out.append(
+                QACheck(
+                    name=f"GT ambiguity warnings (many-to-one / one-to-many){tol_suffix}",
+                    ok=True,
+                    warn=bool(warn_amb),
+                    path=str(triage_dataset),
+                    detail=detail if warn_amb else "",
+                )
+            )
 
     triage_cal_json = analysis_dir / "triage_calibration.json"
     out.append(
