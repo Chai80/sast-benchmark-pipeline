@@ -215,6 +215,7 @@ def write_suite_manifest(
     *,
     suite_dir: Path,
     suite_id: str,
+    suite_kind: str,
     suite_def: SuiteDefinition,
     scanners: Sequence[str],
     analysis: SuiteAnalysisDefaults,
@@ -258,6 +259,7 @@ def write_suite_manifest(
     if not isinstance(plan, dict):
         plan = {
             "workload_id": suite_def.suite_id,
+            "suite_kind": str(suite_kind),
             "scanners": list(scanners),
             "analysis": {
                 "skip": bool(analysis.skip),
@@ -280,6 +282,7 @@ def write_suite_manifest(
         # Explicitly call this a *run id* (folder name). Keep suite_id for compat.
         "suite_run_id": str(existing.get("suite_run_id") or suite_id),
         "suite_id": str(existing.get("suite_id") or suite_id),
+        "suite_kind": str(existing.get("suite_kind") or suite_kind),
         "created_at": created_at,
         "updated_at": updated_at,
         "plan": plan,
@@ -298,6 +301,7 @@ def resolve_suite_run(
     suite_root: Path,
     scanners: Sequence[str],
     analysis: SuiteAnalysisDefaults,
+    suite_kind: str = "benchmark",
     provenance: SuiteInputProvenance | None = None,
     repo_registry: Optional[RepoRegistry] = None,
     ensure_dirs: bool = True,
@@ -362,12 +366,23 @@ def resolve_suite_run(
     write_suite_manifest(
         suite_dir=suite_dir,
         suite_id=sid,
+        suite_kind=str(suite_kind or "benchmark"),
         suite_def=suite_def,
         scanners=scanners,
         analysis=analysis,
         resolved_cases=resolved,
         provenance=prov,
     )
+
+    # QA convenience pointer: record the most recent QA calibration suite run.
+    # This does not affect execution; it enables non-interactive workflows
+    # to compare QA suites deterministically (e.g., latestqa vs previousqa).
+    if str(suite_kind or "").strip().lower() == "qa_calibration":
+        try:
+            (root / "LATEST_QA").write_text(sid + "\n", encoding="utf-8")
+        except Exception:
+            # Never fail suite execution because a pointer couldn't be written.
+            pass
 
     return ResolvedSuiteRun(
         suite_id=sid,

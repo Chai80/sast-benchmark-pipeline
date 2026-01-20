@@ -219,6 +219,14 @@ Note: for backward compatibility the pipeline also writes the same payload to
 ### "Latest suite" pointer
 `runs/suites/LATEST` is a small file containing the most recent suite id.
 
+If you run the **QA calibration runbook** ("--qa-calibration"), the pipeline also writes:
+
+- `runs/suites/LATEST_QA` — the most recent **QA calibration** suite id
+
+QA suites are additionally tagged in `runs/suites/<suite_id>/suite.json` with:
+
+- `"suite_kind": "qa_calibration"` (regular suites default to `"benchmark"`)
+
 In CLI analyze mode you can use:
 
 ```bash
@@ -231,6 +239,35 @@ In shell scripts:
 SUITE=$(cat runs/suites/LATEST)
 echo "$SUITE"
 ```
+
+### Suite compare (drift report)
+To answer "what changed between two suite runs?" you can generate a deterministic
+suite-to-suite comparison report.
+
+This reads existing artifacts (no scans) and writes:
+
+- `runs/suites/<suite_a>/analysis/_tables/suite_compare_report.csv`
+- `runs/suites/<suite_a>/analysis/_tables/suite_compare_report.json`
+
+Examples:
+
+```bash
+# Default (and recommended): compare latest vs previous
+python sast_cli.py --mode analyze --metric suite_compare --compare-latest-previous
+
+# Compare latest vs a specific suite id
+python sast_cli.py --mode analyze --metric suite_compare --compare-latest-to 20260101T000000Z
+
+# Compare two explicit suites
+python sast_cli.py --mode analyze --metric suite_compare --compare-suites 20260101T000000Z,20260105T000000Z
+
+# Compare latest QA calibration vs previous QA calibration
+python sast_cli.py --mode analyze --metric suite_compare --compare-suites latestqa,previousqa
+```
+
+Notes:
+- This requires both suites to have `analysis/_tables/triage_eval_summary.json`.
+- If a suite was produced by the QA runbook, the report also compares `analysis/qa_manifest.json` inputs.
 
 ### Legacy layout (when `--no-suite`)
 If you disable suite layout, outputs go under `runs/<tool>/...` instead.

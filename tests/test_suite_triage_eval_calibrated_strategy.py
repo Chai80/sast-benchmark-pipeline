@@ -108,6 +108,20 @@ class TestSuiteTriageEvalCalibratedStrategy(unittest.TestCase):
             # Calibrated learns goodtool weight > noisytool and should pick c_good -> precision@1=1
             self.assertAlmostEqual(float(macro["calibrated"]["1"]["precision"]), 1.0, places=6)
 
+            # New: delta summaries and per-case delta table should exist.
+            delta = ev.get("delta_vs_baseline") or {}
+            self.assertIn("macro", delta)
+            self.assertIn("calibrated", delta.get("macro") or {})
+            self.assertAlmostEqual(float(delta["macro"]["calibrated"]["1"]["precision"]), 1.0, places=6)
+
+            deltas_csv = Path(str(ev.get("out_deltas_by_case_csv") or ""))
+            self.assertTrue(deltas_csv.exists(), "Expected triage_eval_deltas_by_case.csv to be written")
+            rows = list(csv.DictReader(deltas_csv.open("r", newline="", encoding="utf-8")))
+            # One case, one K, and two non-baseline strategies (agreement + calibrated).
+            by_strat = {r.get("strategy"): r for r in rows if r.get("case_id") == "case_one" and r.get("k") == "1"}
+            self.assertIn("calibrated", by_strat)
+            self.assertAlmostEqual(float(by_strat["calibrated"]["precision_delta"]), 1.0, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,7 @@ from typing import Dict, Optional, Tuple
 from cli.common import derive_runs_repo_name
 from cli.ui import choose_from_menu
 from cli.commands.analyze import run_analyze, run_analyze_suite_all_cases
+from cli.commands.compare_suites import run_suite_compare
 from cli.commands.benchmark import run_benchmark
 from cli.commands.scan import run_scan
 from cli.commands.suite import run_suite_mode
@@ -137,6 +138,13 @@ def dispatch(
     # prompt for a repo source unless the user is explicitly scanning.
     if mode == "analyze":
         suite_root = Path(args.suite_root).expanduser().resolve()
+
+        # Suite-to-suite drift comparison is an analysis-only operation.
+        # Handle it early to avoid any interactive prompts.
+        metric = str(getattr(args, "metric", None) or "hotspots").strip()
+        if metric == "suite_compare":
+            return int(run_suite_compare(args, suite_root=suite_root))
+
         # If analyzing an explicit case directory, never prompt. Also infer
         # suite_id when possible so exports are not polluted.
         suite_id = str(args.suite_id) if args.suite_id else None

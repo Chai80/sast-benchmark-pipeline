@@ -6,7 +6,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Optional, Set
 
 from cli.commands.suite import run_suite_mode
 from pipeline.suites.bundles import safe_name
@@ -24,8 +24,16 @@ class FakePipeline:
     the suite-level builders and QA checklist consume.
     """
 
-    def __init__(self, *, nonempty_score: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        nonempty_score: bool = True,
+        fail_on_gt_tolerance: Optional[Set[int]] = None,
+        ambiguous_gt: bool = False,
+    ) -> None:
         self.nonempty_score = bool(nonempty_score)
+        self.fail_on_gt_tolerance: Set[int] = set(fail_on_gt_tolerance or set())
+        self.ambiguous_gt = bool(ambiguous_gt)
         self.run_calls: List[Any] = []
         self.analyze_calls: List[Any] = []
 
@@ -66,47 +74,92 @@ class FakePipeline:
             "gt_overlap_ids_json",
         ]
 
-        # Two clusters: one GT-positive, one GT-negative.
-        rows = [
-            {
-                "suite_id": suite_id,
-                "case_id": case_id,
-                "cluster_id": "c1",
-                "schema_version": "triage_features_v1",
-                "generated_at": "2026-01-01T00:00:00Z",
-                "owasp_id": case_id,
-                "file_path": "src/app.py",
-                "start_line": "10",
-                "end_line": "10",
-                "tool_count": "1",
-                "finding_count": "1",
-                "tools_json": json.dumps(["semgrep"]),
-                "tools": "semgrep",
-                "max_severity": "HIGH",
-                "max_severity_rank": "3",
-                "gt_overlap": "1",
-                "gt_overlap_ids_json": json.dumps(["GT1"]),
-            },
-            {
-                "suite_id": suite_id,
-                "case_id": case_id,
-                "cluster_id": "c2",
-                "schema_version": "triage_features_v1",
-                "generated_at": "2026-01-01T00:00:00Z",
-                "owasp_id": case_id,
-                "file_path": "src/lib.py",
-                "start_line": "20",
-                "end_line": "20",
-                "tool_count": "1",
-                "finding_count": "1",
-                "tools_json": json.dumps(["snyk"]),
-                "tools": "snyk",
-                "max_severity": "LOW",
-                "max_severity_rank": "1",
-                "gt_overlap": "0",
-                "gt_overlap_ids_json": json.dumps([]),
-            },
-        ]
+        # Two clusters. In normal mode, one is GT-positive and one GT-negative.
+        # In ambiguous_gt mode, we simulate tolerance-induced ambiguity by making:
+        # - c1 overlap multiple GT IDs (many-to-one)
+        # - c2 overlap a GT ID already used by c1 (one-to-many)
+        if self.ambiguous_gt:
+            rows = [
+                {
+                    "suite_id": suite_id,
+                    "case_id": case_id,
+                    "cluster_id": "c1",
+                    "schema_version": "triage_features_v1",
+                    "generated_at": "2026-01-01T00:00:00Z",
+                    "owasp_id": case_id,
+                    "file_path": "src/app.py",
+                    "start_line": "10",
+                    "end_line": "10",
+                    "tool_count": "1",
+                    "finding_count": "1",
+                    "tools_json": json.dumps(["semgrep"]),
+                    "tools": "semgrep",
+                    "max_severity": "HIGH",
+                    "max_severity_rank": "3",
+                    "gt_overlap": "1",
+                    "gt_overlap_ids_json": json.dumps(["GT1", "GT2"]),
+                },
+                {
+                    "suite_id": suite_id,
+                    "case_id": case_id,
+                    "cluster_id": "c2",
+                    "schema_version": "triage_features_v1",
+                    "generated_at": "2026-01-01T00:00:00Z",
+                    "owasp_id": case_id,
+                    "file_path": "src/lib.py",
+                    "start_line": "20",
+                    "end_line": "20",
+                    "tool_count": "1",
+                    "finding_count": "1",
+                    "tools_json": json.dumps(["snyk"]),
+                    "tools": "snyk",
+                    "max_severity": "LOW",
+                    "max_severity_rank": "1",
+                    "gt_overlap": "1",
+                    "gt_overlap_ids_json": json.dumps(["GT1"]),
+                },
+            ]
+        else:
+            rows = [
+                {
+                    "suite_id": suite_id,
+                    "case_id": case_id,
+                    "cluster_id": "c1",
+                    "schema_version": "triage_features_v1",
+                    "generated_at": "2026-01-01T00:00:00Z",
+                    "owasp_id": case_id,
+                    "file_path": "src/app.py",
+                    "start_line": "10",
+                    "end_line": "10",
+                    "tool_count": "1",
+                    "finding_count": "1",
+                    "tools_json": json.dumps(["semgrep"]),
+                    "tools": "semgrep",
+                    "max_severity": "HIGH",
+                    "max_severity_rank": "3",
+                    "gt_overlap": "1",
+                    "gt_overlap_ids_json": json.dumps(["GT1"]),
+                },
+                {
+                    "suite_id": suite_id,
+                    "case_id": case_id,
+                    "cluster_id": "c2",
+                    "schema_version": "triage_features_v1",
+                    "generated_at": "2026-01-01T00:00:00Z",
+                    "owasp_id": case_id,
+                    "file_path": "src/lib.py",
+                    "start_line": "20",
+                    "end_line": "20",
+                    "tool_count": "1",
+                    "finding_count": "1",
+                    "tools_json": json.dumps(["snyk"]),
+                    "tools": "snyk",
+                    "max_severity": "LOW",
+                    "max_severity_rank": "1",
+                    "gt_overlap": "0",
+                    "gt_overlap_ids_json": json.dumps([]),
+                },
+            ]
 
         with tf_path.open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=fieldnames)
@@ -117,18 +170,29 @@ class FakePipeline:
         # --- Per-case GT gate artifact (used to include cases in calibration) ---
         gt_dir = case_dir / "gt"
         gt_dir.mkdir(parents=True, exist_ok=True)
+        gt_rows = [
+            {
+                "gt_id": "GT1",
+                "file_path": "src/app.py",
+                "start_line": 10,
+                "end_line": 10,
+            }
+        ]
+        if self.ambiguous_gt:
+            gt_rows.append(
+                {
+                    "gt_id": "GT2",
+                    "file_path": "src/app.py",
+                    "start_line": 10,
+                    "end_line": 10,
+                }
+            )
+
         (gt_dir / "gt_score.json").write_text(
             json.dumps(
                 {
                     "schema_version": "gt_score_v1",
-                    "rows": [
-                        {
-                            "gt_id": "GT1",
-                            "file_path": "src/app.py",
-                            "start_line": 10,
-                            "end_line": 10,
-                        }
-                    ],
+                    "rows": gt_rows,
                 },
                 indent=2,
             )
@@ -144,6 +208,10 @@ class FakePipeline:
 
     def analyze(self, req: Any) -> int:
         self.analyze_calls.append(req)
+
+        gt_tol = int(getattr(req, "gt_tolerance", 0) or 0)
+        if gt_tol in self.fail_on_gt_tolerance:
+            raise RuntimeError(f"simulated analyze failure (gt_tolerance={gt_tol})")
 
         case_dir = Path(str(req.case_path)).resolve()
         tables_dir = case_dir / "analysis" / "_tables"
@@ -275,6 +343,15 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             self.assertTrue((suite_dir / "analysis" / "triage_calibration.json").exists())
             self.assertTrue((suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").exists())
 
+            # Suite classification + pointer: QA calibration runs should be tagged
+            # and update runs/suites/LATEST_QA for deterministic selection.
+            suite_json = json.loads((suite_dir / "suite.json").read_text(encoding="utf-8"))
+            self.assertEqual(suite_json.get("suite_kind"), "qa_calibration")
+
+            latest_qa = (suite_root / "LATEST_QA")
+            self.assertTrue(latest_qa.exists(), "Expected LATEST_QA pointer to exist")
+            self.assertEqual(latest_qa.read_text(encoding="utf-8").strip(), safe_name(suite_id))
+
     def test_qa_calibration_checklist_failure_returns_nonzero(self) -> None:
         """If triage_score_v1 is never populated, the QA runbook must FAIL."""
 
@@ -371,6 +448,98 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             # finalize analyze=2
             # QA reanalyze=2
             self.assertEqual(len(pipeline.analyze_calls), 8)
+
+
+    def test_qa_calibration_sweep_fails_if_any_sweep_candidate_has_analysis_errors(self) -> None:
+        """If any gt_tolerance candidate sweep has non-zero analysis_rc, QA must FAIL."""
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            worktrees_root = self._make_minimal_worktrees_root(root)
+            suite_root = root / "runs" / "suites"
+            suite_id = "qa_sweep_analysis_rc_fail"
+
+            args = self._make_args(
+                suite_root=suite_root,
+                worktrees_root=worktrees_root,
+                suite_id=suite_id,
+            )
+
+            # Enable sweep + auto-selection with two candidates.
+            args.gt_tolerance_sweep = "0,1"
+            args.gt_tolerance_auto = True
+            args.gt_tolerance_auto_min_fraction = 0.95
+
+            # Simulate analyze() failures for one tolerance value during the sweep.
+            pipeline = FakePipeline(nonempty_score=True, fail_on_gt_tolerance={1})
+
+            buf = StringIO()
+            with redirect_stdout(buf):
+                rc = int(run_suite_mode(args, pipeline, repo_registry={}))
+
+            self.assertNotEqual(rc, 0, f"Expected non-zero exit code. Output:\n{buf.getvalue()}")
+
+            suite_dir = suite_root / safe_name(suite_id)
+
+            checklist_path = suite_dir / "analysis" / "qa_calibration_checklist.txt"
+            self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
+            checklist = checklist_path.read_text(encoding="utf-8")
+            self.assertIn("Overall: FAIL", checklist)
+            self.assertIn("analysis_rc=0", checklist)
+
+            # Sweep artifacts should still be written (the sweep report is useful for debugging).
+            self.assertTrue((suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").exists())
+            self.assertTrue((suite_dir / "analysis" / "gt_tolerance_sweep.json").exists())
+
+            # The sweep+finalize+reanalyze flow should still attempt all analyze() calls.
+            self.assertEqual(len(pipeline.analyze_calls), 8)
+
+
+    def test_qa_calibration_checklist_exposes_gt_ambiguity_warnings(self) -> None:
+        """Ambiguous GT matches should be visible as WARN lines in the QA checklist (non-fatal)."""
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            worktrees_root = self._make_minimal_worktrees_root(root)
+            suite_root = root / "runs" / "suites"
+            suite_id = "qa_gt_ambiguity_warn"
+
+            args = self._make_args(
+                suite_root=suite_root,
+                worktrees_root=worktrees_root,
+                suite_id=suite_id,
+            )
+
+            # Enable sweep + auto-selection so selection warnings are produced and persisted.
+            args.gt_tolerance_sweep = "0,1"
+            args.gt_tolerance_auto = True
+            args.gt_tolerance_auto_min_fraction = 0.95
+
+            # Emit ambiguous overlaps in the per-case triage_features.csv.
+            pipeline = FakePipeline(nonempty_score=True, ambiguous_gt=True)
+
+            buf = StringIO()
+            with redirect_stdout(buf):
+                rc = int(run_suite_mode(args, pipeline, repo_registry={} ))
+
+            self.assertEqual(rc, 0, f"Expected success (warnings are non-fatal). Output:\n{buf.getvalue()}")
+
+            suite_dir = suite_root / safe_name(suite_id)
+            checklist_path = suite_dir / "analysis" / "qa_calibration_checklist.txt"
+            self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
+            checklist = checklist_path.read_text(encoding="utf-8")
+
+            # Must still pass overall.
+            self.assertIn("Overall: PASS", checklist)
+
+            # Checklist should surface ambiguity counts.
+            self.assertIn("GT ambiguity warnings (many-to-one / one-to-many", checklist)
+            self.assertIn("many_to_one_clusters=", checklist)
+            self.assertIn("one_to_many_gt_ids=", checklist)
+
+            # Checklist should surface selection warnings (from selection JSON).
+            self.assertIn("gt_tolerance_selection warnings", checklist)
+            self.assertIn("clusters overlapping multiple GT IDs", checklist)
 
 
 if __name__ == "__main__":

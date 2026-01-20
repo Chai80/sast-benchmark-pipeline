@@ -253,8 +253,38 @@ def parse_args() -> argparse.Namespace:
     # Analysis / metrics
     parser.add_argument(
         "--metric",
-        choices=["hotspots", "suite"],
-        help="(analyze mode) Metric to compute (hotspots|suite)",
+        choices=["hotspots", "suite", "suite_compare"],
+        help="(analyze mode) Metric to compute (hotspots|suite|suite_compare)",
+    )
+
+    # Suite-to-suite compare (analyze mode)
+    parser.add_argument(
+        "--compare-suites",
+        dest="compare_suites",
+        default=None,
+        help=(
+            "(analyze mode, --metric suite_compare) Compare two suites and write a drift report. "
+            "Format: 'A,B'. Each value may be a suite_id folder name under --suite-root or a special ref: "
+            "latest|previous. Example: --compare-suites latest,previous or --compare-suites 20260101T...,20260105T..."
+        ),
+    )
+    parser.add_argument(
+        "--compare-latest-previous",
+        dest="compare_latest_previous",
+        action="store_true",
+        help=(
+            "(analyze mode, --metric suite_compare) Convenience: compare LATEST vs the previous suite under --suite-root. "
+            "If no explicit compare flags are provided, this is the default behavior."
+        ),
+    )
+    parser.add_argument(
+        "--compare-latest-to",
+        dest="compare_latest_to",
+        default=None,
+        help=(
+            "(analyze mode, --metric suite_compare) Convenience: compare LATEST vs the given suite_id. "
+            "Example: --compare-latest-to 20260101T000000Z"
+        ),
     )
     parser.add_argument(
         "--tools",
