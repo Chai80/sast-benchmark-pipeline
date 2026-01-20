@@ -195,6 +195,65 @@ def _merge_dicts(a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]) -> Di
     return out
 
 
+def _write_config_receipt_json(
+    run_dir: Path,
+    *,
+    suite_id: str,
+    case_id: str,
+    tool: str,
+    repo_name: str,
+    profile: str,
+    command: str,
+    exit_code: int,
+    started: Optional[str] = None,
+    finished: Optional[str] = None,
+) -> None:
+    """Write run_dir/config_receipt.json.
+
+    This is a lightweight, tool-agnostic "run receipt" intended to make
+    configuration an explicit, comparable input to benchmarking.
+
+    Notes
+    -----
+    - The `profile` field is a *label* (e.g. "default", "strict") that
+      describes the intended scanner configuration for this run.
+    - Tool-specific configuration details should be captured in metadata.json
+      (and any adjacent config artifacts copied into the run directory).
+    """
+
+    run_id = run_dir.name
+
+    metadata_file = "metadata.json" if (run_dir / "metadata.json").exists() else None
+
+    data: Dict[str, Any] = {
+        "schema_version": 1,
+        "tool": tool,
+        "profile": profile,
+        "suite_id": suite_id,
+        "case_id": case_id,
+        "run_id": run_id,
+        "repo_name": repo_name,
+        "recorded_at": _now_iso(),
+        "command": command,
+        "started": started,
+        "finished": finished,
+        "exit_code": int(exit_code),
+        "artifacts": {
+            "metadata": metadata_file,
+            # Optional: if you have exported a rules inventory for this tool
+            # (CSV/PDF/etc), copy it into the run directory and record the
+            # relative path here.
+            "rules_inventory": None,
+        },
+        "notes": [
+            "Records configuration intent (profile) for reproducible comparisons.",
+            "Does not imply different scanners share identical rule implementations.",
+        ],
+    }
+
+    write_json(run_dir / "config_receipt.json", data)
+
+
 def _write_run_json(
     run_dir: Path,
     *,
@@ -204,6 +263,7 @@ def _write_run_json(
     repo_name: str,
     exit_code: int,
     command: str,
+    profile: str = "default",
     started: Optional[str] = None,
     finished: Optional[str] = None,
 ) -> None:
@@ -221,6 +281,7 @@ def _write_run_json(
     normalized_name = _pick_first(["normalized.json", f"{repo_name}.normalized.json"])
     raw_name = _pick_first(["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"])
     metadata_name = _pick_first(["metadata.json"])
+    config_receipt_name = _pick_first(["config_receipt.json"])
     logs_dir = run_dir / "logs"
     logs_dir_name = "logs" if logs_dir.exists() and logs_dir.is_dir() else None
 
@@ -228,6 +289,7 @@ def _write_run_json(
         "suite_id": suite_id,
         "case_id": case_id,
         "tool": tool,
+        "profile": profile,
         "run_id": run_id,
         "started": started,
         "finished": finished,
@@ -237,6 +299,7 @@ def _write_run_json(
             "normalized": normalized_name,
             "raw": raw_name,
             "metadata": metadata_name,
+            "config_receipt": config_receipt_name,
             "logs_dir": logs_dir_name,
         },
     }
@@ -259,6 +322,10 @@ class RunRequest:
 
     # suite writing
     suite_root: Path
+
+    # configuration labeling (recorded in run receipts; does not change tool settings)
+    profile: str = "default"
+
     suite_id: Optional[str] = None
     use_suite: bool = True
 
@@ -477,7 +544,25 @@ def _record_tool_run_manifest(
     except Exception:
         pass
 
+    config_receipt_path = None
     if run_dir:
+        try:
+            _write_config_receipt_json(
+                run_dir,
+                suite_id=suite_paths.suite_id,
+                case_id=suite_paths.case_id,
+                tool=scanner,
+                repo_name=req.case.runs_repo_name,
+                profile=str(req.profile),
+                exit_code=execution.exit_code,
+                command=execution.command_str,
+                started=execution.started,
+                finished=execution.finished,
+            )
+            config_receipt_path = str(run_dir / "config_receipt.json")
+        except Exception as e:
+            case_warnings.append(f"write_config_receipt_failed:{scanner}:{run_dir}: {e}")
+
         try:
             _write_run_json(
                 run_dir,
@@ -487,6 +572,7 @@ def _record_tool_run_manifest(
                 repo_name=req.case.runs_repo_name,
                 exit_code=execution.exit_code,
                 command=execution.command_str,
+                profile=str(req.profile),
                 started=execution.started,
                 finished=execution.finished,
             )
@@ -506,6 +592,8 @@ def _record_tool_run_manifest(
         "run_id": run_dir.name if run_dir else None,
         "run_dir": str(run_dir) if run_dir else None,
         "run_json": run_json_path,
+        "profile": str(req.profile),
+        "config_receipt": config_receipt_path,
         "metadata": metadata,
     }
 
