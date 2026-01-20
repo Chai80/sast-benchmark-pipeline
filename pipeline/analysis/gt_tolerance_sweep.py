@@ -122,8 +122,8 @@ def disable_suite_calibration(suite_dir: Path, *, out_dirname: str = "analysis")
     For a sweep, we want *baseline* triage_rank to be stable and not influenced
     by a calibration file from a previous tolerance.
 
-    This function renames triage_calibration.json to triage_calibration.disabled.json
-    if it exists.
+    This function moves triage_calibration.json to
+    analysis/_checkpoints/triage_calibration.disabled.json if it exists.
 
     Returns
     -------
@@ -136,7 +136,15 @@ def disable_suite_calibration(suite_dir: Path, *, out_dirname: str = "analysis")
     if not cal_path.exists():
         return None
 
-    disabled = cal_path.with_name("triage_calibration.disabled.json")
+    # Keep sweep hygiene: do not leave confusing artifacts in analysis/.
+    # We stash the previous calibration under analysis/_checkpoints/.
+    checkpoints_dir = cal_path.parent / "_checkpoints"
+    disabled = checkpoints_dir / "triage_calibration.disabled.json"
+    try:
+        disabled.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
     try:
         if disabled.exists():
             disabled.unlink()

@@ -155,6 +155,8 @@ def build_qa_calibration_manifest(
             "scanners": list(scanners),
             "analysis": {
                 "tolerance": int(tolerance),
+                # Alias for clarity: this is the *analysis* (cluster) tolerance, not gt_tolerance.
+                "analysis_tolerance": int(tolerance),
                 "analysis_filter": str(analysis_filter),
                 "gt_source": str(gt_source),
                 "exclude_prefixes": list(exclude_prefixes or ()),
@@ -175,6 +177,136 @@ def build_qa_calibration_manifest(
         },
     }
     return payload
+
+
+def _safe_int(x: Any, default: Optional[int] = None) -> Optional[int]:
+    """Best-effort parse of an int from a manifest field."""
+
+    try:
+        if x is None:
+            return default
+        if isinstance(x, bool):
+            return int(x)
+        return int(float(str(x).strip()))
+    except Exception:
+        return default
+
+
+def _best_effort_update_suite_json_gt_tolerance(
+    *,
+    suite_dir: Path,
+    manifest: Mapping[str, Any],
+) -> None:
+    """Update suite.json with explicit GT tolerance fields (best-effort).
+
+    Why
+    ----
+    suite.json historically records the *analysis tolerance* (clustering) under
+    ``plan.analysis.tolerance``. GT matching tolerance (gt_tolerance) is a
+    separate knob and is often selected via sweep/auto in QA flows.
+
+    To avoid human confusion when browsing runs, we record:
+      - plan.analysis.gt_tolerance_initial
+      - plan.analysis.gt_tolerance_effective
+      - plan.analysis.gt_tolerance_mode
+      - plan.analysis.gt_tolerance_sweep_candidates
+
+    This is intentionally best-effort and should never fail the QA run.
+    """
+
+    suite_dir = Path(suite_dir).resolve()
+    suite_json_path = (suite_dir / "suite.json").resolve()
+    if not suite_json_path.exists():
+        return
+
+    try:
+        raw = json.loads(suite_json_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return
+    except Exception:
+        return
+
+    # Extract gt_tolerance policy from the manifest.
+    inputs = manifest.get("inputs") if isinstance(manifest, dict) else None
+    if not isinstance(inputs, dict):
+        return
+
+    gt_policy = inputs.get("gt_tolerance_policy")
+    if not isinstance(gt_policy, dict):
+        return
+
+    initial = _safe_int(gt_policy.get("initial_gt_tolerance"), default=None)
+    effective = _safe_int(gt_policy.get("effective_gt_tolerance"), default=None)
+
+    sweep = gt_policy.get("sweep") if isinstance(gt_policy.get("sweep"), dict) else {}
+    auto = gt_policy.get("auto") if isinstance(gt_policy.get("auto"), dict) else {}
+
+    sweep_enabled = bool(sweep.get("enabled"))
+    auto_enabled = bool(auto.get("enabled"))
+
+    mode = "explicit"
+    if sweep_enabled and auto_enabled:
+        mode = "sweep_auto"
+    elif sweep_enabled:
+        mode = "sweep"
+    elif auto_enabled:
+        mode = "auto"
+
+    candidates = sweep.get("candidates") if isinstance(sweep, dict) else None
+    cand_list = []
+    if isinstance(candidates, list):
+        for x in candidates:
+            v = _safe_int(x, default=None)
+            if v is not None and v >= 0:
+                cand_list.append(int(v))
+
+    # Update suite.json in-place (best-effort).
+    plan = raw.get("plan")
+    if not isinstance(plan, dict):
+        plan = {}
+        raw["plan"] = plan
+
+    analysis = plan.get("analysis")
+    if not isinstance(analysis, dict):
+        analysis = {}
+        plan["analysis"] = analysis
+
+    changed = False
+
+    if initial is not None:
+        if analysis.get("gt_tolerance_initial") != int(initial):
+            analysis["gt_tolerance_initial"] = int(initial)
+            changed = True
+
+    if effective is not None:
+        if analysis.get("gt_tolerance_effective") != int(effective):
+            analysis["gt_tolerance_effective"] = int(effective)
+            changed = True
+
+    if analysis.get("gt_tolerance_mode") != mode:
+        analysis["gt_tolerance_mode"] = mode
+        changed = True
+
+    # Only record candidates when sweep was enabled (keeps suite.json small).
+    if sweep_enabled:
+        if analysis.get("gt_tolerance_sweep_candidates") != cand_list:
+            analysis["gt_tolerance_sweep_candidates"] = cand_list
+            changed = True
+
+    if not changed:
+        return
+
+    # Keep updated_at coherent when we add execution-derived fields.
+    try:
+        raw["updated_at"] = _now_iso_utc()
+    except Exception:
+        pass
+
+    try:
+        write_json(suite_json_path, raw)
+    except Exception:
+        return
+
 
 
 def write_qa_calibration_manifest(
@@ -218,5 +350,12 @@ def write_qa_calibration_manifest(
         except Exception:
             # Best-effort: the canonical file is the one CI should scrape.
             pass
+
+    # Also record the effective GT tolerance into suite.json so humans
+    # browsing runs/suites/... don't confuse analysis tolerance with gt_tolerance.
+    try:
+        _best_effort_update_suite_json_gt_tolerance(suite_dir=suite_dir, manifest=manifest)
+    except Exception:
+        pass
 
     return out_path
