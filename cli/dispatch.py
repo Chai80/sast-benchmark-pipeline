@@ -156,27 +156,32 @@ def dispatch(
 
             # No --case-path: resolve the suite directory.
             if suite_id is None:
-                # Default: use LATEST if available (non-interactive).
+                # Default (deterministic): analyze the suite referenced by runs/suites/LATEST,
+                # with a lexicographic fallback when the pointer is missing.
                 latest = resolve_latest_suite_dir(suite_root)
-                if latest is not None:
-                    suite_dir = latest
-                    suite_id = latest.name
-                    print(f"ℹ️  Using latest suite: {suite_id}")
-                else:
-                    # Fallback: interactive picker if no LATEST exists.
-                    choice = prompt_for_suite(suite_root)
-                    suite_id = choice.suite_id
-                    suite_dir = choice.suite_dir
+                if latest is None:
+                    raise SystemExit(
+                        f"No suites found under {suite_root}. "
+                        "Run a suite/benchmark first, or pass --suite-id <suite_id>."
+                    )
+
+                suite_dir = latest
+                suite_id = latest.name
+
+                src = "LATEST" if (suite_root / "LATEST").exists() else "lexicographic fallback"
+                print(f"ℹ️  Using suite: {suite_id} (default via {src})")
             else:
                 # Allow explicit --suite-id latest.
                 if suite_id.strip().lower() == "latest":
                     latest = resolve_latest_suite_dir(suite_root)
                     if latest is None:
-                        raise SystemExit("LATEST suite is not available.")
+                        raise SystemExit(f"No suites found under {suite_root} (LATEST not available).")
                     suite_dir = latest
                     suite_id = latest.name
+                    print(f"ℹ️  Resolved --suite-id latest -> {suite_id}")
                 else:
                     suite_dir = (suite_root / suite_id).resolve()
+                    print(f"ℹ️  Using suite: {suite_id} (explicit)")
 
             if not Path(suite_dir).exists():
 

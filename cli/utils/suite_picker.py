@@ -70,15 +70,50 @@ def _resolve_pointer_dir(suite_root: Path, pointer_name: str) -> Optional[Path]:
 
 
 def resolve_latest_suite_dir(suite_root: Path) -> Optional[Path]:
-    """Resolve suite_root/LATEST."""
+    """Resolve the latest suite directory.
 
-    return _resolve_pointer_dir(suite_root, "LATEST")
+    Preference order:
+      1) suite_root/LATEST pointer (file, dir, or symlink)
+      2) lexicographically latest local suite directory under suite_root
+
+    Why fallback exists
+    -------------------
+    The LATEST pointer is the recommended mechanism because it is explicit and
+    stable. However, older runs or ad-hoc local workflows might not have it.
+    Falling back to the newest suite id keeps analyze mode deterministic even
+    when the pointer is missing.
+    """
+
+    suite_root = suite_root.resolve()
+
+    # Preferred: pointer file/dir.
+    p = _resolve_pointer_dir(suite_root, "LATEST")
+    if p is not None and _is_suite_dir(p):
+        return p.resolve()
+
+    # Deterministic fallback: lexicographically latest suite directory.
+    suites = list_local_suites(suite_root)
+    return suites[-1].resolve() if suites else None
 
 
 def resolve_latest_qa_suite_dir(suite_root: Path) -> Optional[Path]:
-    """Resolve suite_root/LATEST_QA (latest QA calibration suite run)."""
+    """Resolve the latest QA calibration suite directory.
 
-    return _resolve_pointer_dir(suite_root, "LATEST_QA")
+    Preference order:
+      1) suite_root/LATEST_QA pointer (file, dir, or symlink)
+      2) lexicographically latest *QA* suite directory under suite_root
+    """
+
+    suite_root = suite_root.resolve()
+
+    # Preferred: pointer file/dir.
+    p = _resolve_pointer_dir(suite_root, "LATEST_QA")
+    if p is not None and _is_suite_dir(p):
+        return p.resolve()
+
+    # Deterministic fallback: lexicographically latest QA suite directory.
+    suites = list_local_qa_suites(suite_root)
+    return suites[-1].resolve() if suites else None
 
 
 def resolve_previous_suite_dir(suite_root: Path) -> Optional[Path]:

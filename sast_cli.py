@@ -120,7 +120,7 @@ def parse_args() -> argparse.Namespace:
         dest="suite_id",
         help=(
             "Suite run id to create/use. If omitted in scan/benchmark, a new UTC timestamp is used. "
-            "In analyze mode you can pass 'latest'."
+            "In analyze mode, omit to use LATEST (recommended), or pass --suite-id latest explicitly."
         ),
     )
 
