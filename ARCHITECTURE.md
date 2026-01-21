@@ -77,6 +77,18 @@ Silver: normalized.json (schema_version: 1.1)               (cross-tool contract
 Gold: analysis/* + gt/*                                     (derived metrics)
 ```
 
+
+### GT catalog compilation (avoids "spaghetti" GT logic)
+
+Suites may author ground-truth (GT) in different ways (YAML catalogs or in-code markers).
+During **suite materialization**, the pipeline always produces a canonical artifact:
+
+`runs/suites/<suite_id>/cases/<case_id>/gt/gt_catalog.yaml`
+
+Downstream analysis reads only this artifact, keeping dependencies one-directional:
+execution/orchestration -> artifacts -> analysis.
+
+See `docs/GT_COMPILATION.md` for details.
 ### Suite-scoped analysis artifacts (triage calibration)
 
 Most artifacts are written **per-case** under `cases/<case_id>/analysis/`.

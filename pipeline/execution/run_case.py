@@ -45,6 +45,7 @@ from pipeline.suites.layout import (
 from pipeline.models import CaseSpec
 from pipeline.scanners import SCANNERS, SUPPORTED_SCANNERS, ScannerRunContext
 from tools.io import write_json
+from sast_benchmark.gt.catalog import materialize_case_gt_catalog
 
 
 ENV_PATH: Path = REPO_ROOT / ".env"
@@ -137,54 +138,40 @@ def _capture_optional_benchmark_yaml(
     *,
     warnings: Optional[List[str]] = None,
 ) -> None:
-    """Deterministically capture benchmark YAML inputs for a *suite* case.
+    """Materialize GT inputs into <case_dir>/gt for suite reproducibility.
 
-    Goal
-    ----
-    When scanning a *local* repo checkout (repo_path), copy canonical benchmark
-    YAML inputs into the suite case directory so GT scoring can run later
-    **without needing to re-open the original repo checkout**.
+    Why this exists
+    ---------------
+    Suites can author GT in different ways:
+      - benchmark/gt_catalog.yaml (pre-built YAML catalog)
+      - in-code markers (DURINN_GT or GT:<ID>_START/_END)
 
-    Canonical paths only (no discovery)
-    ----------------------------------
-    We only consider the exact, canonical filenames:
+    During suite execution we capture/compile a *canonical* GT artifact under the
+    suite layout so analysis does **not** need to re-open the original repo
+    checkout (avoids circular dependencies and "spaghetti" GT logic).
 
-      - <repo_path>/benchmark/gt_catalog.yaml  ->  <case_dir>/gt/gt_catalog.yaml
-      - <repo_path>/benchmark/suite_sets.yaml ->  <case_dir>/gt/suite_sets.yaml (if present)
+    Deterministic precedence
+    ------------------------
+    1) Copy benchmark/gt_catalog.yaml if present (canonical ingest; no discovery)
+    2) Else, compile gt_catalog.yaml from in-repo GT markers (best-effort)
 
-    We intentionally do *not* search for alternate extensions (e.g. .yml) or
-    other filenames. This keeps the ingest deterministic and reproducible.
+    benchmark/suite_sets.yaml is also copied into <case_dir>/gt when present.
 
-    Behavior
-    --------
-    - Best-effort: never blocks scans.
-    - If repo_path is missing or the files don't exist, does nothing.
-    - Any exception is swallowed (optionally recorded in warnings).
+    Best-effort: never blocks scans; errors are appended to warnings.
     """
 
     if not repo_path:
         return
     try:
-        bench = Path(repo_path).expanduser() / "benchmark"
-        if not bench.exists() or not bench.is_dir():
+        repo_root = Path(str(repo_path))
+        if not repo_root.exists() or not repo_root.is_dir():
             return
-
         gt_dir = Path(case_dir) / "gt"
-        gt_dir.mkdir(parents=True, exist_ok=True)
-
-        # NOTE: Canonical-only. Do not add discovery here.
-        gt_src = bench / "gt_catalog.yaml"
-        if gt_src.exists() and gt_src.is_file():
-            shutil.copy2(gt_src, gt_dir / "gt_catalog.yaml")
-
-        suite_sets_src = bench / "suite_sets.yaml"
-        if suite_sets_src.exists() and suite_sets_src.is_file():
-            shutil.copy2(suite_sets_src, gt_dir / "suite_sets.yaml")
+        materialize_case_gt_catalog(repo_root, gt_dir, warnings=warnings)
     except Exception as e:
         if warnings is not None:
-            warnings.append(f"benchmark_yaml_capture_failed: {e}")
+            warnings.append(f"gt_materialize_failed: {e}")
         return
-
 
 def _merge_dicts(a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}

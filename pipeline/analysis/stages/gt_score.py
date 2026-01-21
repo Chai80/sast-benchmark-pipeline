@@ -67,7 +67,7 @@ from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
 from pipeline.analysis.utils.filters import filter_findings
 from pipeline.analysis.utils.path_norm import normalize_file_path
-from pipeline.scoring.gt_markers import extract_gt_markers
+from sast_benchmark.gt.markers import extract_gt_markers
 
 from ._shared import build_location_items, load_normalized_json
 
