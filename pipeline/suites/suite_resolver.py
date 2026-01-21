@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from pipeline.suites.bundles import anchor_under_repo_root, safe_name
-from pipeline.core import repo_id_from_repo_url, sanitize_sonar_key_fragment
+from pipeline.identifiers import repo_id_from_repo_url, sanitize_sonar_key_fragment
 from pipeline.suites.layout import ensure_suite_dirs, get_suite_paths, write_latest_suite_pointer
 from pipeline.models import CaseSpec, RepoSpec
 from pipeline.suites.suite_definition import SuiteAnalysisDefaults, SuiteCase, SuiteDefinition

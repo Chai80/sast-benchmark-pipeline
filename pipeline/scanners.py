@@ -38,6 +38,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Set
 
+from pipeline.identifiers import derive_sonar_project_key
+
 try:
     # Python 3.8+ (typing.Literal exists). Keep import local to avoid hard
     # failures if someone runs on an older interpreter.
@@ -91,9 +93,6 @@ def _sonar_extra_args(req: "RunRequest", _ctx: ScannerRunContext) -> Dict[str, A
     # Prefer an explicit override (suite/case-level override).
     if getattr(req, "sonar_project_key", None):
         return {"project-key": str(req.sonar_project_key)}
-
-    # Lazy import to avoid an import cycle: pipeline.core imports pipeline.scanners.
-    from pipeline.core import derive_sonar_project_key  # local import by design
 
     org = os.environ.get("SONAR_ORG") or ""
     return {"project-key": derive_sonar_project_key(org, str(req.repo_id))}

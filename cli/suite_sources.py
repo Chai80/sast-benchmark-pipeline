@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Tuple
 from cli.common import parse_csv
 from cli.ui import choose_from_menu
 from pipeline.suites.bundles import safe_name
-from pipeline.core import repo_id_from_repo_url, sanitize_sonar_key_fragment
+from pipeline.identifiers import repo_id_from_repo_url, sanitize_sonar_key_fragment
 from pipeline.models import CaseSpec, RepoSpec
 from pipeline.suites.suite_definition import SuiteCase, SuiteCaseOverrides
 

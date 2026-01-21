@@ -13,7 +13,7 @@ from cli.commands.scan import run_scan
 from cli.commands.suite import run_suite_mode
 from cli.utils.suite_picker import prompt_for_suite, resolve_latest_suite_dir
 
-from pipeline.core import repo_id_from_repo_url, sanitize_sonar_key_fragment
+from pipeline.identifiers import repo_id_from_repo_url, sanitize_sonar_key_fragment
 from pipeline.models import CaseSpec, RepoSpec
 from pipeline.pipeline import SASTBenchmarkPipeline
 

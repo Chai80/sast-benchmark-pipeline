@@ -15,11 +15,11 @@ those entrypoints consistently.
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
+from pipeline.identifiers import derive_sonar_project_key, repo_id_from_repo_url, sanitize_sonar_key_fragment
 from pipeline.scanners import SCANNER_SCRIPTS, SCANNER_TARGET_MODES, SCANNER_TRACKS, SUPPORTED_SCANNERS
 
 
@@ -172,47 +172,11 @@ def build_scan_command(
     return cmd
 
 
-# --------------------------
-# SonarCloud helpers
-# --------------------------
-
-_SONAR_KEY_ALLOWED = re.compile(r"[^a-zA-Z0-9_.:]")
-
-def sanitize_sonar_key_fragment(value: str) -> str:
-    """Sanitize a string into something safe for Sonar project keys.
-
-    Sonar keys generally allow: letters, digits, '-', '_', '.', ':'
-    This function additionally normalizes '-' -> '_' to avoid duplicate projects
-    when a repo name contains dashes.
-
-    Examples
-    --------
-    "juice-shop" -> "juice_shop"
-    "OWASP BenchmarkJava" -> "OWASP_BenchmarkJava"
-    """
-    v = (value or "").strip()
-    v = v.replace("-", "_")
-    # Replace anything outside [a-zA-Z0-9_.:] with underscore
-    v = _SONAR_KEY_ALLOWED.sub("_", v)
-    v = re.sub(r"_+", "_", v).strip("_")
-    if not v:
-        raise ValueError("Empty Sonar key fragment after sanitization.")
-    # Sonar requires at least one non-digit char; prefix if needed
-    if v.isdigit():
-        v = f"p_{v}"
-    return v
-
-
-def repo_id_from_repo_url(repo_url: str) -> str:
-    """Derive a stable repo id from a git URL (used for Sonar keys)."""
-    last = repo_url.rstrip("/").split("/")[-1]
-    if last.endswith(".git"):
-        last = last[:-4]
-    return sanitize_sonar_key_fragment(last)
-
-
-def derive_sonar_project_key(organization_key: str, repo_id: str) -> str:
-    """Return a stable SonarCloud project key like: ORG_REPO."""
-    org = sanitize_sonar_key_fragment(organization_key)
-    rid = sanitize_sonar_key_fragment(repo_id)
-    return f"{org}_{rid}"
+# NOTE: Sonar key helpers moved to :mod:`pipeline.identifiers`.
+#
+# They are imported above to keep backwards-compatible imports like:
+#
+#   from pipeline.core import sanitize_sonar_key_fragment
+#
+# but the implementation now lives in a dedicated pure module to avoid
+# core<->scanners import-cycle pressure.
