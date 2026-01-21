@@ -601,6 +601,13 @@ def validate_calibration_suite_artifacts(
     # --- triage_eval strategy check -------------------------------------
     eval_summary = tables_dir / "triage_eval_summary.json"
 
+    # Tool contribution / marginal value outputs are emitted by suite_triage_eval.
+    # They help answer two pragmatic questions:
+    #  - "Which tools cover unique GT?" (triage_tool_utility.csv)
+    #  - "What happens if we remove tool X?" (triage_tool_marginal.csv)
+    tool_utility_csv = tables_dir / "triage_tool_utility.csv"
+    tool_marginal_csv = tables_dir / "triage_tool_marginal.csv"
+
     if not expect_calibration:
         out.append(
             QACheck(
@@ -610,7 +617,46 @@ def validate_calibration_suite_artifacts(
                 path=str(eval_summary),
             )
         )
+
+        # These are only meaningful for scored suites. Keep the checklist
+        # stable by explicitly marking them as skipped in non-scored mode.
+        out.append(
+            QACheck(
+                name="analysis/_tables/triage_tool_utility.csv exists",
+                ok=True,
+                detail="skipped (non-scored mode)",
+                path=str(tool_utility_csv),
+            )
+        )
+        out.append(
+            QACheck(
+                name="analysis/_tables/triage_tool_marginal.csv exists",
+                ok=True,
+                detail="skipped (non-scored mode)",
+                path=str(tool_marginal_csv),
+            )
+        )
         return out
+
+    # In scored/calibrated runs, these two files are expected outputs.
+    # If they are missing, it usually means suite_triage_eval did not run
+    # or wrote to an unexpected location.
+    out.append(
+        QACheck(
+            name="analysis/_tables/triage_tool_utility.csv exists",
+            ok=tool_utility_csv.exists(),
+            path=str(tool_utility_csv),
+            detail="" if tool_utility_csv.exists() else "missing",
+        )
+    )
+    out.append(
+        QACheck(
+            name="analysis/_tables/triage_tool_marginal.csv exists",
+            ok=tool_marginal_csv.exists(),
+            path=str(tool_marginal_csv),
+            detail="" if tool_marginal_csv.exists() else "missing",
+        )
+    )
 
     if not eval_summary.exists():
         out.append(

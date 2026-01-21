@@ -43,6 +43,8 @@ After the QA command completes, it validates these artifacts exist under `runs/s
 - `triage_calibration.json` includes **>= 1 GT-supported case** (included_cases is non-empty)
 - `analysis/_tables/triage_calibration_report.csv` exists
 - `analysis/_tables/triage_eval_summary.json` exists and includes the `calibrated` strategy
+- `analysis/_tables/triage_tool_utility.csv` exists (tool contribution: which tools cover unique GT vs generate exclusive noise)
+- `analysis/_tables/triage_tool_marginal.csv` exists (drop-one tool analysis: how Precision@K / GT coverage@K changes when a tool is removed)
 - `analysis/qa_calibration_checklist.txt` exists (PASS/FAIL checklist for CI)
 - `analysis/qa_manifest.json` exists (QA "receipt" for CI and debugging)
 - per-case `triage_queue.csv` exists for all cases

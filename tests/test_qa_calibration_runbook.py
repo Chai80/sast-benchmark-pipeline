@@ -51,6 +51,51 @@ class TestQACalibrationRunbook(unittest.TestCase):
                 encoding="utf-8",
             )
 
+            # Tool contribution / marginal value outputs (suite-level)
+            self._write_csv(
+                suite_dir / "analysis" / "_tables" / "triage_tool_utility.csv",
+                header=["suite_id", "tool", "gt_ids_covered", "unique_gt_ids", "neg_clusters", "exclusive_neg_clusters"],
+                rows=[
+                    {
+                        "suite_id": "20260101T000000Z",
+                        "tool": "semgrep",
+                        "gt_ids_covered": "1",
+                        "unique_gt_ids": "1",
+                        "neg_clusters": "0",
+                        "exclusive_neg_clusters": "0",
+                    }
+                ],
+            )
+            self._write_csv(
+                suite_dir / "analysis" / "_tables" / "triage_tool_marginal.csv",
+                header=[
+                    "suite_id",
+                    "tool",
+                    "strategy",
+                    "k",
+                    "precision_full",
+                    "precision_drop",
+                    "delta_precision",
+                    "gt_coverage_full",
+                    "gt_coverage_drop",
+                    "delta_gt_coverage",
+                ],
+                rows=[
+                    {
+                        "suite_id": "20260101T000000Z",
+                        "tool": "semgrep",
+                        "strategy": "baseline",
+                        "k": "1",
+                        "precision_full": "1.0",
+                        "precision_drop": "0.0",
+                        "delta_precision": "-1.0",
+                        "gt_coverage_full": "1.0",
+                        "gt_coverage_drop": "0.0",
+                        "delta_gt_coverage": "-1.0",
+                    }
+                ],
+            )
+
             # One case triage_queue.csv (schema check)
             self._write_csv(
                 suite_dir / "cases" / "case1" / "analysis" / "_tables" / "triage_queue.csv",

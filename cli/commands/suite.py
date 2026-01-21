@@ -1270,6 +1270,13 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
             print(f"  By-case : {ev.get('out_by_case_csv')}")
             print(f"  Tools   : {ev.get('out_tool_utility_csv')}")
 
+            # Drop-one tool marginal value table (if computed). This is the
+            # most direct answer to: "what happens if we remove tool X?".
+            # It is optional because callers may disable tool-marginal during
+            # expensive sweeps.
+            if ev.get("out_tool_marginal_csv"):
+                print(f"  Marginal: {ev.get('out_tool_marginal_csv')}")
+
             # Print a compact macro snapshot for Ks that matter for triage (top-1/top-3/top-5).
             try:
                 ks_list = ev.get("ks") or [1, 3, 5, 10, 25]
@@ -1418,6 +1425,13 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 "triage_dataset_csv": str((suite_dir / "analysis" / "_tables" / "triage_dataset.csv").resolve()),
                 "triage_calibration_json": str((suite_dir / "analysis" / "triage_calibration.json").resolve()),
                 "triage_eval_summary_json": str((suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").resolve()),
+                # Tool contribution / marginal value (suite-level)
+                # These are produced by build_triage_eval and are the most
+                # recruiter-friendly "ROI" outputs:
+                # - triage_tool_utility: unique GT coverage vs exclusive noise
+                # - triage_tool_marginal: drop-one deltas (remove tool X)
+                "triage_tool_utility_csv": str((suite_dir / "analysis" / "_tables" / "triage_tool_utility.csv").resolve()),
+                "triage_tool_marginal_csv": str((suite_dir / "analysis" / "_tables" / "triage_tool_marginal.csv").resolve()),
                 "qa_checklist_txt": str((suite_dir / "analysis" / "qa_calibration_checklist.txt").resolve()),
                 "gt_tolerance_selection_json": gt_selection_path,
             }
