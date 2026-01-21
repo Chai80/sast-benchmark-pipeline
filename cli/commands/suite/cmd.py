@@ -1,696 +1,38 @@
 from __future__ import annotations
 
 import argparse
-import fnmatch
-import pprint
-import re
 import shutil
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
-from cli.common import derive_runs_repo_name, parse_csv
-from cli.ui import choose_from_menu, _parse_index_selection, _prompt_text, _prompt_yes_no
-from cli.suite_sources import (
-    _bootstrap_worktrees_from_repo_url,
-    _case_id_from_pathlike,
-    _discover_git_checkouts_under,
-    _load_suite_cases_from_csv,
-    _load_suite_cases_from_worktrees_root,
-    _parse_branches_spec,
-    _resolve_repo_for_suite_case_interactive,
-    _suite_case_from_repo_path,
-)
-from pipeline.suites.bundles import anchor_under_repo_root, safe_name
+from cli.suite_sources import _bootstrap_worktrees_from_repo_url, _parse_branches_spec
+from cli.ui import _prompt_text, _prompt_yes_no
 from pipeline.core import ROOT_DIR as PIPELINE_ROOT_DIR, repo_id_from_repo_url
-from pipeline.suites.layout import new_suite_id
-from pipeline.models import CaseSpec
 from pipeline.orchestrator import AnalyzeRequest, RunRequest
 from pipeline.pipeline import SASTBenchmarkPipeline
 from pipeline.scanners import DEFAULT_SCANNERS_CSV, SUPPORTED_SCANNERS
-from pipeline.suites.suite_definition import (
-    SuiteAnalysisDefaults,
-    SuiteCase,
-    SuiteCaseOverrides,
-    SuiteDefinition,
-)
+from pipeline.suites.bundles import anchor_under_repo_root, safe_name
+from pipeline.suites.layout import new_suite_id
+from pipeline.suites.suite_definition import SuiteAnalysisDefaults, SuiteCase, SuiteDefinition
 from pipeline.suites.suite_py_loader import load_suite_py
 from pipeline.suites.suite_resolver import SuiteInputProvenance, resolve_suite_run
 
+from .materialize import (
+    _build_suite_from_sources,
+    _build_suite_interactively,
+    _parse_scanners_str,
+    _write_suite_py,
+)
+from .qa_calibration import (
+    _default_owasp_micro_suite_cases_csv,
+    _default_owasp_micro_suite_worktrees_root,
+    _detect_owasp_id,
+    _qa_target_owasp_ids,
+)
+
+
 ROOT_DIR = PIPELINE_ROOT_DIR
-
-def _default_owasp_micro_suite_worktrees_root() -> Optional[Path]:
-    """Default micro-suite worktrees root (if present on disk).
-
-    Keeps the QA calibration runbook deterministic for our current OWASP micro-suites.
-    If the default path doesn't exist, callers should fall back to explicit --worktrees-root/--cases-from.
-    """
-    p = ROOT_DIR / "repos" / "worktrees" / "durinn-owasp2021-python-micro-suite"
-    return p if p.is_dir() else None
-
-
-def _default_owasp_micro_suite_cases_csv() -> Optional[Path]:
-    """Default deterministic case list for the micro-suite QA (if present)."""
-    p = ROOT_DIR / "examples" / "suite_inputs" / "durinn-owasp2021-python-micro-suite_cases.csv"
-    return p if p.is_file() else None
-
-
-
-# ---------------------------------------------------------------------------
-# QA helpers: triage calibration
-#
-# The triage calibration pipeline is suite-level, but per-case triage artifacts
-# (triage_queue.csv) are emitted during per-case analysis. In a normal suite
-# run, triage_queue.csv is therefore generated *before* the suite-level
-# triage_calibration.json exists. The QA runbook for calibration does a
-# two-pass workflow:
-#   1) run the suite (scan + analysis) and build suite-level calibration assets
-#   2) re-run analyze across all cases so per-case triage_queue.csv can include
-#      triage_score_v1.
-# ---------------------------------------------------------------------------
-
-_OWASP_ID_RE = re.compile(r"\bA(0[1-9]|10)\b", re.IGNORECASE)
-_OWASP_RANGE_RE = re.compile(r"(?i)^A?(\d{1,2})\s*(?:-|\.\.)\s*A?(\d{1,2})$")
-_OWASP_TOKEN_RE = re.compile(r"(?i)^A?(\d{1,2})$")
-
-
-def _normalize_owasp_id(raw: str) -> str:
-    """Normalize an OWASP category id to the form 'A01'..'A10'."""
-
-    m = _OWASP_TOKEN_RE.match(raw.strip())
-    if not m:
-        raise ValueError(f"Invalid OWASP token: {raw!r}")
-    n = int(m.group(1))
-    if n < 1 or n > 10:
-        raise ValueError(f"OWASP id out of range (1..10): {raw!r}")
-    return f"A{n:02d}"
-
-
-def _expand_owasp_spec_token(token: str) -> List[str]:
-    """Expand a single token like 'A03' or 'A01-A10' into a list of IDs."""
-
-    t = token.strip()
-    if not t:
-        return []
-
-    # Normalize a few common range separators.
-    t = t.replace("–", "-").replace("—", "-")
-
-    m_range = _OWASP_RANGE_RE.match(t)
-    if m_range:
-        start = int(m_range.group(1))
-        end = int(m_range.group(2))
-        if start > end:
-            start, end = end, start
-        return [f"A{i:02d}" for i in range(start, end + 1) if 1 <= i <= 10]
-
-    # Single token.
-    return [_normalize_owasp_id(t)]
-
-
-def _parse_qa_owasp_spec(raw: str) -> List[str]:
-    """Parse --qa-owasp (CSV and simple ranges) into a deterministic list."""
-
-    out: List[str] = []
-    for tok in parse_csv(raw):
-        for oid in _expand_owasp_spec_token(tok):
-            if oid not in out:
-                out.append(oid)
-    return out
-
-
-def _qa_target_owasp_ids(scope: str) -> List[str]:
-    scope = (scope or "").strip().lower()
-    if scope == "full":
-        return [f"A{i:02d}" for i in range(1, 11)]
-    # Default: smoke
-    return ["A03", "A07"]
-
-
-def _detect_owasp_id(*texts: object) -> Optional[str]:
-    """Best-effort extraction of an OWASP token (A01..A10) from arbitrary inputs."""
-
-    for t in texts:
-        if t is None:
-            continue
-        m = _OWASP_ID_RE.search(str(t))
-        if not m:
-            continue
-        return f"A{int(m.group(1)):02d}"
-    return None
-
-
-def _default_qa_cases_csv() -> Optional[Path]:
-    """Default deterministic case list for QA (if present in the repo)."""
-
-    p = ROOT_DIR / "examples" / "suite_inputs" / "durinn-owasp2021-python-micro-suite_cases.csv"
-    return p if p.is_file() else None
-
-
-def _default_qa_worktrees_root() -> Optional[Path]:
-    """Default micro-suite worktrees root (if present on disk)."""
-
-    p = ROOT_DIR / "repos" / "worktrees" / "durinn-owasp2021-python-micro-suite"
-    return p if p.is_dir() else None
-
-
-def _qa_matches_selector(haystack: str, selector: str) -> bool:
-    """Case-insensitive match: substring by default, fnmatch if glob chars are present."""
-
-    h = (haystack or "").lower()
-    s = (selector or "").lower().strip()
-    if not s:
-        return False
-    if any(ch in s for ch in ("*", "?", "[")):
-        return fnmatch.fnmatch(h, s)
-    return s in h
-
-
-def _infer_case_owasp_id(suite_case: SuiteCase) -> Optional[str]:
-    c = suite_case.case
-    # Prefer explicit tokens in the user-visible identifiers.
-    oid = _detect_owasp_id(c.case_id, c.branch, c.label)
-    if oid:
-        return oid
-    # Fall back to tags (keys/values).
-    for k, v in (c.tags or {}).items():
-        oid = _detect_owasp_id(k, v)
-        if oid:
-            return oid
-    return None
-
-
-def _filter_suite_def_for_qa(suite_def: SuiteDefinition, args: argparse.Namespace) -> SuiteDefinition:
-    """Return a SuiteDefinition filtered for QA selection."""
-
-    # 1) Explicit case selectors override everything.
-    qa_cases = getattr(args, "qa_cases", None)
-    if qa_cases:
-        selectors = [s.strip() for s in parse_csv(qa_cases) if s.strip()]
-
-        def _match_case(sc: SuiteCase) -> bool:
-            c = sc.case
-            hay = [c.case_id, c.branch or "", c.label or ""]
-            return any(_qa_matches_selector(str(h), sel) for h in hay for sel in selectors)
-
-        selected = [sc for sc in suite_def.cases if _match_case(sc)]
-        selected.sort(key=lambda sc: sc.case.case_id)
-        if not selected:
-            raise SystemExit(
-                "qa-calibration: --qa-cases selection matched 0 cases. "
-                "Selectors match case_id/branch/label (substring or glob)."
-            )
-        return SuiteDefinition(
-            suite_id=suite_def.suite_id,
-            scanners=suite_def.scanners,
-            analysis=suite_def.analysis,
-            cases=selected,
-        )
-
-    # 2) OWASP slice selection.
-    qa_owasp = getattr(args, "qa_owasp", None)
-    qa_scope = getattr(args, "qa_scope", None) or "smoke"
-    wanted = set(_parse_qa_owasp_spec(qa_owasp) if qa_owasp else _qa_target_owasp_ids(qa_scope))
-    selected: List[SuiteCase] = []
-    for sc in suite_def.cases:
-        oid = _infer_case_owasp_id(sc)
-        if oid and oid in wanted:
-            selected.append(sc)
-    selected.sort(key=lambda sc: sc.case.case_id)
-    if not selected:
-        raise SystemExit(
-            f"qa-calibration: OWASP selection matched 0 cases. wanted={sorted(wanted)} "
-            "(matches A01..A10 tokens in case_id/branch/label/tags)."
-        )
-    return SuiteDefinition(
-        suite_id=suite_def.suite_id,
-        scanners=suite_def.scanners,
-        analysis=suite_def.analysis,
-        cases=selected,
-    )
-
-
-def _parse_scanners_str(value: str) -> List[str]:
-    raw = parse_csv(value)
-    scanners = [t for t in raw if t in SUPPORTED_SCANNERS]
-    unknown = [t for t in raw if t not in SUPPORTED_SCANNERS]
-    if unknown:
-        print(f"  ⚠️  ignoring unknown scanners: {', '.join(unknown)}")
-    return scanners
-
-
-# --------------------------
-# QA calibration helpers
-# --------------------------
-
-_OWASP_ID_RE = re.compile(r"\bA(0[1-9]|10)\b", flags=re.IGNORECASE)
-
-
-def _detect_owasp_id(*texts: object) -> Optional[str]:
-    """Detect an OWASP Top 10 id (A01..A10) from free-form text fields."""
-
-    for t in texts:
-        if not t:
-            continue
-        m = _OWASP_ID_RE.search(str(t))
-        if m:
-            return f"A{m.group(1)}"
-    return None
-
-
-def _normalize_owasp_id(token: str) -> str:
-    """Normalize inputs like 'a3'/'A03' -> 'A03'."""
-
-    s = str(token or "").strip().upper()
-    m = re.match(r"^A?(\d{1,2})$", s)
-    if not m:
-        return s
-    n = int(m.group(1))
-    return f"A{n:02d}"
-
-
-def _expand_owasp_token(token: str) -> List[str]:
-    """Expand an OWASP selector token.
-
-    Supports:
-      - A03
-      - A01-A10
-      - A01..A10
-    """
-
-    raw = str(token or "").strip()
-    if not raw:
-        return []
-
-    # Normalize unicode dashes that sometimes show up in pasted text.
-    raw = raw.replace("–", "-").replace("—", "-")
-
-    if raw.strip().lower() in {"all"}:
-        return [f"A{i:02d}" for i in range(1, 11)]
-
-    m = re.match(r"(?i)^A?(\d{1,2})\s*(?:\.\.|-)\s*A?(\d{1,2})$", raw)
-    if m:
-        a = int(m.group(1))
-        b = int(m.group(2))
-        lo, hi = (a, b) if a <= b else (b, a)
-        lo = max(lo, 1)
-        hi = min(hi, 10)
-        return [f"A{i:02d}" for i in range(lo, hi + 1)]
-
-    return [_normalize_owasp_id(raw)]
-
-
-def _parse_qa_owasp_spec(raw: str) -> List[str]:
-    """Parse the --qa-owasp argument into a list of normalized IDs."""
-
-    out: List[str] = []
-    seen: set[str] = set()
-    for tok in parse_csv(raw):
-        for oid in _expand_owasp_token(tok):
-            if not oid:
-                continue
-            if oid not in seen:
-                seen.add(oid)
-                out.append(oid)
-    return out
-
-
-def _qa_target_owasp_ids(args: argparse.Namespace) -> List[str]:
-    """Return the OWASP ids included by this QA run."""
-
-    raw = str(getattr(args, "qa_owasp", "") or "").strip()
-    if raw:
-        ids = _parse_qa_owasp_spec(raw)
-        if ids:
-            return ids
-
-    scope = str(getattr(args, "qa_scope", "smoke") or "smoke").lower()
-    if scope == "full":
-        return [f"A{i:02d}" for i in range(1, 11)]
-
-    # Default: smoke slice.
-    return ["A03", "A07"]
-
-
-def _qa_parse_case_selectors(raw: Optional[str]) -> List[str]:
-    return [s for s in parse_csv(raw or "") if s]
-
-
-def _qa_matches_selector(value: str, selector: str) -> bool:
-    """Match a selector against a value.
-
-    If selector contains glob metacharacters (*, ?, [), uses fnmatch.
-    Otherwise does a case-insensitive substring match.
-    """
-
-    v = (value or "").lower()
-    s = (selector or "").strip().lower()
-    if not s:
-        return False
-    if any(ch in s for ch in ("*", "?", "[")):
-        return fnmatch.fnmatch(v, s)
-    return s in v
-
-
-def _infer_case_owasp_id(sc: SuiteCase) -> Optional[str]:
-    c = sc.case
-    return _detect_owasp_id(c.case_id, c.branch, c.label)
-
-
-def _filter_suite_def_for_qa(
-    suite_def: SuiteDefinition,
-    *,
-    selectors: List[str],
-    wanted_owasp_ids: List[str],
-) -> SuiteDefinition:
-    """Return a suite definition restricted to the QA slice."""
-
-    selected: List[SuiteCase] = []
-    skipped: List[SuiteCase] = []
-
-    if selectors:
-        for sc in suite_def.cases:
-            c = sc.case
-            hay = [str(c.case_id or ""), str(c.branch or ""), str(c.label or "")]
-            if any(_qa_matches_selector(v, sel) for sel in selectors for v in hay):
-                selected.append(sc)
-            else:
-                skipped.append(sc)
-        reason = f"selectors: {', '.join(selectors)}"
-    else:
-        targets = set(wanted_owasp_ids)
-        for sc in suite_def.cases:
-            owasp = _infer_case_owasp_id(sc)
-            if owasp and owasp in targets:
-                selected.append(sc)
-            else:
-                skipped.append(sc)
-        reason = f"OWASP IDs: {', '.join(sorted(targets))}"
-
-    if not selected:
-        raise SystemExit(
-            "QA calibration slice matched 0 cases. "
-            "Either pass --qa-cases (explicit selectors) or ensure case_id/branch/label contains an OWASP id like 'A03'."
-        )
-
-    # Deterministic ordering.
-    selected.sort(key=lambda sc: str(sc.case.case_id))
-
-    print("\n🧪 QA calibration slice")
-    print(f"   - {reason}")
-    print(f"   - selected {len(selected)} case(s); skipped {len(skipped)}")
-
-    return SuiteDefinition(suite_id=suite_def.suite_id, scanners=suite_def.scanners, cases=selected, analysis=suite_def.analysis)
-
-
-def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[str, Dict[str, str]]) -> SuiteDefinition:
-    print("\n🧩 Suite mode: run multiple cases under one suite id.")
-    print("   - Use this for scanning many repos or many branches/worktrees.")
-    print("   - Replay files are optional; suite.json/case.json/run.json are always written.\n")
-
-    suite_id_in = _prompt_text("Suite id (press Enter to auto-generate)", default="").strip()
-    suite_id = suite_id_in or new_suite_id()
-
-    default_scanners_csv = args.scanners or DEFAULT_SCANNERS_CSV
-    scanners_csv = _prompt_text("Scanners to run (comma-separated)", default=default_scanners_csv)
-    scanners = _parse_scanners_str(scanners_csv)
-    if not scanners:
-        raise SystemExit("No valid scanners selected.")
-
-    analysis = SuiteAnalysisDefaults(
-        skip=bool(args.skip_analysis),
-        tolerance=int(args.tolerance),
-        filter=str(args.analysis_filter),
-    )
-
-    cases: List[SuiteCase] = []
-    seen_case_ids: set[str] = set()
-
-    print("\nAdd cases to the suite (each case is one repo/checkout).")
-    print("When you're done, choose 'Finish suite definition'.\n")
-
-    while True:
-        action = choose_from_menu(
-            "Add a case:",
-            {
-                "add": "Add a new case",
-                "add_worktrees": "Add cases from local worktrees",
-                "add_csv": "Add cases from CSV file (legacy / CI)",
-                "done": "Finish suite definition",
-            },
-        )
-        if action == "done":
-            break
-
-        if action == "add_worktrees":
-            # Discover git checkouts under repos/worktrees/<something> and add many cases at once.
-            base = (ROOT_DIR / "repos" / "worktrees").resolve()
-            root: Path
-            if base.exists():
-                candidates = [p for p in base.iterdir() if p.is_dir()]
-            else:
-                candidates = []
-
-            if candidates:
-                opts: Dict[str, object] = {p.name: str(p) for p in sorted(candidates, key=lambda p: p.name)}
-                opts["custom"] = "Enter a custom worktrees folder path"
-                choice = choose_from_menu("Choose a worktrees folder:", opts)
-                if choice == "custom":
-                    entered = _prompt_text("Worktrees folder path", default=str(base)).strip()
-                    root = Path(entered).expanduser().resolve()
-                else:
-                    root = (base / choice).resolve()
-            else:
-                entered = _prompt_text("Worktrees folder path", default=str(base)).strip()
-                root = Path(entered).expanduser().resolve()
-
-            discovered = _discover_git_checkouts_under(root)
-            if not discovered:
-                print(f"  ❌ No git checkouts found under: {root}")
-                continue
-
-            rels = []
-            for d in discovered:
-                try:
-                    rels.append(d.relative_to(root).as_posix())
-                except Exception:
-                    rels.append(d.name)
-
-            print("\nDiscovered worktrees:")
-            for i, rel in enumerate(rels, start=1):
-                print(f"[{i}] {rel}")
-
-            raw_sel = _prompt_text("Select worktrees by number (e.g., 1,3-5) or 'all'", default="all")
-            sel = _parse_index_selection(raw_sel, n=len(rels))
-            if not sel:
-                print("  ⚠️  No worktrees selected.")
-                continue
-
-            added = 0
-            for i in sel:
-                rel = rels[i]
-                repo_dir = discovered[i]
-
-                proposed_id = _case_id_from_pathlike(rel)
-                case_id = proposed_id
-                k = 2
-                while case_id in seen_case_ids:
-                    case_id = f"{proposed_id}_{k}"
-                    k += 1
-
-                sc = _suite_case_from_repo_path(
-                    case_id=case_id,
-                    repo_path=repo_dir,
-                    label=rel,
-                    branch=rel,
-                )
-
-                cases.append(sc)
-                seen_case_ids.add(case_id)
-                added += 1
-
-            print(f"  ✅ Added {added} case(s) from worktrees.")
-            continue
-
-        if action == "add_csv":
-            csv_in = _prompt_text("Cases CSV path", default="inputs/suite_inputs/cases.csv").strip()
-            csv_path = Path(csv_in).expanduser().resolve()
-            loaded = _load_suite_cases_from_csv(csv_path)
-            if not loaded:
-                print(f"  ⚠️  No cases loaded from: {csv_path}")
-                continue
-
-            added = 0
-            for sc in loaded:
-                cid = safe_name(sc.case.case_id)
-                if cid in seen_case_ids:
-                    print(f"  ⚠️  Skipping duplicate case_id from CSV: {cid}")
-                    continue
-                # Ensure the case_id is safe
-                c = sc.case
-                if cid != c.case_id:
-                    sc = SuiteCase(case=CaseSpec(**{**c.__dict__, 'case_id': cid}), overrides=sc.overrides)
-                cases.append(sc)
-                seen_case_ids.add(cid)
-                added += 1
-
-            print(f"  ✅ Added {added} case(s) from CSV.")
-            continue
-
-        # Default: add a single case via preset/custom/local
-        repo_spec, label, _repo_id = _resolve_repo_for_suite_case_interactive(repo_registry=repo_registry)
-
-        runs_repo_name = derive_runs_repo_name(
-            repo_url=repo_spec.repo_url,
-            repo_path=repo_spec.repo_path,
-            fallback=label,
-        )
-
-        proposed = runs_repo_name
-        raw_case_id = _prompt_text("Case id (folder + DB key)", default=proposed).strip() or proposed
-        case_id = safe_name(raw_case_id)
-        if case_id != raw_case_id:
-            print(f"  ⚠️  case_id sanitized to: {case_id}")
-
-        if case_id in seen_case_ids:
-            print(f"  ❌ case_id '{case_id}' already exists in this suite. Pick a different one.")
-            continue
-
-        seen_case_ids.add(case_id)
-
-        case = CaseSpec(
-            case_id=case_id,
-            runs_repo_name=runs_repo_name,
-            label=label,
-            repo=repo_spec,
-        )
-
-        cases.append(SuiteCase(case=case, overrides=SuiteCaseOverrides()))
-        print(f"  ✅ Added case: {case.case_id} ({label})")
-
-    if not cases:
-        raise SystemExit("Suite mode requires at least one case.")
-
-    return SuiteDefinition(
-        suite_id=suite_id,
-        scanners=scanners,
-        cases=cases,
-        analysis=analysis,
-    )
-
-
-def _write_suite_py(path: str | Path, suite_def: SuiteDefinition) -> Path:
-    """Write a suite definition as a Python file exporting SUITE_RAW.
-
-    This is intended as a *replay button* and provenance.
-
-    Important: the output must be valid Python (True/False/None), so we use
-    :func:`pprint.pformat` instead of JSON.
-
-    The suite loader accepts either:
-      - SUITE_DEF (SuiteDefinition)
-      - SUITE_RAW (dict)
-
-    We export SUITE_RAW to keep the file stable and decoupled from internal
-    import paths.
-    """
-    p = Path(path).expanduser().resolve()
-    p.parent.mkdir(parents=True, exist_ok=True)
-
-    raw = suite_def.to_dict()
-    raw_py = pprint.pformat(raw, indent=2, sort_dicts=True)
-
-    content = (
-        "# GENERATED REPLAY FILE (interactive suite snapshot)\n"
-        "#\n"
-        "# Purpose:\n"
-        "#   Replay an interactively curated suite later without re-answering prompts.\n"
-        "#\n"
-        "# How to replay:\n"
-        "#   python sast_cli.py --mode suite --suite-file <this_file> --suite-id <new_suite_id>\n"
-        "#\n"
-        "# Notes:\n"
-        "#   - If you built the suite from --worktrees-root or --cases-from, you usually do NOT need\n"
-        "#     a replay file. Just rerun the same command.\n"
-        "#   - This file exports SUITE_RAW (a dict). The loader converts it to a SuiteDefinition.\n"
-        "#\n\n"
-        f"SUITE_RAW = {raw_py}\n"
-    )
-
-    p.write_text(content, encoding="utf-8")
-    return p
-
-
-def _resolve_suite_case_for_run(sc: SuiteCase, *, repo_registry: Dict[str, Dict[str, str]]) -> Tuple[SuiteCase, str]:
-    """Legacy shim.
-
-    Suite-mode resolution now happens through the explicit resolver boundary
-    (:func:`pipeline.suites.suite_resolver.resolve_suite_run`). This helper remains as
-    a thin adapter for older codepaths/experiments.
-    """
-    from pipeline.suites.suite_resolver import resolve_suite_case
-
-    return resolve_suite_case(sc, repo_registry=repo_registry)
-
-
-def _build_suite_from_sources(args: argparse.Namespace) -> SuiteDefinition:
-    """Build a suite definition without interactive prompts.
-
-    Sources:
-      - --cases-from CSV
-      - --worktrees-root folder
-
-    This is meant for prototype automation and CI.
-    """
-    suite_id = str(args.suite_id) if args.suite_id else new_suite_id()
-
-    scanners_csv = args.scanners or DEFAULT_SCANNERS_CSV
-    scanners = _parse_scanners_str(scanners_csv)
-    if not scanners:
-        raise SystemExit("No valid scanners selected.")
-
-    analysis = SuiteAnalysisDefaults(
-        skip=bool(args.skip_analysis),
-        tolerance=int(args.tolerance),
-        filter=str(args.analysis_filter),
-    )
-
-    cases: list[SuiteCase] = []
-    seen: set[str] = set()
-
-    if args.cases_from:
-        loaded = _load_suite_cases_from_csv(Path(args.cases_from))
-        for sc in loaded:
-            cid = safe_name(sc.case.case_id)
-            if cid in seen:
-                continue
-            c = sc.case
-            if cid != c.case_id:
-                sc = SuiteCase(case=CaseSpec(**{**c.__dict__, 'case_id': cid}), overrides=sc.overrides)
-            cases.append(sc)
-            seen.add(cid)
-
-    if args.worktrees_root:
-        loaded = _load_suite_cases_from_worktrees_root(Path(args.worktrees_root))
-        for sc in loaded:
-            cid = safe_name(sc.case.case_id)
-            if cid in seen:
-                continue
-            cases.append(sc)
-            seen.add(cid)
-
-    if args.max_cases is not None:
-        cases = cases[: int(args.max_cases)]
-
-    if not cases:
-        raise SystemExit("Suite mode requires at least one case (no cases loaded).")
-
-    return SuiteDefinition(
-        suite_id=suite_id,
-        scanners=scanners,
-        cases=cases,
-        analysis=analysis,
-    )
 
 
 def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *, repo_registry: Dict[str, Dict[str, str]]) -> int:
@@ -833,11 +175,13 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 skipped_case_ids.append(c.case_id)
 
         if not selected_cases:
-            found_ids = sorted({
-                _detect_owasp_id(sc.case.case_id, sc.case.branch, sc.case.label)
-                for sc in suite_def.cases
-                if _detect_owasp_id(sc.case.case_id, sc.case.branch, sc.case.label)
-            })
+            found_ids = sorted(
+                {
+                    _detect_owasp_id(sc.case.case_id, sc.case.branch, sc.case.label)
+                    for sc in suite_def.cases
+                    if _detect_owasp_id(sc.case.case_id, sc.case.branch, sc.case.label)
+                }
+            )
             print(
                 "❌ QA calibration selection produced 0 cases.\n"
                 f"Requested scope: {scope_label} (targets={sorted(targets)})\n"
@@ -910,11 +254,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         suite_file=suite_input_copy,
         cases_from_csv=(Path(args.cases_from).name if args.cases_from else None),
         worktrees_root=(Path(args.worktrees_root).name if args.worktrees_root else None),
-        built_interactively=bool(
-            (not args.suite_file)
-            and (not args.cases_from)
-            and (not args.worktrees_root)
-        ),
+        built_interactively=bool((not args.suite_file) and (not args.cases_from) and (not args.worktrees_root)),
     )
 
     analysis_defaults = SuiteAnalysisDefaults(
@@ -1051,8 +391,6 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
 
         rc_code = int(pipeline.run(req))
         overall = max(overall, rc_code)
-
-
 
     # ------------------------------------------------------------------
     # Suite-level aggregation: triage dataset (+ optional gt_tolerance sweep)
@@ -1202,17 +540,11 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
 
             if ds.get("missing_cases"):
                 missing = ds.get("missing_cases") or []
-                print(
-                    f"  ⚠️  Missing triage_features.csv for {len(missing)} case(s): "
-                    + ", ".join([str(x) for x in missing])
-                )
+                print(f"  ⚠️  Missing triage_features.csv for {len(missing)} case(s): " + ", ".join([str(x) for x in missing]))
 
             if ds.get("empty_cases"):
                 empty = ds.get("empty_cases") or []
-                print(
-                    f"  ⚠️  Empty triage_features.csv for {len(empty)} case(s): "
-                    + ", ".join([str(x) for x in empty])
-                )
+                print(f"  ⚠️  Empty triage_features.csv for {len(empty)} case(s): " + ", ".join([str(x) for x in empty]))
 
             if ds.get("read_errors"):
                 errs = ds.get("read_errors") or []
@@ -1291,8 +623,6 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 pass
         except Exception as e:
             print(f"\n⚠️  Failed to build suite triage_eval: {e}")
-
-
 
     # ------------------------------------------------------------------
     # QA calibration runbook: second pass analyze + deterministic checklist
@@ -1441,9 +771,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                     {
                         "gt_tolerance_sweep_report_csv": gt_sweep_report_csv,
                         "gt_tolerance_sweep_payload_json": gt_sweep_payload_json,
-                        "gt_tolerance_sweep_tool_stats_csv": str(
-                            (suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_tool_stats.csv").resolve()
-                        ),
+                        "gt_tolerance_sweep_tool_stats_csv": str((suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_tool_stats.csv").resolve()),
                     }
                 )
 

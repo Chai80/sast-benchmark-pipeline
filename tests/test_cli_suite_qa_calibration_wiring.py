@@ -47,6 +47,29 @@ class FakePipeline:
         suite_dir = suite_root / suite_id
         case_dir = suite_dir / "cases" / case_id
 
+        # --- Minimal tool_runs + config_receipt.json -----------------------
+        # The real pipeline writes a config receipt per tool run.
+        # The QA runbook expects these to exist so profile/config becomes a
+        # tracked, suite-visible variable.
+        scanners = getattr(req, "scanners", None) or getattr(req, "scanners_requested", None) or []
+        profile = getattr(req, "profile", None) or "default"
+        for tool in [str(t).strip() for t in (scanners or []) if str(t).strip()]:
+            tr_dir = case_dir / "tool_runs" / tool / "R1"
+            tr_dir.mkdir(parents=True, exist_ok=True)
+            (tr_dir / "config_receipt.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "tool": tool,
+                        "profile": str(profile),
+                        "artifacts": {"rules_inventory": None},
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
         # --- Per-case triage features (input to suite dataset builder) ------
         tables_dir = case_dir / "analysis" / "_tables"
         tables_dir.mkdir(parents=True, exist_ok=True)

@@ -15,6 +15,22 @@ def test_write_qa_manifest_updates_suite_json_with_gt_tolerance(tmp_path: Path) 
     suite_dir.mkdir(parents=True, exist_ok=True)
     (suite_dir / "analysis").mkdir(parents=True, exist_ok=True)
 
+    # Minimal tool run output with a config_receipt.json so the QA manifest
+    # can record scanner profile/config as a first-class input.
+    run_dir = suite_dir / "cases" / "case_one" / "tool_runs" / "semgrep" / "R1"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "config_receipt.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "tool": "semgrep",
+                "profile": "default",
+                "artifacts": {"rules_inventory": None},
+            }
+        ),
+        encoding="utf-8",
+    )
+
     # Minimal suite.json (enough structure for the updater)
     suite_json_path = suite_dir / "suite.json"
     suite_json_path.write_text(
@@ -65,6 +81,13 @@ def test_write_qa_manifest_updates_suite_json_with_gt_tolerance(tmp_path: Path) 
         checklist_pass=True,
     )
 
+    inputs = manifest.get("inputs")
+    assert isinstance(inputs, dict)
+    scanner_config = inputs.get("scanner_config")
+    assert isinstance(scanner_config, dict)
+    assert scanner_config.get("profile") == "default"
+    assert isinstance(scanner_config.get("config_receipt_hashes"), dict)
+
     _ = write_qa_calibration_manifest(suite_dir=suite_dir, manifest=manifest)
 
     updated = json.loads(suite_json_path.read_text(encoding="utf-8"))
@@ -72,6 +95,15 @@ def test_write_qa_manifest_updates_suite_json_with_gt_tolerance(tmp_path: Path) 
     assert isinstance(plan, dict)
     analysis = plan.get("analysis")
     assert isinstance(analysis, dict)
+
+    # Scanner config summary should be written into suite.json too.
+    sc2 = plan.get("scanner_config")
+    assert isinstance(sc2, dict)
+    assert sc2.get("profile") == "default"
+    hashes = sc2.get("config_receipt_hashes")
+    assert isinstance(hashes, dict)
+    assert "semgrep" in hashes
+    assert isinstance(hashes.get("semgrep"), list)
 
     assert analysis.get("gt_tolerance_initial") == 0
     assert analysis.get("gt_tolerance_effective") == 10

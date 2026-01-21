@@ -21,6 +21,35 @@ class TestQACalibrationRunbook(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             suite_dir = Path(td) / "runs" / "suites" / "20260101T000000Z"
 
+            # Minimal suite.json so the runbook can infer expected scanners.
+            (suite_dir / "suite.json").parent.mkdir(parents=True, exist_ok=True)
+            (suite_dir / "suite.json").write_text(
+                json.dumps(
+                    {
+                        "suite_id": "20260101T000000Z",
+                        "plan": {"scanners": ["semgrep"]},
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+            # Minimal config_receipt.json to satisfy the "profiles recorded" QA check.
+            run_dir = suite_dir / "cases" / "case1" / "tool_runs" / "semgrep" / "R1"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "config_receipt.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "tool": "semgrep",
+                        "profile": "default",
+                        "artifacts": {"rules_inventory": None},
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
             # Suite-level artifacts
             self._write_csv(
                 suite_dir / "analysis" / "_tables" / "triage_dataset.csv",
