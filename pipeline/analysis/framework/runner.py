@@ -11,6 +11,8 @@ from .registry import get_stage
 from .stage import StageResult
 from .store import ArtifactStore
 
+from sast_benchmark.io.fs import write_json_atomic
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -105,6 +107,6 @@ def write_analysis_manifest(
         "errors": list(store.errors),
     }
 
-    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    write_json_atomic(p, data, indent=2, sort_keys=True, ensure_ascii=False)
     store.add_artifact("analysis_manifest", p)
     return p

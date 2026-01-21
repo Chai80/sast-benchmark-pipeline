@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
+from pipeline.analysis.utils.path_norm import normalize_exclude_prefixes
+
 
 def _derive_suite_case_ids(out_dir: Path) -> Tuple[Optional[str], Optional[str]]:
     """Best-effort derive suite_id and case_id from v2 layout paths.
@@ -29,46 +31,7 @@ def _derive_suite_case_ids(out_dir: Path) -> Tuple[Optional[str], Optional[str]]
     return None, None
 
 
-def _normalize_exclude_prefix(prefix: str) -> str:
-    """Normalize an exclude prefix into a repo-relative POSIX-ish form.
-
-    Notes:
-    - We intentionally do *not* resolve '..' segments; this is a simple
-      prefix-based filter, not a security boundary.
-    - Leading slashes are stripped to keep the comparison repo-relative.
-    """
-    p = str(prefix or "").strip().replace("\\", "/")
-
-    # Remove common shell-ish relative prefixes.
-    while p.startswith("./"):
-        p = p[2:]
-
-    # Keep comparisons repo-relative.
-    p = p.lstrip("/")
-
-    # Make "benchmark/" and "benchmark" equivalent.
-    p = p.rstrip("/")
-
-    # Collapse duplicate separators.
-    while "//" in p:
-        p = p.replace("//", "/")
-
-    return p
-
-
-def _normalize_exclude_prefixes(prefixes: Sequence[str] | None) -> Tuple[str, ...]:
-    """Normalize + de-duplicate exclude prefixes while preserving order."""
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in prefixes or []:
-        p = _normalize_exclude_prefix(str(raw))
-        if not p:
-            continue
-        if p in seen:
-            continue
-        seen.add(p)
-        out.append(p)
-    return tuple(out)
+ 
 
 
 @dataclass(frozen=True)
@@ -164,7 +127,7 @@ class AnalysisContext:
         suite_id, case_id = _derive_suite_case_ids(out_dir)
 
         # Normalize user-provided exclude prefixes.
-        normalized = list(_normalize_exclude_prefixes(exclude_prefixes))
+        normalized = list(normalize_exclude_prefixes(exclude_prefixes))
 
         # Suite layout default: exclude harness noise under benchmark/ unless explicitly included.
         # This keeps SCA/SAST tools from surfacing benchmark harness scripts as top hotspots.

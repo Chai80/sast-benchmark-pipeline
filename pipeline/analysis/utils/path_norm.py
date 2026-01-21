@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
 
 _SLASH_RE = re.compile(r"/+")
@@ -57,3 +57,97 @@ def normalize_file_path(path: str, *, repo_name: Optional[str] = None) -> str:
         return s
     except Exception:
         return str(path)
+
+
+def normalize_exclude_prefix(prefix: str) -> str:
+    """Normalize an exclude prefix into a repo-relative POSIX-ish form.
+
+    This is intentionally a *lightweight* transformation. It is used for
+    prefix-based scope filtering (not as a security boundary).
+
+    Normalization rules
+    -------------------
+    - Convert path separators to "/"
+    - Strip leading "./" segments
+    - Strip leading slashes (keep comparisons repo-relative)
+    - Strip trailing slashes (treat "benchmark" and "benchmark/" as equal)
+    - Collapse duplicate separators
+    """
+
+    p = str(prefix or "").strip().replace("\\", "/")
+
+    # Remove common shell-ish relative prefixes.
+    while p.startswith("./"):
+        p = p[2:]
+
+    # Keep comparisons repo-relative.
+    p = p.lstrip("/")
+
+    # Make "benchmark/" and "benchmark" equivalent.
+    p = p.rstrip("/")
+
+    # Collapse duplicate separators.
+    while "//" in p:
+        p = p.replace("//", "/")
+
+    return p
+
+
+def normalize_exclude_prefixes(prefixes: Sequence[str] | None) -> Tuple[str, ...]:
+    """Normalize + de-duplicate exclude prefixes while preserving order."""
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in prefixes or []:
+        p = normalize_exclude_prefix(str(raw))
+        if not p:
+            continue
+        if p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return tuple(out)
+
+
+def is_excluded_path(
+    file_path: str,
+    *,
+    repo_name: str,
+    exclude_prefixes: Sequence[str] | None,
+) -> bool:
+    """Return True if a finding path should be excluded by prefix.
+
+    Parameters
+    ----------
+    file_path:
+        Any file path (absolute or repo-relative). This function normalizes the
+        path into a repo-relative form before checking prefixes.
+    repo_name:
+        Used by :func:`normalize_file_path` to strip legacy runs/<repo_name>/
+        prefixes.
+    exclude_prefixes:
+        Repo-relative prefixes to exclude.
+
+    Notes
+    -----
+    Prefix matching is directory-aware:
+      - prefix "benchmark" excludes "benchmark" and "benchmark/..."
+      - prefix "benchmark/" is treated the same
+    """
+
+    prefixes = exclude_prefixes or ()
+    if not prefixes:
+        return False
+
+    fp = normalize_file_path(str(file_path or ""), repo_name=repo_name)
+    if not fp:
+        return False
+
+    fp_n = normalize_exclude_prefix(fp)
+    for raw in prefixes:
+        pfx = normalize_exclude_prefix(str(raw))
+        if not pfx:
+            continue
+        if fp_n == pfx or fp_n.startswith(pfx + "/"):
+            return True
+    return False

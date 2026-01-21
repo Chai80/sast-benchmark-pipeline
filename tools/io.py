@@ -25,50 +25,64 @@ Design
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any, Optional
+
+# Canonical, dependency-safe IO helpers.
+from sast_benchmark.io.fs import (
+    read_json as _read_json,
+    write_csv_atomic as _write_csv_atomic,
+    write_json_atomic as _write_json_atomic,
+    write_text_atomic as _write_text_atomic,
+)
 
 
 def write_json(path: Path, data: Any) -> None:
     """Write pretty JSON to disk (UTF-8) using an atomic replace.
 
-    Why atomic
-    ----------
-    Manifests like case.json / suite.json / run.json are effectively state.
-    If the process is interrupted while writing, a partially-written JSON file
-    can break downstream analysis in confusing ways.
+    This is a thin wrapper over :func:`sast_benchmark.io.fs.write_json_atomic`.
 
-    We write to a temporary file in the same directory and then `os.replace`
-    it into place so readers never observe a truncated JSON file.
+    The stable formatting (indent + sort_keys) reduces diff noise across runs
+    and prevents subtle drift as the repo evolves.
     """
 
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json_atomic(Path(path), data, indent=2, sort_keys=True, ensure_ascii=False)
 
-    fd, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".tmp", dir=str(path.parent))
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
 
-        os.replace(tmp_path, path)
-    finally:
-        # If os.replace fails, best-effort cleanup of the temp file.
-        try:
-            if tmp_path.exists():
-                tmp_path.unlink()
-        except Exception:
-            pass
+def write_json_atomic(
+    path: Path,
+    data: Any,
+    *,
+    indent: int = 2,
+    sort_keys: bool = True,
+    ensure_ascii: bool = False,
+) -> None:
+    """Explicit atomic JSON writer (canonical API)."""
+
+    _write_json_atomic(Path(path), data, indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii)
 
 
 def read_json(path: Path) -> Any:
     """Read JSON from disk (UTF-8)."""
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+
+    return _read_json(Path(path))
+
+
+def write_text_atomic(path: Path, text: str, *, encoding: str = "utf-8") -> None:
+    """Write UTF-8 text to disk atomically (canonical API)."""
+
+    _write_text_atomic(Path(path), text, encoding=encoding)
+
+
+def write_csv_atomic(
+    path: Path,
+    rows: Any,
+    *,
+    fieldnames: Optional[list[str]] = None,
+) -> None:
+    """Write CSV to disk atomically (canonical API)."""
+
+    _write_csv_atomic(Path(path), rows, fieldnames=fieldnames)
 
 
 def read_line_content(

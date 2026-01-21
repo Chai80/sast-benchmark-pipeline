@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-import csv
-import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, Optional, Sequence
+
+from sast_benchmark.io.fs import write_csv_atomic, write_json_atomic
 
 
 def write_json(path: Path, data: Any, *, indent: int = 2) -> Path:
+    """Write JSON analysis artifacts.
+
+    This is a thin wrapper over :func:`sast_benchmark.io.fs.write_json_atomic`.
+    Returning the written path keeps existing call sites unchanged.
+    """
+
     p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=indent), encoding="utf-8")
+    write_json_atomic(p, data, indent=indent, sort_keys=True, ensure_ascii=False)
     return p
 
 
@@ -19,26 +24,12 @@ def write_csv(
     *,
     fieldnames: Optional[Sequence[str]] = None,
 ) -> Path:
+    """Write CSV analysis artifacts.
+
+    This is a thin wrapper over :func:`sast_benchmark.io.fs.write_csv_atomic`.
+    Returning the written path keeps existing call sites unchanged.
+    """
+
     p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-
-    rows_list: List[Dict[str, Any]] = list(rows)
-
-    if fieldnames is None:
-        # Stable order: union of keys in first-seen order.
-        seen: set[str] = set()
-        fields: List[str] = []
-        for r in rows_list:
-            for k in r.keys():
-                if k not in seen:
-                    seen.add(k)
-                    fields.append(k)
-        fieldnames = fields
-
-    with p.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(fieldnames))
-        w.writeheader()
-        for r in rows_list:
-            w.writerow({k: r.get(k, "") for k in fieldnames})
-
+    write_csv_atomic(p, rows, fieldnames=fieldnames)
     return p

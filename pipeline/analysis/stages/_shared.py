@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore
 from pipeline.analysis.utils.filters import filter_findings
-from pipeline.analysis.utils.path_norm import normalize_file_path
+from pipeline.analysis.utils.path_norm import is_excluded_path, normalize_file_path
 
 
 def load_normalized_json(path: Path) -> Dict[str, Any]:
@@ -14,67 +14,7 @@ def load_normalized_json(path: Path) -> Dict[str, Any]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def _normalize_exclude_prefix(prefix: str) -> str:
-    """Normalize an exclude prefix into a repo-relative POSIX-ish form."""
-    p = str(prefix or "").strip().replace("\\", "/")
-
-    while p.startswith("./"):
-        p = p[2:]
-
-    p = p.lstrip("/")
-    p = p.rstrip("/")
-
-    while "//" in p:
-        p = p.replace("//", "/")
-
-    return p
-
-
-def _is_excluded_path(
-    file_path: str,
-    *,
-    repo_name: str,
-    exclude_prefixes: Sequence[str] | None,
-) -> bool:
-    """Return True if a finding path should be excluded by prefix.
-
-    Parameters
-    ----------
-    file_path:
-        Any file path (absolute or repo-relative). This function normalizes the
-        path into a repo-relative form before checking prefixes.
-    repo_name:
-        Used by :func:`~pipeline.analysis.utils.path_norm.normalize_file_path`
-        to strip legacy runs/<repo_name>/ prefixes.
-    exclude_prefixes:
-        Repo-relative prefixes to exclude (repeatable).
-
-    Notes
-    -----
-    Prefix matching is directory-aware:
-      - prefix "benchmark" excludes "benchmark" and "benchmark/..."
-      - prefix "benchmark/" is treated the same
-    """
-    prefixes = exclude_prefixes or ()
-    if not prefixes:
-        return False
-
-    fp = normalize_file_path(str(file_path or ""), repo_name=repo_name)
-    if not fp:
-        return False
-
-    # normalize again to keep comparisons stable
-    fp_n = _normalize_exclude_prefix(fp)
-
-    for raw in prefixes:
-        pfx = _normalize_exclude_prefix(str(raw))
-        if not pfx:
-            continue
-
-        if fp_n == pfx or fp_n.startswith(pfx + "/"):
-            return True
-
-    return False
+ 
 
 
 def load_findings_by_tool(ctx: AnalysisContext, store: ArtifactStore) -> Mapping[str, List[Dict[str, Any]]]:
@@ -109,7 +49,7 @@ def load_findings_by_tool(ctx: AnalysisContext, store: ArtifactStore) -> Mapping
                 f
                 for f in findings_f
                 if isinstance(f, dict)
-                and not _is_excluded_path(
+                and not is_excluded_path(
                     str(f.get("file_path") or ""),
                     repo_name=ctx.repo_name,
                     exclude_prefixes=ex,

@@ -9,11 +9,11 @@ from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register
 from pipeline.analysis.io.discovery import find_latest_normalized_json
 from pipeline.analysis.io.write_artifacts import write_json
 from pipeline.analysis.utils.filters import filter_findings
-from pipeline.analysis.utils.path_norm import normalize_file_path
+from pipeline.analysis.utils.path_norm import is_excluded_path, normalize_file_path
 
 from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
-from ._shared import _is_excluded_path, load_normalized_json
+from ._shared import load_normalized_json
 
 
 def analyze_latest_hotspots_for_repo(
@@ -55,7 +55,7 @@ def analyze_latest_hotspots_for_repo(
             fp = normalize_file_path(str(f.get("file_path") or ""), repo_name=repo_name)
             if not fp:
                 continue
-            if exclude_prefixes and _is_excluded_path(
+            if exclude_prefixes and is_excluded_path(
                 fp,
                 repo_name=repo_name,
                 exclude_prefixes=exclude_prefixes,
