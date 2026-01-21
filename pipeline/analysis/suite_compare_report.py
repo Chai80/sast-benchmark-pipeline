@@ -39,6 +39,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from pipeline.analysis.io.meta import read_json_if_exists
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
+from pipeline.analysis.io.config_receipts import load_scanner_config
 from pipeline.analysis.suite_triage_calibration import tool_weights_from_calibration
 
 
@@ -123,6 +124,11 @@ class SuiteArtifacts:
     suite_id: str
     suite_dir: Path
 
+    suite_json_path: Path
+    suite_json: Optional[Dict[str, Any]]
+
+    scanner_config: Dict[str, Any]
+
     qa_manifest_path: Optional[Path]
     qa_manifest: Optional[Dict[str, Any]]
 
@@ -159,6 +165,30 @@ def _load_suite_artifacts(suite_dir: Path) -> Tuple[SuiteArtifacts, List[str]]:
     )
     qa_manifest = read_json_if_exists(qa_manifest_path) if qa_manifest_path else None
 
+    suite_json_path = suite_dir / "suite.json"
+    suite_json = read_json_if_exists(suite_json_path)
+
+    # Expected scanners: prefer manifest (explicit invocation), fallback to suite.json.
+    expected_scanners: List[str] = []
+    try:
+        if isinstance(qa_manifest, Mapping):
+            inputs = qa_manifest.get("inputs")
+            if isinstance(inputs, Mapping) and isinstance(inputs.get("scanners"), list):
+                expected_scanners = [str(x).strip() for x in inputs.get("scanners") if str(x).strip()]
+        if not expected_scanners and isinstance(suite_json, Mapping):
+            plan = suite_json.get("plan")
+            if isinstance(plan, Mapping) and isinstance(plan.get("scanners"), list):
+                expected_scanners = [str(x).strip() for x in plan.get("scanners") if str(x).strip()]
+    except Exception:
+        expected_scanners = []
+
+    scanner_config = load_scanner_config(
+        suite_dir=suite_dir,
+        qa_manifest=qa_manifest,
+        suite_json=suite_json,
+        scanners=expected_scanners,
+    )
+
     eval_summary_path = tables_dir / "triage_eval_summary.json"
     eval_summary = read_json_if_exists(eval_summary_path)
 
@@ -191,6 +221,9 @@ def _load_suite_artifacts(suite_dir: Path) -> Tuple[SuiteArtifacts, List[str]]:
     arts = SuiteArtifacts(
         suite_id=str(sid),
         suite_dir=suite_dir,
+        suite_json_path=suite_json_path,
+        suite_json=suite_json,
+        scanner_config=dict(scanner_config) if isinstance(scanner_config, dict) else {},
         qa_manifest_path=qa_manifest_path,
         qa_manifest=qa_manifest,
         eval_summary_path=eval_summary_path if eval_summary else None,
@@ -477,6 +510,40 @@ def build_suite_compare_report(
         delta_val=None,
     )
 
+    # --- Scanner config diff -----------------------------------------
+    # Config/profile changes are the most common explanation for "tool drift".
+    sc_a = a.scanner_config if isinstance(a.scanner_config, Mapping) else {}
+    sc_b = b.scanner_config if isinstance(b.scanner_config, Mapping) else {}
+
+    add_row(section="scanner_config", name="profile", a_val=sc_a.get("profile"), b_val=sc_b.get("profile"))
+    add_row(
+        section="scanner_config",
+        name="profile_mode",
+        a_val=sc_a.get("profile_mode"),
+        b_val=sc_b.get("profile_mode"),
+    )
+
+    add_row(
+        section="scanner_config",
+        name="missing_tools",
+        a_val=json.dumps(sc_a.get("missing_tools") or []),
+        b_val=json.dumps(sc_b.get("missing_tools") or []),
+        delta_val=None,
+    )
+
+    hashes_a = sc_a.get("config_receipt_hashes") if isinstance(sc_a.get("config_receipt_hashes"), Mapping) else {}
+    hashes_b = sc_b.get("config_receipt_hashes") if isinstance(sc_b.get("config_receipt_hashes"), Mapping) else {}
+    tools_cfg = sorted(set(list(hashes_a.keys()) + list(hashes_b.keys())))
+    for t in tools_cfg:
+        add_row(
+            section="scanner_config",
+            name="config_receipt_hashes",
+            tool=str(t),
+            a_val=json.dumps(hashes_a.get(t) or []),
+            b_val=json.dumps(hashes_b.get(t) or []),
+            delta_val=None,
+        )
+
     # --- Dataset counts ---------------------------------------------
     for key in ("clusters_total", "clusters_gt_pos", "clusters_gt_neg", "cases_seen"):
         va = ds_a.get(key)
@@ -616,6 +683,36 @@ def build_suite_compare_report(
     except Exception:
         pass
 
+    # Scanner profile/config drift (the most common "it's just config" critique)
+    try:
+        prof_a = (a.scanner_config or {}).get("profile")
+        prof_b = (b.scanner_config or {}).get("profile")
+        if prof_a and prof_b and str(prof_a) != str(prof_b):
+            alerts.append(f"Scanner profile changed: {prof_a} -> {prof_b}")
+    except Exception:
+        pass
+
+    try:
+        hashes_a = (
+            a.scanner_config.get("config_receipt_hashes")
+            if isinstance(a.scanner_config, Mapping)
+            else {}
+        )
+        hashes_b = (
+            b.scanner_config.get("config_receipt_hashes")
+            if isinstance(b.scanner_config, Mapping)
+            else {}
+        )
+        if isinstance(hashes_a, Mapping) and isinstance(hashes_b, Mapping):
+            changed_tools = []
+            for t in sorted(set(list(hashes_a.keys()) + list(hashes_b.keys()))):
+                if json.dumps(hashes_a.get(t) or [], sort_keys=True) != json.dumps(hashes_b.get(t) or [], sort_keys=True):
+                    changed_tools.append(str(t))
+            if changed_tools:
+                alerts.append(f"Scanner config signature changed for tools: {changed_tools}")
+    except Exception:
+        pass
+
     if warn_a:
         alerts.append(f"Suite A warnings: {', '.join(sorted(set(warn_a)))}")
     if warn_b:
@@ -628,6 +725,7 @@ def build_suite_compare_report(
     # Stable sort for CSV.
     section_order = {
         "policy": 0,
+        "scanner_config": 0.5,
         "dataset": 1,
         "eval_micro": 2,
         "eval_macro": 3,
@@ -657,6 +755,7 @@ def build_suite_compare_report(
         "suite_a": {
             "suite_id": a.suite_id,
             "suite_dir": str(a.suite_dir),
+            "suite_json_path": str(a.suite_json_path),
             "qa_manifest_path": "" if a.qa_manifest_path is None else str(a.qa_manifest_path),
             "eval_summary_path": "" if a.eval_summary_path is None else str(a.eval_summary_path),
             "dataset_csv": "" if a.dataset_csv is None else str(a.dataset_csv),
@@ -667,6 +766,7 @@ def build_suite_compare_report(
         "suite_b": {
             "suite_id": b.suite_id,
             "suite_dir": str(b.suite_dir),
+            "suite_json_path": str(b.suite_json_path),
             "qa_manifest_path": "" if b.qa_manifest_path is None else str(b.qa_manifest_path),
             "eval_summary_path": "" if b.eval_summary_path is None else str(b.eval_summary_path),
             "dataset_csv": "" if b.dataset_csv is None else str(b.dataset_csv),
@@ -683,6 +783,10 @@ def build_suite_compare_report(
             "gt_tolerance_policy": {
                 "a": pol_a,
                 "b": pol_b,
+            },
+            "scanner_config": {
+                "a": a.scanner_config,
+                "b": b.scanner_config,
             },
             "dataset_counts": {
                 "a": ds_a,

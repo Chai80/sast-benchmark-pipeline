@@ -30,6 +30,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from pipeline.analysis.io.config_receipts import summarize_scanner_config
+
 
 @dataclass(frozen=True)
 class QACheck:
@@ -215,6 +217,27 @@ def _discover_case_triage_queue_csv(case_dir: Path) -> Optional[Path]:
     return None
 
 
+def _suite_plan_scanners(suite_dir: Path) -> List[str]:
+    """Best-effort extract expected scanners from suite.json."""
+
+    suite_json = Path(suite_dir) / "suite.json"
+    if not suite_json.exists():
+        return []
+    try:
+        raw = _read_json(suite_json)
+    except Exception:
+        return []
+    if not isinstance(raw, dict):
+        return []
+    plan = raw.get("plan")
+    if not isinstance(plan, dict):
+        return []
+    scanners = plan.get("scanners")
+    if not isinstance(scanners, list):
+        return []
+    return sorted(set([str(x).strip() for x in scanners if str(x).strip()]))
+
+
 def validate_calibration_suite_artifacts(
     suite_dir: str | Path,
     *,
@@ -248,6 +271,44 @@ def validate_calibration_suite_artifacts(
 
     analysis_dir = suite_dir / "analysis"
     tables_dir = analysis_dir / "_tables"
+
+    # --- Scanner config receipts (scientific reproducibility) ------------
+    # In benchmarking, "tool output" depends on configuration (rules/profiles).
+    # We require config receipts so suite-to-suite diffs can attribute drift to
+    # configuration/profile changes.
+    expected_scanners = _suite_plan_scanners(suite_dir)
+    sc = summarize_scanner_config(suite_dir, scanners=expected_scanners)
+
+    receipts_found = _to_int(sc.get("receipts_found"), 0)
+    profile = sc.get("profile")
+    profile_mode = str(sc.get("profile_mode") or "")
+    missing_tools = sc.get("missing_tools") if isinstance(sc.get("missing_tools"), list) else []
+    warnings_list = sc.get("warnings") if isinstance(sc.get("warnings"), list) else []
+
+    ok_profile = bool(profile) and profile_mode != "unknown"
+    ok_receipts = receipts_found > 0 and (len(missing_tools) == 0)
+    warn_profile = profile_mode == "mixed"
+
+    detail_parts: List[str] = []
+    if not ok_receipts:
+        if receipts_found <= 0:
+            detail_parts.append("no config_receipt.json found under cases/*/tool_runs")
+        if missing_tools:
+            detail_parts.append(f"missing receipts for tools: {sorted(set([str(x) for x in missing_tools]))}")
+    if warn_profile:
+        detail_parts.append(f"profile drift inside suite: profile_mode={profile_mode}")
+    if warnings_list:
+        detail_parts.append("; ".join([str(w) for w in warnings_list if str(w).strip()]))
+
+    out.append(
+        QACheck(
+            name="profile recorded + config receipts exist",
+            ok=bool(ok_profile and ok_receipts),
+            warn=bool(warn_profile or (warnings_list and ok_profile and ok_receipts)),
+            path=str(suite_dir / "cases"),
+            detail="; ".join([p for p in detail_parts if str(p).strip()]),
+        )
+    )
 
     # --- GT tolerance artifacts (optional, QA-driven) ----------------------
     # These are produced by the GT tolerance sweep/auto-selection flow.

@@ -91,6 +91,12 @@ Backward compatibility note:
 - The canonical file is `analysis/qa_manifest.json` (CI should scrape this).
 - For backward compatibility, the pipeline also writes the same payload to `analysis/qa_calibration_manifest.json`.
 
+Scanner configuration note:
+
+- The manifest also records `inputs.scanner_config` (profile + config receipt hashes).
+  This makes suite-to-suite comparisons honest: a change in findings can be
+  attributed to a config/profile change instead of vaguely blaming the tool.
+
 ---
 
 ## Calibration JSON schema (v2)

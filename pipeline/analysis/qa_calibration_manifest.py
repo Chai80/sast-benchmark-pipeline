@@ -39,6 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence
 
+from pipeline.analysis.io.config_receipts import summarize_scanner_config
 from pipeline.suites.manifests import runtime_environment
 from tools.io import write_json
 
@@ -135,6 +136,11 @@ def build_qa_calibration_manifest(
 
     suite_dir = Path(suite_dir).resolve()
 
+    # Scanner configuration is a first-class variable. Collect a small, stable
+    # summary so suite-to-suite comparisons can attribute drift to profile/config
+    # changes (vs claiming "tool is bad").
+    scanner_config = summarize_scanner_config(suite_dir, scanners=scanners)
+
     # Normalize artifact paths relative to suite_dir for portability.
     artifacts_rel: Dict[str, Optional[str]] = {}
     for k, v in dict(artifacts or {}).items():
@@ -153,6 +159,7 @@ def build_qa_calibration_manifest(
         },
         "inputs": {
             "scanners": list(scanners),
+            "scanner_config": scanner_config,
             "analysis": {
                 "tolerance": int(tolerance),
                 # Alias for clarity: this is the *analysis* (cluster) tolerance, not gt_tolerance.
@@ -177,6 +184,62 @@ def build_qa_calibration_manifest(
         },
     }
     return payload
+
+
+def _best_effort_update_suite_json_scanner_config(
+    *,
+    suite_dir: Path,
+    manifest: Mapping[str, Any],
+) -> None:
+    """Update suite.json with scanner_config fields (best-effort).
+
+    We store scanner configuration *inputs* alongside the suite plan so a human
+    browsing runs/suites/... can immediately answer:
+      "Were these results produced under the same scanner profile/config?"
+
+    This is intentionally best-effort and should never fail the QA run.
+    """
+
+    suite_dir = Path(suite_dir).resolve()
+    suite_json_path = (suite_dir / "suite.json").resolve()
+    if not suite_json_path.exists():
+        return
+
+    try:
+        raw = json.loads(suite_json_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return
+    except Exception:
+        return
+
+    inputs = manifest.get("inputs") if isinstance(manifest, dict) else None
+    if not isinstance(inputs, Mapping):
+        return
+
+    sc = inputs.get("scanner_config")
+    if not isinstance(sc, Mapping):
+        return
+
+    plan = raw.get("plan")
+    if not isinstance(plan, dict):
+        plan = {}
+        raw["plan"] = plan
+
+    existing = plan.get("scanner_config")
+    if isinstance(existing, dict) and dict(existing) == dict(sc):
+        return
+
+    plan["scanner_config"] = dict(sc)
+
+    try:
+        raw["updated_at"] = _now_iso_utc()
+    except Exception:
+        pass
+
+    try:
+        write_json(suite_json_path, raw)
+    except Exception:
+        return
 
 
 def _safe_int(x: Any, default: Optional[int] = None) -> Optional[int]:
@@ -350,6 +413,13 @@ def write_qa_calibration_manifest(
         except Exception:
             # Best-effort: the canonical file is the one CI should scrape.
             pass
+
+    # Also record scanner configuration into suite.json so humans browsing
+    # runs/suites/... can attribute drift to profile/config changes.
+    try:
+        _best_effort_update_suite_json_scanner_config(suite_dir=suite_dir, manifest=manifest)
+    except Exception:
+        pass
 
     # Also record the effective GT tolerance into suite.json so humans
     # browsing runs/suites/... don't confuse analysis tolerance with gt_tolerance.
