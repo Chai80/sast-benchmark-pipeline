@@ -15,9 +15,9 @@ from pipeline.analysis.suite.suite_triage_calibration import (
 from pipeline.analysis.utils.owasp import infer_owasp
 from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
-from .common.locations import ensure_location_clusters
-from .common.severity import max_severity, severity_rank
-from .common.store_keys import StoreKeys
+from ..common.locations import ensure_location_clusters
+from ..common.severity import max_severity, severity_rank
+from ..common.store_keys import StoreKeys
 
 
 TRIAGE_QUEUE_SCHEMA_VERSION = "v1"
