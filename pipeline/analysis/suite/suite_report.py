@@ -553,6 +553,15 @@ def build_suite_report(
             "triage_eval_topk_csv": _rel(out_tables / "triage_eval_topk.csv", suite_dir) if (out_tables / "triage_eval_topk.csv").exists() else None,
             "triage_calibration_json": _rel(analysis_dir / "triage_calibration.json", suite_dir) if (analysis_dir / "triage_calibration.json").exists() else None,
             "triage_eval_log": _rel(analysis_dir / "triage_eval.log", suite_dir) if (analysis_dir / "triage_eval.log").exists() else None,
+            "qa_checklist_md": _rel(analysis_dir / "qa_checklist.md", suite_dir) if (analysis_dir / "qa_checklist.md").exists() else None,
+            "qa_checklist_json": _rel(analysis_dir / "qa_checklist.json", suite_dir) if (analysis_dir / "qa_checklist.json").exists() else None,
+            "qa_calibration_checklist_txt": _rel(analysis_dir / "qa_calibration_checklist.txt", suite_dir)
+            if (analysis_dir / "qa_calibration_checklist.txt").exists()
+            else None,
+            "qa_manifest_json": _rel(analysis_dir / "qa_manifest.json", suite_dir) if (analysis_dir / "qa_manifest.json").exists() else None,
+            "qa_calibration_manifest_json": _rel(analysis_dir / "qa_calibration_manifest.json", suite_dir)
+            if (analysis_dir / "qa_calibration_manifest.json").exists()
+            else None,
         },
         "top_gt_gap_cases": [
             {
@@ -630,6 +639,11 @@ def _render_markdown(report: Dict[str, Any]) -> str:
     metrics = report.get("metrics") or {}
     macro = (metrics.get("macro_from_topk") or {}) if isinstance(metrics.get("macro_from_topk"), dict) else {}
 
+    ptr = report.get("pointers") or {}
+    suite_tables = ptr.get("suite_tables") or {}
+    top_gt_gap_cases = ptr.get("top_gt_gap_cases") or []
+    top_severity_cases = ptr.get("top_severity_cases") or []
+
     lines: List[str] = []
     lines.append(f"# Suite report — {sid}")
     lines.append("")
@@ -650,6 +664,60 @@ def _render_markdown(report: Dict[str, Any]) -> str:
         lines.append(f"  - {', '.join(no_clusters[:5])}{'…' if len(no_clusters) > 5 else ''}")
     lines.append(f"- cases missing tool outputs / missing tools: {len(missing_outputs)}")
     lines.append(f"- QA calibration: scope={qa.get('scope')}, reanalyze={'no' if qa.get('no_reanalyze') else 'yes'}")
+    lines.append("")
+    lines.append("## Results highlights")
+    lines.append("")
+    lines.append("Top GT gap cases (review these first):")
+    if not top_gt_gap_cases:
+        lines.append("- (none)")
+    else:
+        for item in top_gt_gap_cases:
+            cid = item.get("case_id")
+            gap_total = item.get("gap_total")
+            parts: List[str] = []
+            if item.get("gt_score_json"):
+                parts.append(f"gt: `{item.get('gt_score_json')}`")
+            if item.get("gt_gap_queue_csv"):
+                parts.append(f"gap_queue: `{item.get('gt_gap_queue_csv')}`")
+            suffix = (" — " + " ".join(parts)) if parts else ""
+            lines.append(f"- `{cid}` gap_total={gap_total}{suffix}")
+
+    lines.append("")
+    lines.append("Top severity / hotspot cases:")
+    if not top_severity_cases:
+        lines.append("- (none)")
+    else:
+        for item in top_severity_cases:
+            cid = item.get("case_id")
+            sev = item.get("top_severity")
+            triage_rows = item.get("triage_rows")
+            parts = []
+            if item.get("triage_queue_csv"):
+                parts.append(f"triage_csv: `{item.get('triage_queue_csv')}`")
+            if item.get("hotspot_pack_json"):
+                parts.append(f"hotspots: `{item.get('hotspot_pack_json')}`")
+            suffix = (" — " + " ".join(parts)) if parts else ""
+            lines.append(f"- `{cid}` top_severity={sev} triage_rows={triage_rows}{suffix}")
+
+    lines.append("")
+    lines.append("Where to click (suite-level):")
+    click_order = [
+        "qa_checklist_md",
+        "qa_calibration_checklist_txt",
+        "triage_eval_summary_json",
+        "triage_eval_topk_csv",
+        "triage_dataset_csv",
+        "triage_calibration_json",
+    ]
+    emitted = False
+    for k in click_order:
+        v = suite_tables.get(k)
+        if v:
+            lines.append(f"- {k}: `{v}`")
+            emitted = True
+    if not emitted:
+        lines.append("- (no suite-level artifacts found)")
+
     lines.append("")
     lines.append("## Action items")
     lines.append("")
@@ -728,8 +796,6 @@ def _render_markdown(report: Dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Where to look next")
     lines.append("")
-    ptr = report.get("pointers") or {}
-    suite_tables = ptr.get("suite_tables") or {}
     lines.append("Suite-level tables:")
     for k, v in suite_tables.items():
         if v:
