@@ -149,6 +149,109 @@ def _count_normalized_findings(normalized_json_path: Path) -> Optional[int]:
     return None
 
 
+
+
+# ---------------------------------------------------------------------------
+# Integrity helpers (GT tolerance ambiguity)
+# ---------------------------------------------------------------------------
+
+
+def _to_int(x: Any) -> Optional[int]:
+    """Best-effort int parsing; return None on failure."""
+
+    try:
+        if x is None:
+            return None
+        if isinstance(x, bool):
+            return int(x)
+        return int(float(str(x).strip()))
+    except Exception:
+        return None
+
+
+def _read_csv_dict_rows(path: Path) -> List[Dict[str, str]]:
+    """Read a small CSV into a list of dict rows (no pandas dependency)."""
+
+    import csv
+
+    with Path(path).open("r", encoding="utf-8", newline="") as f:
+        return [dict(r) for r in csv.DictReader(f) if isinstance(r, dict)]
+
+
+def _load_gt_tolerance_integrity(*, suite_dir: Path, analysis_dir: Path) -> Dict[str, Any]:
+    """Load a lightweight ambiguity summary from gt_tolerance_sweep_summary.csv (if present).
+
+    This is read-only and does not change scoring; it's used only to surface potential
+    tolerance inflation risks in suite_report output.
+    """
+
+    summary_csv = analysis_dir / "gt_tolerance_sweep_summary.csv"
+    if not summary_csv.exists():
+        return {}
+
+    evidence = _rel(summary_csv, suite_dir)
+
+    try:
+        rows = _read_csv_dict_rows(summary_csv)
+    except Exception:
+        return {"evidence": evidence, "warnings": ["failed_to_parse_gt_tolerance_sweep_summary"]}
+
+    if not rows:
+        return {"evidence": evidence, "warnings": ["empty_gt_tolerance_sweep_summary"]}
+
+    # Determine effective tolerance (prefer explicit field, else use gt_tolerance).
+    eff_tol: Optional[int] = None
+    for r in rows:
+        eff_tol = _to_int(r.get("gt_tolerance_effective"))
+        if eff_tol is not None:
+            break
+    if eff_tol is None:
+        eff_tol = _to_int(rows[0].get("gt_tolerance"))
+
+    # Choose the row corresponding to eff_tol when possible.
+    chosen: Dict[str, str] = dict(rows[0])
+    if eff_tol is not None:
+        for r in rows:
+            t = _to_int(r.get("gt_tolerance"))
+            if t is not None and t == eff_tol:
+                chosen = dict(r)
+                break
+
+    many_to_one = _to_int(chosen.get("many_to_one_clusters")) or 0
+    one_to_many = _to_int(chosen.get("one_to_many_gt_ids")) or 0
+    max_gt_ids = _to_int(chosen.get("max_gt_ids_per_cluster"))
+    max_clusters = _to_int(chosen.get("max_clusters_per_gt_id"))
+    clusters_total = _to_int(chosen.get("clusters_total"))
+
+    ambiguity = {
+        "clusters_total": clusters_total,
+        "gt_ids_covered": _to_int(chosen.get("gt_ids_covered")),
+        "many_to_one_clusters": many_to_one,
+        "one_to_many_gt_ids": one_to_many,
+        "max_gt_ids_per_cluster": max_gt_ids,
+        "max_clusters_per_gt_id": max_clusters,
+    }
+
+    warnings: List[str] = []
+    if many_to_one > 0:
+        warnings.append(f"many_to_one_clusters={many_to_one} (clusters overlap multiple GT IDs; may inflate TPs)")
+    if one_to_many > 0:
+        warnings.append(
+            f"one_to_many_gt_ids={one_to_many} (GT IDs overlap multiple clusters; may indicate tolerance too large)"
+        )
+    if max_gt_ids is not None and max_gt_ids > 1:
+        warnings.append(f"max_gt_ids_per_cluster={max_gt_ids}")
+    if max_clusters is not None and max_clusters > 1:
+        warnings.append(f"max_clusters_per_gt_id={max_clusters}")
+
+    return {
+        "evidence": evidence,
+        "gt_tolerance_effective": eff_tol,
+        "tolerance_policy": chosen.get("tolerance_policy") or None,
+        "gt_ambiguity": ambiguity,
+        "warnings": warnings,
+    }
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -566,6 +669,9 @@ def build_suite_report(
             "qa_calibration_manifest_json": _rel(analysis_dir / "qa_calibration_manifest.json", suite_dir)
             if (analysis_dir / "qa_calibration_manifest.json").exists()
             else None,
+            "gt_tolerance_sweep_summary_csv": _rel(analysis_dir / "gt_tolerance_sweep_summary.csv", suite_dir)
+            if (analysis_dir / "gt_tolerance_sweep_summary.csv").exists()
+            else None,
         },
         "top_gt_gap_cases": [
             {
@@ -587,6 +693,8 @@ def build_suite_report(
             for r in top_sev
         ],
     }
+
+    integrity = _load_gt_tolerance_integrity(suite_dir=suite_dir, analysis_dir=analysis_dir)
 
     report_json: Dict[str, Any] = {
         "suite_id": sid,
@@ -618,6 +726,7 @@ def build_suite_report(
             "macro_from_topk": macro_metrics,
             "ks": [10, 25, 50],
         },
+        "integrity": integrity,
         "action_items": action_items,
         "pointers": pointers,
         "cases": [asdict(r) for r in case_rows],
@@ -721,6 +830,41 @@ def _render_markdown(report: Dict[str, Any]) -> str:
             emitted = True
     if not emitted:
         lines.append("- (no suite-level artifacts found)")
+
+    # Integrity notes (GT tolerance ambiguity)
+    integrity = report.get("integrity") or {}
+    if isinstance(integrity, dict) and integrity:
+        lines.append("")
+        lines.append("## Integrity notes")
+        lines.append("")
+
+        ev = integrity.get("evidence")
+        eff_tol = integrity.get("gt_tolerance_effective")
+        pol = integrity.get("tolerance_policy")
+        amb = integrity.get("gt_ambiguity") if isinstance(integrity.get("gt_ambiguity"), dict) else None
+        warns = integrity.get("warnings") if isinstance(integrity.get("warnings"), list) else []
+
+        if ev:
+            lines.append(f"- evidence: `{ev}`")
+        if eff_tol is not None:
+            tail = f" (policy={pol})" if pol else ""
+            lines.append(f"- gt_tolerance_effective: `{eff_tol}`{tail}")
+        if amb:
+            lines.append(
+                "- ambiguity: "
+                f"many_to_one_clusters={amb.get('many_to_one_clusters')} "
+                f"one_to_many_gt_ids={amb.get('one_to_many_gt_ids')} "
+                f"max_gt_ids_per_cluster={amb.get('max_gt_ids_per_cluster')} "
+                f"max_clusters_per_gt_id={amb.get('max_clusters_per_gt_id')}"
+            )
+        if warns:
+            lines.append("- warnings:")
+            for w in warns:
+                if str(w).strip():
+                    lines.append(f"  - ⚠️ {str(w).strip()}")
+        else:
+            if amb:
+                lines.append("- warnings: (none)")
 
     lines.append("")
     lines.append("## Action items")
