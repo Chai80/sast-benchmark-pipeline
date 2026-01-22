@@ -1202,4 +1202,14 @@ def build_triage_eval(
     except Exception:
         pass
 
+
+    # Best-effort: generate a human-friendly suite report alongside suite-level artifacts.
+    # This is read-only (consumes existing JSON/CSV) and should never fail the eval build.
+    try:
+        from pipeline.analysis.suite_report import write_suite_report
+
+        write_suite_report(suite_dir=suite_dir, suite_id=sid, out_dir=suite_dir / out_dirname)
+    except Exception:
+        pass
+
     return summary
