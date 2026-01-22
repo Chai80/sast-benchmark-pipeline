@@ -115,6 +115,37 @@ def run_analyze(req: AnalyzeRequest) -> int:
         out_dir = Path(req.analysis_out_dir).resolve() if req.analysis_out_dir else default_out_dir
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # Suite QA calibration can persist a selected GT tolerance under the suite.
+        # To keep later analysis/calibration deterministic, prefer the recorded
+        # effective value when we're analyzing *inside* a suite layout.
+        effective_gt_tolerance = int(getattr(req, 'gt_tolerance', 0) or 0)
+        if is_suite_layout and (not bool(req.skip_suite_aggregate)):
+            try:
+                suite_dir = None
+                if case_dir is not None and getattr(case_dir.parent, 'name', None) == 'cases':
+                    suite_dir = case_dir.parent.parent
+
+                if suite_dir is not None:
+                    from pipeline.analysis.io.gt_tolerance_policy import resolve_effective_gt_tolerance
+
+                    pol = resolve_effective_gt_tolerance(
+                        suite_dir=suite_dir,
+                        requested=int(getattr(req, 'gt_tolerance', 0) or 0),
+                    )
+                    effective_gt_tolerance = int(pol.get('effective_gt_tolerance') or effective_gt_tolerance)
+                    src = str(pol.get('source') or '')
+
+                    if src in {'selection_json', 'suite_json'} and effective_gt_tolerance != int(
+                        getattr(req, 'gt_tolerance', 0) or 0
+                    ):
+                        print(f"\nℹ️  Using suite recorded gt_tolerance_effective={effective_gt_tolerance} (source={src})")
+                    for w in (pol.get('warnings') or []):
+                        if str(w).strip():
+                            print(f"  ⚠️  {w}")
+            except Exception:
+                # Best-effort: never block analysis due to policy resolution.
+                pass
+
         from pipeline.analysis.analyze_suite import run_suite
 
         summary = run_suite(
@@ -123,7 +154,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
             runs_dir=runs_dir,
             out_dir=out_dir,
             tolerance=int(req.tolerance),
-            gt_tolerance=int(req.gt_tolerance),
+            gt_tolerance=int(effective_gt_tolerance),
             gt_source=str(req.gt_source),
             mode=str(req.analysis_filter),
             exclude_prefixes=exclude_prefixes,

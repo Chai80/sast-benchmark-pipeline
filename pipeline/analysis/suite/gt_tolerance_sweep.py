@@ -633,6 +633,10 @@ def select_gt_tolerance_auto(rows: Sequence[Mapping[str, Any]], *, min_fraction:
 
     This is intentionally simple and explainable.
 
+    Guardrails
+    ----------
+    - Prefer candidates where analysis_rc==0 when that information is present.
+
     Warnings
     --------
     - Emits warnings if all tolerances produce 0 GT-positive clusters.
@@ -653,13 +657,31 @@ def select_gt_tolerance_auto(rows: Sequence[Mapping[str, Any]], *, min_fraction:
             "min_fraction": float(min_fraction),
             "max_gt_positive_clusters": 0,
             "required_min": 0,
+            "analysis_rc_filter_applied": False,
             "warnings": ["No sweep rows available; defaulting to gt_tolerance=0"],
         }
 
-    max_pos = max(int(_safe_int(r.get("gt_overlap_1"), 0)) for r in rr)
+    # Guardrail: if the sweep recorded per-candidate analysis_rc, prefer candidates
+    # that succeeded (analysis_rc==0). If none succeeded, fall back to all rows.
+    rr_used = rr
+    rc_filter_applied = False
+
+    any_failed = any(int(_safe_int(r.get("analysis_rc"), 0)) != 0 for r in rr)
+    if any_failed:
+        rr_ok = [r for r in rr if int(_safe_int(r.get("analysis_rc"), 0)) == 0]
+        if rr_ok:
+            rr_used = rr_ok
+            rc_filter_applied = True
+            warnings.append("Auto selection filtered to candidates with analysis_rc=0")
+        else:
+            warnings.append("All sweep candidates had analysis_rc>0; selecting among all candidates anyway")
+
+    max_pos = max(int(_safe_int(r.get("gt_overlap_1"), 0)) for r in rr_used)
 
     if max_pos <= 0:
-        warnings.append("All sweep candidates produced 0 GT-positive clusters (gt_overlap_1=0). GT authoring/matching may be broken.")
+        warnings.append(
+            "All sweep candidates produced 0 GT-positive clusters (gt_overlap_1=0). GT authoring/matching may be broken."
+        )
 
     mf = float(min_fraction)
     if mf <= 0:
@@ -671,7 +693,7 @@ def select_gt_tolerance_auto(rows: Sequence[Mapping[str, Any]], *, min_fraction:
     required = int(math.ceil((float(max_pos) * mf) - 1e-9)) if max_pos > 0 else 0
 
     chosen_row: Optional[Dict[str, Any]] = None
-    for r in rr:
+    for r in rr_used:
         pos = int(_safe_int(r.get("gt_overlap_1"), 0))
         if pos >= required:
             chosen_row = dict(r)
@@ -679,7 +701,7 @@ def select_gt_tolerance_auto(rows: Sequence[Mapping[str, Any]], *, min_fraction:
 
     if chosen_row is None:
         # Fallback: pick smallest tolerance
-        chosen_row = dict(rr[0])
+        chosen_row = dict(rr_used[0])
         warnings.append("Auto selection could not satisfy threshold; defaulting to smallest candidate")
 
     chosen = int(_safe_int(chosen_row.get("gt_tolerance"), 0))
@@ -704,6 +726,7 @@ def select_gt_tolerance_auto(rows: Sequence[Mapping[str, Any]], *, min_fraction:
         "min_fraction": float(mf),
         "max_gt_positive_clusters": int(max_pos),
         "required_min": int(required),
+        "analysis_rc_filter_applied": bool(rc_filter_applied),
         "selected_row": chosen_row,
         "warnings": warnings,
     }

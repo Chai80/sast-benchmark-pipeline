@@ -667,6 +667,36 @@ def _maybe_run_analysis(
         print("  ⚠️  no tool outputs found; skipping analysis")
         return None
 
+    # If this suite has an effective GT tolerance recorded (QA calibration),
+    # prefer it to keep benchmark/analyze outputs deterministic.
+    effective_gt_tolerance = int(getattr(req, 'gt_tolerance', 0) or 0)
+    try:
+        from pipeline.analysis.io.gt_tolerance_policy import resolve_effective_gt_tolerance
+
+        pol = resolve_effective_gt_tolerance(
+            suite_dir=suite_paths.suite_dir,
+            requested=int(getattr(req, 'gt_tolerance', 0) or 0),
+        )
+
+        effective_gt_tolerance = int(pol.get('effective_gt_tolerance') or effective_gt_tolerance)
+        src = str(pol.get('source') or '')
+
+        # Record only when the policy *changes* the effective value.
+        if src in {'selection_json', 'suite_json'} and effective_gt_tolerance != int(getattr(req, 'gt_tolerance', 0) or 0):
+            msg = (
+                f"gt_tolerance overridden by {src}: requested={int(getattr(req, 'gt_tolerance', 0) or 0)} "
+                f"effective={effective_gt_tolerance}"
+            )
+            case_warnings.append(msg)
+            print(f"  ℹ️  {msg}")
+
+        for w in (pol.get('warnings') or []):
+            if str(w).strip():
+                print(f"  ⚠️  {w}")
+    except Exception:
+        # Best-effort only.
+        pass
+
     from pipeline.analysis.analyze_suite import run_suite
 
     analysis_summary = run_suite(
@@ -675,7 +705,7 @@ def _maybe_run_analysis(
         runs_dir=suite_paths.tool_runs_dir,
         out_dir=suite_paths.analysis_dir,
         tolerance=int(req.tolerance),
-        gt_tolerance=int(req.gt_tolerance),
+        gt_tolerance=int(effective_gt_tolerance),
         gt_source=str(req.gt_source),
         mode=str(req.analysis_filter),
         exclude_prefixes=req.exclude_prefixes,
