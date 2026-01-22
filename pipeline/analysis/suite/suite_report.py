@@ -552,6 +552,10 @@ def build_suite_report(
             "triage_eval_by_case_csv": _rel(out_tables / "triage_eval_by_case.csv", suite_dir) if (out_tables / "triage_eval_by_case.csv").exists() else None,
             "triage_eval_topk_csv": _rel(out_tables / "triage_eval_topk.csv", suite_dir) if (out_tables / "triage_eval_topk.csv").exists() else None,
             "triage_calibration_json": _rel(analysis_dir / "triage_calibration.json", suite_dir) if (analysis_dir / "triage_calibration.json").exists() else None,
+            "triage_calibration_report_csv": _rel(out_tables / "triage_calibration_report.csv", suite_dir) if (out_tables / "triage_calibration_report.csv").exists() else None,
+            "triage_calibration_report_by_owasp_csv": _rel(out_tables / "triage_calibration_report_by_owasp.csv", suite_dir)
+            if (out_tables / "triage_calibration_report_by_owasp.csv").exists()
+            else None,
             "triage_eval_log": _rel(analysis_dir / "triage_eval.log", suite_dir) if (analysis_dir / "triage_eval.log").exists() else None,
             "qa_checklist_md": _rel(analysis_dir / "qa_checklist.md", suite_dir) if (analysis_dir / "qa_checklist.md").exists() else None,
             "qa_checklist_json": _rel(analysis_dir / "qa_checklist.json", suite_dir) if (analysis_dir / "qa_checklist.json").exists() else None,

@@ -17,6 +17,7 @@ Outputs
 -------
 - runs/suites/<suite_id>/analysis/triage_calibration.json
 - (optional) runs/suites/<suite_id>/analysis/_tables/triage_calibration_report.csv
+- (optional) runs/suites/<suite_id>/analysis/_tables/triage_calibration_report_by_owasp.csv
 - (best-effort) runs/suites/<suite_id>/analysis/triage_calibration.log
 
 Calibration spec (v1)
@@ -512,9 +513,54 @@ def build_triage_calibration(
             "tool_stats": stats,
         }
 
+
+    # Flatten per-OWASP tool stats into a single CSV report.
+    #
+    # This report is audit-friendly: it includes per-slice support and explicitly
+    # marks when a category would fall back to global weights due to low support.
+    report_by_owasp_rows: List[Dict[str, Any]] = []
+    min_support = int(params.min_support_by_owasp)
+
+    for n in range(1, 11):
+        oid = f"A{n:02d}"
+        slice_obj = tool_stats_by_owasp.get(oid)
+        if not isinstance(slice_obj, dict):
+            continue
+
+        support = slice_obj.get("support") if isinstance(slice_obj.get("support"), dict) else {}
+        support_clusters = _to_int(support.get("clusters"), default=0)
+        support_cases = _to_int(support.get("cases"), default=0)
+        gt_positive_clusters = _to_int(support.get("gt_positive_clusters"), default=0)
+
+        fallback_to_global = 1 if support_clusters < min_support else 0
+
+        stats = slice_obj.get("tool_stats") if isinstance(slice_obj.get("tool_stats"), list) else []
+        for row in stats:
+            if not isinstance(row, dict):
+                continue
+            tool = str(row.get("tool") or "").strip()
+            if not tool:
+                continue
+            report_by_owasp_rows.append(
+                {
+                    "owasp_id": oid,
+                    "tool": tool,
+                    "tp": _to_int(row.get("tp"), default=0),
+                    "fp": _to_int(row.get("fp"), default=0),
+                    "p_smoothed": row.get("p_smoothed"),
+                    "weight": row.get("weight"),
+                    "support_clusters": int(support_clusters),
+                    "support_cases": int(support_cases),
+                    "gt_positive_clusters": int(gt_positive_clusters),
+                    "min_support_by_owasp": int(min_support),
+                    "fallback_to_global": int(fallback_to_global),
+                }
+            )
+
     out_dir = suite_dir / out_dirname
     out_json = out_dir / "triage_calibration.json"
     out_report = out_dir / "_tables" / "triage_calibration_report.csv"
+    out_report_by_owasp = out_dir / "_tables" / "triage_calibration_report_by_owasp.csv"
     out_log = out_dir / "triage_calibration.log"
 
     payload: Dict[str, Any] = {
@@ -553,6 +599,24 @@ def build_triage_calibration(
             fieldnames=["tool", "tp", "fp", "p_smoothed", "weight"],
         )
 
+        write_csv(
+            out_report_by_owasp,
+            report_by_owasp_rows,
+            fieldnames=[
+                "owasp_id",
+                "tool",
+                "tp",
+                "fp",
+                "p_smoothed",
+                "weight",
+                "support_clusters",
+                "support_cases",
+                "gt_positive_clusters",
+                "min_support_by_owasp",
+                "fallback_to_global",
+            ],
+        )
+
     # Best-effort log: surface suspicious cases explicitly.
     try:
         lines: List[str] = []
@@ -580,6 +644,7 @@ def build_triage_calibration(
         "dataset_csv": str(dataset_csv),
         "out_json": str(out_json),
         "out_report_csv": str(out_report) if write_report_csv else "",
+        "out_report_by_owasp_csv": str(out_report_by_owasp) if write_report_csv else "",
         "included_cases": list(included_cases),
         "excluded_cases_no_gt": list(excluded_cases_no_gt),
         "suspicious_cases": list(suspicious_cases),

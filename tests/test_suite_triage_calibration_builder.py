@@ -36,6 +36,7 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
                 "tools_json",
                 "tools",
                 "gt_overlap",
+                "owasp_id",
             ]
 
             dataset_path = suite_dir / "analysis" / "_tables" / "triage_dataset.csv"
@@ -51,6 +52,7 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
                         "tools_json": "[\"semgrep\"]",
                         "tools": "semgrep",
                         "gt_overlap": "1",
+                        "owasp_id": "A01",
                     },
                     # case_one (has GT): semgrep+snyk negative
                     {
@@ -60,6 +62,7 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
                         "tools_json": "[\"semgrep\",\"snyk\"]",
                         "tools": "semgrep,snyk",
                         "gt_overlap": "0",
+                        "owasp_id": "A01",
                     },
                     # case_two (has GT): sonar negative (no overlaps in case -> suspicious)
                     {
@@ -69,6 +72,7 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
                         "tools_json": "[\"sonar\"]",
                         "tools": "sonar",
                         "gt_overlap": "0",
+                        "owasp_id": "A01",
                     },
                     # case_three (NO GT): should be excluded from learning
                     {
@@ -78,6 +82,7 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
                         "tools_json": "[\"snyk\"]",
                         "tools": "snyk",
                         "gt_overlap": "1",
+                        "owasp_id": "A01",
                     },
                 ],
             )
@@ -129,6 +134,23 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
             # Report CSV is optional but enabled by default.
             out_report = Path(str(summary.get("out_report_csv")))
             self.assertTrue(out_report.exists(), "Expected triage_calibration_report.csv to be written")
+
+            out_report_by_owasp = Path(str(summary.get("out_report_by_owasp_csv")))
+            self.assertTrue(out_report_by_owasp.exists(), "Expected triage_calibration_report_by_owasp.csv to be written")
+
+            with out_report_by_owasp.open("r", newline="", encoding="utf-8") as f:
+                by_owasp_rows = [r for r in csv.DictReader(f)]
+
+            self.assertTrue(by_owasp_rows, "Expected at least one per-OWASP row when owasp_id is present in dataset")
+            self.assertEqual(sorted({r.get("owasp_id") for r in by_owasp_rows}), ["A01"])
+
+            # With only 3 clusters in this slice and default min_support_by_owasp=10, we expect fallback.
+            first = by_owasp_rows[0]
+            self.assertEqual(first.get("min_support_by_owasp"), "10")
+            self.assertEqual(first.get("fallback_to_global"), "1")
+            self.assertEqual(first.get("support_clusters"), "3")
+            self.assertEqual(first.get("support_cases"), "2")
+            self.assertEqual(first.get("gt_positive_clusters"), "1")
 
 
 if __name__ == "__main__":
