@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 
-from pipeline.analysis.qa_calibration_runbook import all_ok, validate_calibration_suite_artifacts
+from pipeline.analysis.qa.qa_calibration_runbook import all_ok, validate_calibration_suite_artifacts
 
 
 class TestQACalibrationRunbook(unittest.TestCase):
@@ -76,7 +76,7 @@ class TestQACalibrationRunbook(unittest.TestCase):
             )
 
             (suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").write_text(
-                json.dumps({"strategies": ["baseline", "agreement", "calibrated"]}, indent=2),
+                json.dumps({"strategies": ["baseline", "agreement", "calibrated_global", "calibrated"]}, indent=2),
                 encoding="utf-8",
             )
 
@@ -163,6 +163,9 @@ class TestQACalibrationRunbook(unittest.TestCase):
 
             self.assertIn("triage_eval_summary includes strategy calibrated", by_name)
             self.assertFalse(by_name["triage_eval_summary includes strategy calibrated"].ok)
+
+            self.assertIn("triage_eval_summary includes strategy calibrated_global", by_name)
+            self.assertFalse(by_name["triage_eval_summary includes strategy calibrated_global"].ok)
 
 
 if __name__ == "__main__":
