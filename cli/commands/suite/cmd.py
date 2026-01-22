@@ -592,37 +592,42 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         # ------------------------------------------------------------------
         # Suite-level evaluation: triage ranking quality + tool utility
         # ------------------------------------------------------------------
-        try:
-            from pipeline.analysis.suite_triage_eval import build_triage_eval
-
-            ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
-
-            print("\n📈 Suite triage_eval")
-            print(f"  Summary : {ev.get('out_summary_json')}")
-            print(f"  By-case : {ev.get('out_by_case_csv')}")
-            print(f"  Tools   : {ev.get('out_tool_utility_csv')}")
-
-            # Drop-one tool marginal value table (if computed). This is the
-            # most direct answer to: "what happens if we remove tool X?".
-            # It is optional because callers may disable tool-marginal during
-            # expensive sweeps.
-            if ev.get("out_tool_marginal_csv"):
-                print(f"  Marginal: {ev.get('out_tool_marginal_csv')}")
-
-            # Print a compact macro snapshot for Ks that matter for triage (top-1/top-3/top-5).
+        # In QA calibration mode, we run triage_eval *after* the re-analyze pass
+        # so the end-to-end story is deterministic:
+        #   dataset → calibration → reanalyze → eval → report → checklist.
+        # (triage_eval itself does not depend on the re-analyze, but humans do.)
+        if not qa_mode:
             try:
-                ks_list = ev.get("ks") or [1, 3, 5, 10, 25]
-                for k in ks_list:
-                    for strat in ["baseline", "agreement", "calibrated"]:
-                        ks = ev.get("macro", {}).get(strat, {}).get(str(k))
-                        if ks:
-                            mp = ks.get("precision")
-                            mc = ks.get("gt_coverage")
-                            print(f"  {strat} macro@{k}: precision={mp} coverage={mc}")
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"\n⚠️  Failed to build suite triage_eval: {e}")
+                from pipeline.analysis.suite_triage_eval import build_triage_eval
+
+                ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
+
+                print("\n📈 Suite triage_eval")
+                print(f"  Summary : {ev.get('out_summary_json')}")
+                print(f"  By-case : {ev.get('out_by_case_csv')}")
+                print(f"  Tools   : {ev.get('out_tool_utility_csv')}")
+
+                # Drop-one tool marginal value table (if computed). This is the
+                # most direct answer to: "what happens if we remove tool X?".
+                # It is optional because callers may disable tool-marginal during
+                # expensive sweeps.
+                if ev.get("out_tool_marginal_csv"):
+                    print(f"  Marginal: {ev.get('out_tool_marginal_csv')}")
+
+                # Print a compact macro snapshot for Ks that matter for triage (top-1/top-3/top-5).
+                try:
+                    ks_list = ev.get("ks") or [1, 3, 5, 10, 25]
+                    for k in ks_list:
+                        for strat in ["baseline", "agreement", "calibrated"]:
+                            ks = ev.get("macro", {}).get(strat, {}).get(str(k))
+                            if ks:
+                                mp = ks.get("precision")
+                                mc = ks.get("gt_coverage")
+                                print(f"  {strat} macro@{k}: precision={mp} coverage={mc}")
+                except Exception:
+                    pass
+            except Exception as e:
+                print(f"\n⚠️  Failed to build suite triage_eval: {e}")
 
     # ------------------------------------------------------------------
     # QA calibration runbook: second pass analyze + deterministic checklist
@@ -661,6 +666,32 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                     rc_code2 = 2
 
                 overall = max(overall, rc_code2)
+
+        # ------------------------------------------------------------------
+        # QA runbook steps (deterministic, single flow)
+        # ------------------------------------------------------------------
+        # 1) triage_dataset (built earlier)
+        # 2) triage_calibration (built earlier)
+        # 3) re-analyze (above; may be skipped with --qa-no-reanalyze)
+        # 4) triage_eval (here)
+        # 5) suite_report (below)
+        # 6) QA checklist artifacts (last)
+
+        # Suite-level evaluation (triage ranking quality + tool utility)
+        try:
+            from pipeline.analysis.suite_triage_eval import build_triage_eval
+
+            ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
+
+            print("\n📈 Suite triage_eval (QA)")
+            print(f"  Summary : {ev.get('out_summary_json')}")
+            print(f"  By-case : {ev.get('out_by_case_csv')}")
+            print(f"  Tools   : {ev.get('out_tool_utility_csv')}")
+
+            if ev.get("out_tool_marginal_csv"):
+                print(f"  Marginal: {ev.get('out_tool_marginal_csv')}")
+        except Exception as e:
+            print(f"\n⚠️  Failed to build suite triage_eval (QA): {e}")
 
         # PASS/FAIL checklist
         # Write GT tolerance selection/policy artifact for CI reproducibility.
@@ -709,10 +740,11 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
             print(f"\n❌ Failed to write GT tolerance selection file: {e}")
             overall = max(overall, 2)
 
+        # Validate suite artifacts (filesystem-first).
+        checks: List[object] = []
         try:
             from pipeline.analysis.qa_calibration_runbook import (
                 all_ok,
-                render_checklist,
                 validate_calibration_suite_artifacts,
             )
 
@@ -723,26 +755,21 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 expect_gt_tolerance_sweep=bool(sweep_raw or sweep_auto),
                 expect_gt_tolerance_selection=True,
             )
+
             qa_checklist_pass = bool(all_ok(checks))
-            report = render_checklist(checks, title="QA calibration checklist")
-            print(report)
-
-            # Write next to other suite-level analysis artifacts for CI scraping.
-            try:
-                out_path = (suite_dir / "analysis" / "qa_calibration_checklist.txt").resolve()
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                out_path.write_text(report, encoding="utf-8")
-                print(f"\n📝 Wrote checklist: {out_path}")
-            except Exception as e:
-                print(f"\n⚠️  Failed to write checklist file: {e}")
-
-            if not all_ok(checks):
-                overall = max(overall, 2)
         except Exception as e:
             print(f"\n❌ QA calibration validation failed: {e}")
             overall = max(overall, 2)
+            qa_checklist_pass = False
+            checks = []
+
+        if not bool(qa_checklist_pass):
+            overall = max(overall, 2)
 
         # QA manifest (best-effort). Write even on FAIL for CI scraping.
+        #
+        # We write this before suite_report so the report can include the
+        # checklist/exit_code without scraping stdout.
         try:
             from pipeline.analysis.qa_calibration_manifest import (
                 GTTolerancePolicyRecord,
@@ -755,6 +782,8 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 "triage_dataset_csv": str((suite_dir / "analysis" / "_tables" / "triage_dataset.csv").resolve()),
                 "triage_calibration_json": str((suite_dir / "analysis" / "triage_calibration.json").resolve()),
                 "triage_eval_summary_json": str((suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").resolve()),
+                "suite_report_md": str((suite_dir / "analysis" / "suite_report.md").resolve()),
+                "suite_report_json": str((suite_dir / "analysis" / "suite_report.json").resolve()),
                 # Tool contribution / marginal value (suite-level)
                 # These are produced by build_triage_eval and are the most
                 # recruiter-friendly "ROI" outputs:
@@ -762,6 +791,9 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 # - triage_tool_marginal: drop-one deltas (remove tool X)
                 "triage_tool_utility_csv": str((suite_dir / "analysis" / "_tables" / "triage_tool_utility.csv").resolve()),
                 "triage_tool_marginal_csv": str((suite_dir / "analysis" / "_tables" / "triage_tool_marginal.csv").resolve()),
+                # QA checklist artifacts (canonical JSON/MD + legacy TXT)
+                "qa_checklist_json": str((suite_dir / "analysis" / "qa_checklist.json").resolve()),
+                "qa_checklist_md": str((suite_dir / "analysis" / "qa_checklist.md").resolve()),
                 "qa_checklist_txt": str((suite_dir / "analysis" / "qa_calibration_checklist.txt").resolve()),
                 "gt_tolerance_selection_json": gt_selection_path,
             }
@@ -771,7 +803,9 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                     {
                         "gt_tolerance_sweep_report_csv": gt_sweep_report_csv,
                         "gt_tolerance_sweep_payload_json": gt_sweep_payload_json,
-                        "gt_tolerance_sweep_tool_stats_csv": str((suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_tool_stats.csv").resolve()),
+                        "gt_tolerance_sweep_tool_stats_csv": str(
+                            (suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_tool_stats.csv").resolve()
+                        ),
                     }
                 )
 
@@ -807,7 +841,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
                 gt_policy=gt_policy,
                 artifacts=artifacts,
                 exit_code=int(overall),
-                checklist_pass=qa_checklist_pass,
+                checklist_pass=bool(qa_checklist_pass),
             )
 
             out_manifest = write_qa_calibration_manifest(suite_dir=suite_dir, manifest=manifest)
@@ -820,6 +854,70 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
 
         except Exception as e:
             print(f"\n❌ Failed to write QA manifest: {e}")
+            overall = max(overall, 2)
+
+        # Suite report (human-friendly).
+        rep_paths: Dict[str, Any] = {}
+        try:
+            from pipeline.analysis.suite_report import write_suite_report
+
+            rep_paths = write_suite_report(suite_dir=suite_dir, suite_id=str(suite_id))
+            print("\n📄 Suite report")
+            print(f"  Markdown: {rep_paths.get('out_md')}")
+            print(f"  JSON    : {rep_paths.get('out_json')}")
+        except Exception as e:
+            print(f"\n⚠️  Failed to build suite_report: {e}")
+            rep_paths = {}
+
+        # Surface suite_report as a QA warning if missing (non-fatal).
+        try:
+            from pipeline.analysis.qa_calibration_runbook import QACheck
+
+            md_path = Path(str(rep_paths.get("out_md") or (suite_dir / "analysis" / "suite_report.md"))).resolve()
+            js_path = Path(str(rep_paths.get("out_json") or (suite_dir / "analysis" / "suite_report.json"))).resolve()
+            checks.append(
+                QACheck(
+                    name="analysis/suite_report.md exists",
+                    ok=True,
+                    warn=not md_path.exists(),
+                    path=str(md_path),
+                    detail="" if md_path.exists() else "missing",
+                )
+            )
+            checks.append(
+                QACheck(
+                    name="analysis/suite_report.json exists",
+                    ok=True,
+                    warn=not js_path.exists(),
+                    path=str(js_path),
+                    detail="" if js_path.exists() else "missing",
+                )
+            )
+        except Exception:
+            pass
+
+        # Final step: render + write checklist artifacts (JSON/MD + legacy TXT).
+        try:
+            from pipeline.analysis.qa_calibration_runbook import (
+                render_checklist,
+                write_qa_checklist_artifacts,
+            )
+
+            report = render_checklist(list(checks), title="QA calibration checklist")
+            print(report)
+
+            out_paths = write_qa_checklist_artifacts(
+                checks,
+                suite_dir=suite_dir,
+                suite_id=str(suite_id),
+                title="QA calibration checklist",
+            )
+            print("\n📝 Wrote QA checklist artifacts")
+            print(f"  JSON : {out_paths.get('out_json')}")
+            print(f"  MD   : {out_paths.get('out_md')}")
+            print(f"  TXT  : {out_paths.get('out_txt')}")
+        except Exception as e:
+            print(f"\n⚠️  Failed to write QA checklist artifacts: {e}")
             overall = max(overall, 2)
     print("\n✅ Suite complete")
     print(f"  Suite id : {suite_id}")

@@ -27,10 +27,22 @@ not meaningful. See docs/triage_calibration.md for guidance.
 import csv
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from pipeline.analysis.io.write_artifacts import write_json
 from pipeline.analysis.io.config_receipts import summarize_scanner_config
+
+
+QA_CHECKLIST_SCHEMA_V1 = "qa_checklist_v1"
+
+# Canonical filenames for deterministic CI scraping.
+QA_CHECKLIST_JSON_FILENAME = "qa_checklist.json"
+QA_CHECKLIST_MD_FILENAME = "qa_checklist.md"
+
+# Backwards-compatible alias for existing scripts/tests.
+QA_CHECKLIST_TXT_LEGACY_FILENAME = "qa_calibration_checklist.txt"
 
 
 @dataclass(frozen=True)
@@ -62,6 +74,166 @@ def render_checklist(checks: List[QACheck], *, title: str = "QA calibration chec
     overall_ok = all(c.ok for c in checks)
     lines.append(f"\nOverall: {'PASS' if overall_ok else 'FAIL'}")
     return "\n".join(lines)
+
+
+def _now_iso_utc() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def checklist_to_dict(
+    checks: Sequence[QACheck],
+    *,
+    suite_dir: str | Path,
+    suite_id: Optional[str] = None,
+    title: str = "QA calibration checklist",
+) -> Dict[str, Any]:
+    """Serialize a QA checklist to a stable JSON payload.
+
+    This is intentionally small and filesystem-first. The checklist itself
+    *proves what ran* by asserting required artifacts exist.
+    """
+
+    sd = Path(suite_dir).resolve()
+    sid = str(suite_id) if suite_id else sd.name
+
+    checks_list: List[Dict[str, Any]] = []
+    pass_n = 0
+    warn_n = 0
+    fail_n = 0
+    for c in checks:
+        ok = bool(c.ok)
+        warn = bool(getattr(c, "warn", False))
+        if ok and warn:
+            warn_n += 1
+        elif ok:
+            pass_n += 1
+        else:
+            fail_n += 1
+
+        checks_list.append(
+            {
+                "name": str(c.name),
+                "ok": bool(ok),
+                "warn": bool(warn),
+                "path": str(c.path or ""),
+                "detail": str(c.detail or ""),
+            }
+        )
+
+    overall_ok = all_ok(checks)
+
+    return {
+        "schema_version": QA_CHECKLIST_SCHEMA_V1,
+        "generated_at": _now_iso_utc(),
+        "title": str(title),
+        "suite": {
+            "suite_id": sid,
+            "suite_dir": str(sd),
+        },
+        "summary": {
+            "overall": "PASS" if overall_ok else "FAIL",
+            "overall_ok": bool(overall_ok),
+            "checks_total": int(len(checks_list)),
+            "pass": int(pass_n),
+            "warn": int(warn_n),
+            "fail": int(fail_n),
+        },
+        "checks": checks_list,
+    }
+
+
+def render_checklist_markdown(
+    checks: Sequence[QACheck],
+    *,
+    title: str = "QA calibration checklist",
+    suite_dir: Optional[str | Path] = None,
+    suite_id: Optional[str] = None,
+) -> str:
+    """Render a markdown checklist for humans (GitHub-friendly)."""
+
+    sd: Optional[Path] = None
+    if suite_dir is not None:
+        try:
+            sd = Path(suite_dir).resolve()
+        except Exception:
+            sd = None
+
+    sid = str(suite_id) if suite_id else (sd.name if sd is not None else "")
+    overall_ok = all_ok(checks)
+
+    lines: List[str] = []
+    lines.append(f"# {title}")
+    lines.append("")
+    if sid:
+        lines.append(f"- suite_id: `{sid}`")
+    if sd is not None:
+        lines.append(f"- suite_dir: `{sd}`")
+    lines.append(f"- generated_at: `{_now_iso_utc()}`")
+    lines.append(f"- overall: **{'PASS' if overall_ok else 'FAIL'}**")
+    lines.append("")
+
+    lines.append("## Checks")
+    lines.append("")
+    for c in checks:
+        ok = bool(c.ok)
+        warn = bool(getattr(c, "warn", False))
+        icon = "✅" if ok else "❌"
+        if ok and warn:
+            icon = "⚠️"
+        lines.append(f"- {icon} {c.name}")
+        if (not ok) or warn:
+            if c.path:
+                lines.append(f"  - path: `{c.path}`")
+            if c.detail:
+                lines.append(f"  - detail: {c.detail}")
+
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def write_qa_checklist_artifacts(
+    checks: Sequence[QACheck],
+    *,
+    suite_dir: str | Path,
+    suite_id: Optional[str] = None,
+    title: str = "QA calibration checklist",
+    out_dirname: str = "analysis",
+    json_filename: str = QA_CHECKLIST_JSON_FILENAME,
+    md_filename: str = QA_CHECKLIST_MD_FILENAME,
+    legacy_txt_filename: str = QA_CHECKLIST_TXT_LEGACY_FILENAME,
+) -> Dict[str, str]:
+    """Write checklist artifacts under runs/suites/<suite_id>/analysis/.
+
+    Outputs
+    -------
+    - analysis/qa_checklist.json (canonical, stable for CI)
+    - analysis/qa_checklist.md (human-friendly)
+    - analysis/qa_calibration_checklist.txt (legacy alias for compatibility)
+    """
+
+    sd = Path(suite_dir).resolve()
+    sid = str(suite_id) if suite_id else sd.name
+    out_dir = (sd / out_dirname).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    payload = checklist_to_dict(checks, suite_dir=sd, suite_id=sid, title=title)
+    out_json = (out_dir / json_filename).resolve()
+    write_json(out_json, payload)
+
+    md = render_checklist_markdown(checks, title=title, suite_dir=sd, suite_id=sid)
+    out_md = (out_dir / md_filename).resolve()
+    out_md.write_text(md, encoding="utf-8")
+
+    # Preserve the existing legacy filename used by tests and scripts.
+    txt = render_checklist(list(checks), title=title)
+    out_txt = (out_dir / legacy_txt_filename).resolve()
+    out_txt.write_text(txt, encoding="utf-8")
+
+    return {
+        "out_json": str(out_json),
+        "out_md": str(out_md),
+        "out_txt": str(out_txt),
+    }
 
 
 def all_ok(checks: Sequence[QACheck]) -> bool:
