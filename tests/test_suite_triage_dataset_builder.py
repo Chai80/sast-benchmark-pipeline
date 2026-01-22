@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipeline.analysis.suite_triage_dataset import build_triage_dataset
+from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
 
 
 class TestSuiteTriageDatasetBuilder(unittest.TestCase):

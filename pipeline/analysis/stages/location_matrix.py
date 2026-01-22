@@ -11,7 +11,9 @@ from pipeline.analysis.utils.signatures import cluster_locations
 
 from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
-from ._shared import build_location_items, max_severity
+from .common.locations import build_location_items
+from .common.severity import max_severity
+from .common.store_keys import StoreKeys
 
 
 @register_stage(
@@ -22,7 +24,7 @@ from ._shared import build_location_items, max_severity
 def stage_location_matrix(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     items = build_location_items(ctx, store)
     clusters = cluster_locations(items, tolerance=ctx.tolerance, repo_name=ctx.repo_name)
-    store.put("location_clusters", clusters)
+    store.put(StoreKeys.LOCATION_CLUSTERS, clusters)
 
     tools = list(ctx.tools)
 
@@ -47,7 +49,7 @@ def stage_location_matrix(ctx: AnalysisContext, store: ArtifactStore) -> Dict[st
             }
         )
 
-    store.put("location_matrix_rows", rows)
+    store.put(StoreKeys.LOCATION_MATRIX_ROWS, rows)
 
     out_json = Path(ctx.out_dir) / "location_matrix.json"
     out_csv = Path(ctx.out_dir) / "location_matrix.csv"

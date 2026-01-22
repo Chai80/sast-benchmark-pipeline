@@ -418,7 +418,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
             gt_sweep_payload_json = str((suite_dir / "analysis" / "gt_tolerance_sweep.json").resolve())
 
             try:
-                from pipeline.analysis.gt_tolerance_sweep import (
+                from pipeline.analysis.suite.gt_tolerance_sweep import (
                     disable_suite_calibration,
                     parse_gt_tolerance_candidates,
                     run_gt_tolerance_sweep,
@@ -530,7 +530,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         # From this point on, the rest of the runbook assumes the *effective*
         # gt_tolerance has been applied (either explicit or auto-selected).
         try:
-            from pipeline.analysis.suite_triage_dataset import build_triage_dataset
+            from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
 
             ds = build_triage_dataset(suite_dir=suite_dir, suite_id=suite_id)
 
@@ -569,7 +569,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         # This is a best-effort step. If GT is missing for many cases, the
         # calibration builder will exclude those cases explicitly.
         try:
-            from pipeline.analysis.suite_triage_calibration import build_triage_calibration
+            from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibration
 
             cal = build_triage_calibration(suite_dir=suite_dir, suite_id=suite_id)
 
@@ -598,7 +598,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         # (triage_eval itself does not depend on the re-analyze, but humans do.)
         if not qa_mode:
             try:
-                from pipeline.analysis.suite_triage_eval import build_triage_eval
+                from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
                 ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
 
@@ -679,7 +679,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
 
         # Suite-level evaluation (triage ranking quality + tool utility)
         try:
-            from pipeline.analysis.suite_triage_eval import build_triage_eval
+            from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
             ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
 
@@ -699,7 +699,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         # This is required in QA mode so that CI can recover the effective
         # gt_tolerance (explicit vs sweep vs auto) without parsing stdout.
         try:
-            from pipeline.analysis.gt_tolerance_sweep import write_gt_tolerance_selection
+            from pipeline.analysis.suite.gt_tolerance_sweep import write_gt_tolerance_selection
 
             eff_tol = int(getattr(args, "gt_tolerance", 0) or 0)
 
@@ -743,7 +743,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         # Validate suite artifacts (filesystem-first).
         checks: List[object] = []
         try:
-            from pipeline.analysis.qa_calibration_runbook import (
+            from pipeline.analysis.qa.qa_calibration_runbook import (
                 all_ok,
                 validate_calibration_suite_artifacts,
             )
@@ -771,7 +771,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         # We write this before suite_report so the report can include the
         # checklist/exit_code without scraping stdout.
         try:
-            from pipeline.analysis.qa_calibration_manifest import (
+            from pipeline.analysis.qa.qa_calibration_manifest import (
                 GTTolerancePolicyRecord,
                 build_qa_calibration_manifest,
                 write_qa_calibration_manifest,
@@ -859,7 +859,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
         # Suite report (human-friendly).
         rep_paths: Dict[str, Any] = {}
         try:
-            from pipeline.analysis.suite_report import write_suite_report
+            from pipeline.analysis.suite.suite_report import write_suite_report
 
             rep_paths = write_suite_report(suite_dir=suite_dir, suite_id=str(suite_id))
             print("\n📄 Suite report")
@@ -871,7 +871,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
 
         # Surface suite_report as a QA warning if missing (non-fatal).
         try:
-            from pipeline.analysis.qa_calibration_runbook import QACheck
+            from pipeline.analysis.qa.qa_calibration_runbook import QACheck
 
             md_path = Path(str(rep_paths.get("out_md") or (suite_dir / "analysis" / "suite_report.md"))).resolve()
             js_path = Path(str(rep_paths.get("out_json") or (suite_dir / "analysis" / "suite_report.json"))).resolve()
@@ -898,7 +898,7 @@ def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *,
 
         # Final step: render + write checklist artifacts (JSON/MD + legacy TXT).
         try:
-            from pipeline.analysis.qa_calibration_runbook import (
+            from pipeline.analysis.qa.qa_calibration_runbook import (
                 render_checklist,
                 write_qa_checklist_artifacts,
             )

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from cli.utils.suite_picker import resolve_suite_dir_ref
-from pipeline.analysis.suite_compare_report import build_suite_compare_report
+from pipeline.analysis.suite.suite_compare_report import build_suite_compare_report
 
 
 class TestSuiteCompareReport(unittest.TestCase):

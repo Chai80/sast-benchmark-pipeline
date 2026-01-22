@@ -10,6 +10,8 @@ from typing import Any, Dict, List
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
 
+from .common.locations import ensure_location_clusters
+from .common.store_keys import StoreKeys
 
 @register_stage(
     "pairwise_agreement",
@@ -17,9 +19,7 @@ from pipeline.analysis.io.write_artifacts import write_csv, write_json
     description="Compute pairwise Jaccard similarity across tools over clustered locations.",
 )
 def stage_pairwise(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
-    clusters = store.get("location_clusters") or []
-    if not isinstance(clusters, list):
-        clusters = []
+    clusters = ensure_location_clusters(ctx, store)
 
     tool_to_clusters: Dict[str, set[str]] = {t: set() for t in ctx.tools}
     for c in clusters:
@@ -47,7 +47,7 @@ def stage_pairwise(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
             }
         )
 
-    store.put("pairwise_rows", rows)
+    store.put(StoreKeys.PAIRWISE_ROWS, rows)
 
     out_csv = Path(ctx.out_dir) / "pairwise_agreement.csv"
     out_json = Path(ctx.out_dir) / "pairwise_agreement.json"

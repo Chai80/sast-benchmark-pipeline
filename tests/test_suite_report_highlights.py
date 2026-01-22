@@ -40,6 +40,13 @@ class TestSuiteReportHighlights(unittest.TestCase):
             (suite_dir / "analysis" / "qa_checklist.md").write_text("# QA\n", encoding="utf-8")
             (suite_dir / "analysis" / "qa_calibration_checklist.txt").write_text("PASS\n", encoding="utf-8")
 
+            # Tolerance evidence (C3 integrity notes)
+            (suite_dir / "analysis" / "gt_tolerance_sweep_summary.csv").write_text(
+                "gt_tolerance,gt_tolerance_effective,tolerance_policy,clusters_total,gt_ids_covered,many_to_one_clusters,one_to_many_gt_ids,max_gt_ids_per_cluster,max_clusters_per_gt_id\n"
+                "0,0,fixed,10,3,1,0,2,1\n",
+                encoding="utf-8",
+            )
+
             # Two cases with different gap_total and severities to make ordering deterministic.
             cases = [
                 ("A01", 1, "LOW"),
@@ -101,3 +108,6 @@ class TestSuiteReportHighlights(unittest.TestCase):
             # A02 should appear (largest gap_total)
             self.assertIn("`A02`", md)
             self.assertIn("Where to click", md)
+            # C3: integrity notes should surface tolerance ambiguity when evidence is present
+            self.assertIn("## Integrity notes", md)
+            self.assertIn("many_to_one_clusters=1", md)

@@ -6,17 +6,13 @@ from typing import Any, Dict, List
 
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_json
-from pipeline.analysis.utils.signatures import cluster_locations
-
-from pipeline.analysis.stages._shared import build_location_items, max_severity
+from pipeline.analysis.stages.common.locations import ensure_location_clusters
+from pipeline.analysis.stages.common.severity import max_severity
+from pipeline.analysis.stages.common.store_keys import StoreKeys
 
 
 def build_hotspot_drilldown_pack(ctx: AnalysisContext, store: ArtifactStore, *, limit: int = 200) -> Dict[str, Any]:
-    clusters = store.get("location_clusters")
-    if not isinstance(clusters, list):
-        items = build_location_items(ctx, store)
-        clusters = cluster_locations(items, tolerance=ctx.tolerance, repo_name=ctx.repo_name)
-        store.put("location_clusters", clusters)
+    clusters = ensure_location_clusters(ctx, store)
 
     out_rows: List[Dict[str, Any]] = []
     for c in clusters[: max(0, int(limit))]:
@@ -72,7 +68,7 @@ def stage_drilldown_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
     out_path = Path(ctx.out_dir) / "hotspot_drilldown_pack.json"
     write_json(out_path, pack)
     store.add_artifact("hotspot_drilldown_pack", out_path)
-    store.put("hotspot_drilldown_pack", pack)
+    store.put(StoreKeys.HOTSPOT_DRILLDOWN_PACK, pack)
     return {"hotspots": len(pack.get("hotspots") or [])}
 
 

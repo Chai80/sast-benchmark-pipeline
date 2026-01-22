@@ -13,11 +13,11 @@ from pipeline.analysis.suite.suite_triage_calibration import (
     triage_score_v1,
 )
 from pipeline.analysis.utils.owasp import infer_owasp
-from pipeline.analysis.utils.signatures import cluster_locations
-
 from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
-from ._shared import build_location_items, max_severity, severity_rank
+from .common.locations import ensure_location_clusters
+from .common.severity import max_severity, severity_rank
+from .common.store_keys import StoreKeys
 
 
 TRIAGE_QUEUE_SCHEMA_VERSION = "v1"
@@ -172,11 +172,7 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
             cal = None
             cal_weights = {}
 
-    clusters = store.get("location_clusters")
-    if not isinstance(clusters, list):
-        items = build_location_items(ctx, store)
-        clusters = cluster_locations(items, tolerance=ctx.tolerance, repo_name=ctx.repo_name)
-        store.put("location_clusters", clusters)
+    clusters = ensure_location_clusters(ctx, store)
 
     rows: List[Dict[str, Any]] = []
     for c in clusters:
@@ -237,7 +233,7 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     # If calibration does not exist, keep the baseline ordering unchanged.
     rank_triage_rows(rows, calibrated=bool(cal))
 
-    store.put("triage_rows", rows)
+    store.put(StoreKeys.TRIAGE_ROWS, rows)
 
     out_csv = Path(ctx.out_dir) / "triage_queue.csv"
     out_json = Path(ctx.out_dir) / "triage_queue.json"

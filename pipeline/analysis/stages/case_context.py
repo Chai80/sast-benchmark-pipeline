@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_json
 
+from .common.store_keys import StoreKeys
+
 
 def _find_case_dir(ctx: AnalysisContext) -> Optional[Path]:
     """Best-effort locate the case directory in suite mode.
@@ -76,7 +78,7 @@ def stage_diagnostics_case_context(ctx: AnalysisContext, store: ArtifactStore) -
     out_path = Path(ctx.out_dir) / "diagnostics_case_context.json"
     write_json(out_path, report)
     store.add_artifact("diagnostics_case_context", out_path)
-    store.put("diagnostics_case_context", report)
+    store.put(StoreKeys.DIAGNOSTICS_CASE_CONTEXT, report)
 
     if mismatches:
         store.add_warning(

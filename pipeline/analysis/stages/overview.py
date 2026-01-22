@@ -13,7 +13,8 @@ from pipeline.analysis.utils.path_norm import is_excluded_path, normalize_file_p
 
 from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
-from ._shared import load_normalized_json
+from .common.findings import load_normalized_json
+from .common.store_keys import StoreKeys
 
 
 def analyze_latest_hotspots_for_repo(
@@ -141,7 +142,7 @@ def stage_overview(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         mode=ctx.mode,
         exclude_prefixes=getattr(ctx, "exclude_prefixes", ()) or (),
     )
-    store.put("overview_report", report)
+    store.put(StoreKeys.OVERVIEW_REPORT, report)
 
     out_path = Path(ctx.out_dir) / "latest_hotspots_by_file.json"
     write_json(out_path, report)

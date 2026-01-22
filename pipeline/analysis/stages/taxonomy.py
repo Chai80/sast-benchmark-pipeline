@@ -13,7 +13,8 @@ from tools.normalize.classification import resolve_owasp_and_cwe
 
 from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
-from ._shared import load_findings_by_tool
+from .common.findings import load_findings_by_tool
+from .common.store_keys import StoreKeys
 
 
 def _repo_root() -> Path:
@@ -96,10 +97,10 @@ def _choose_codes(resolved: Dict[str, Any], *, prefer: str = "canonical") -> Lis
 def stage_taxonomy(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     fb = load_findings_by_tool(ctx, store)
 
-    cwe_map = store.get("cwe_to_owasp_map")
+    cwe_map = store.get(StoreKeys.CWE_TO_OWASP_MAP)
     if not isinstance(cwe_map, dict) or not cwe_map:
         cwe_map = _load_cwe_to_owasp_map()
-        store.put("cwe_to_owasp_map", cwe_map)
+        store.put(StoreKeys.CWE_TO_OWASP_MAP, cwe_map)
 
     counts: Dict[str, Counter] = defaultdict(Counter)
     total: Dict[str, int] = defaultdict(int)
@@ -136,7 +137,7 @@ def stage_taxonomy(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
                 }
             )
 
-    store.put("taxonomy_rows", rows)
+    store.put(StoreKeys.TAXONOMY_ROWS, rows)
 
     out_csv = Path(ctx.out_dir) / "taxonomy_analysis.csv"
     out_json = Path(ctx.out_dir) / "taxonomy_analysis.json"

@@ -9,10 +9,11 @@ from typing import Any, Dict, List, Optional
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_csv
 from pipeline.analysis.utils.path_norm import normalize_file_path
-from pipeline.analysis.utils.signatures import cluster_locations
 from pipeline.analysis.utils.owasp import infer_owasp
 
-from ._shared import build_location_items, max_severity, severity_rank
+from .common.locations import build_location_items, ensure_location_clusters
+from .common.severity import max_severity, severity_rank
+from .common.store_keys import StoreKeys
 
 
 # ---------------------------------------------------------------------------
@@ -246,14 +247,10 @@ def stage_triage_features(ctx: AnalysisContext, store: ArtifactStore) -> Dict[st
     tags_json = json.dumps(raw_tags or {}, sort_keys=True)
 
     # Prefer existing clusters from earlier stages.
-    clusters = store.get("location_clusters")
-    if not isinstance(clusters, list):
-        items = build_location_items(ctx, store)
-        clusters = cluster_locations(items, tolerance=int(ctx.tolerance), repo_name=ctx.repo_name)
-        store.put("location_clusters", clusters)
+    clusters = ensure_location_clusters(ctx, store)
 
     # Optional triage rank (if triage_queue already ran)
-    triage_rows = store.get("triage_rows") or []
+    triage_rows = store.get(StoreKeys.TRIAGE_ROWS) or []
     triage_rank_by_cluster: Dict[str, int] = {}
     if isinstance(triage_rows, list):
         for r in triage_rows:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pipeline.analysis.gt_tolerance_sweep import disable_suite_calibration
+from pipeline.analysis.suite.gt_tolerance_sweep import disable_suite_calibration
 
 
 def test_disable_suite_calibration_moves_into_checkpoints(tmp_path: Path) -> None:

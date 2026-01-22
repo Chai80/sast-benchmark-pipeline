@@ -69,7 +69,9 @@ from pipeline.analysis.utils.filters import filter_findings
 from pipeline.analysis.utils.path_norm import normalize_file_path
 from sast_benchmark.gt.markers import extract_gt_markers
 
-from ._shared import build_location_items, load_normalized_json
+from .common.locations import build_location_items
+from .common.findings import load_normalized_json
+from .common.store_keys import StoreKeys
 
 
 def _find_case_dir(ctx: AnalysisContext) -> Optional[Path]:
@@ -662,8 +664,8 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         store.add_artifact("gt_gap_queue_csv", out_gap_csv)
 
     # Cache for exporters
-    store.put("gt_score_summary", summary)
-    store.put("gt_score_rows", rows)
-    store.put("gt_gap_rows", gap_rows)
+    store.put(StoreKeys.GT_SCORE_SUMMARY, summary)
+    store.put(StoreKeys.GT_SCORE_ROWS, rows)
+    store.put(StoreKeys.GT_GAP_ROWS, gap_rows)
 
     return summary

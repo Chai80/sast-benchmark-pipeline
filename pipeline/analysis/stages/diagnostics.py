@@ -8,7 +8,8 @@ from typing import Any, Dict, List
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_json
 
-from ._shared import load_findings_by_tool, load_normalized_json
+from .common.findings import load_findings_by_tool, load_normalized_json
+from .common.store_keys import StoreKeys
 
 
 def _load_normalized_by_tool(ctx: AnalysisContext) -> Dict[str, Dict[str, Any]]:
@@ -65,7 +66,7 @@ def stage_diagnostics_schema(ctx: AnalysisContext, store: ArtifactStore) -> Dict
     out_path = Path(ctx.out_dir) / "diagnostics_schema.json"
     write_json(out_path, report)
     store.add_artifact("diagnostics_schema", out_path)
-    store.put("diagnostics_schema", report)
+    store.put(StoreKeys.DIAGNOSTICS_SCHEMA, report)
     return {"tools": len(ctx.tools)}
 
 
@@ -82,5 +83,5 @@ def stage_diagnostics_empty(ctx: AnalysisContext, store: ArtifactStore) -> Dict[
     out_path = Path(ctx.out_dir) / "diagnostics_empty_runs.json"
     write_json(out_path, report)
     store.add_artifact("diagnostics_empty_runs", out_path)
-    store.put("diagnostics_empty_runs", report)
+    store.put(StoreKeys.DIAGNOSTICS_EMPTY_RUNS, report)
     return {"empty_tools": len(empties)}

@@ -9,6 +9,8 @@ from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register
 from pipeline.analysis.io.write_artifacts import write_json
 from pipeline.analysis.utils.owasp import infer_owasp
 
+from pipeline.analysis.stages.common.store_keys import StoreKeys
+
 
 def _load_gt_score_summary(ctx: AnalysisContext) -> Optional[Dict[str, Any]]:
     """
@@ -38,19 +40,19 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
     """Build a single JSON object suitable for DB ingestion / UX."""
     owasp_id, owasp_title = infer_owasp(ctx.case_id, out_dir=Path(ctx.out_dir))
 
-    overview = store.get("overview_report") or {}
-    tool_profile = store.get("tool_profile_rows") or []
-    pairwise = store.get("pairwise_rows") or []
-    taxonomy = store.get("taxonomy_rows") or []
-    triage = store.get("triage_rows") or []
-    consensus = store.get("consensus_rows") or []
-    consensus_summary = store.get("consensus_summary") or {}
+    overview = store.get(StoreKeys.OVERVIEW_REPORT) or {}
+    tool_profile = store.get(StoreKeys.TOOL_PROFILE_ROWS) or []
+    pairwise = store.get(StoreKeys.PAIRWISE_ROWS) or []
+    taxonomy = store.get(StoreKeys.TAXONOMY_ROWS) or []
+    triage = store.get(StoreKeys.TRIAGE_ROWS) or []
+    consensus = store.get(StoreKeys.CONSENSUS_ROWS) or []
+    consensus_summary = store.get(StoreKeys.CONSENSUS_SUMMARY) or {}
 
     # Keep pack relatively small: include top-N triage rows.
     triage_top = list(triage)[:200]
     consensus_top = list(consensus)[:200]
     # Optional GT summary if present
-    gt_score_summary = store.get("gt_score_summary")
+    gt_score_summary = store.get(StoreKeys.GT_SCORE_SUMMARY)
     if not isinstance(gt_score_summary, dict):
         gt_score_summary = _load_gt_score_summary(ctx)
 
@@ -98,7 +100,7 @@ def stage_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
     out_path = Path(ctx.out_dir) / "benchmark_pack.json"
     write_json(out_path, pack)
     store.add_artifact("benchmark_pack", out_path)
-    store.put("benchmark_pack", pack)
+    store.put(StoreKeys.BENCHMARK_PACK, pack)
     return {"bytes": out_path.stat().st_size if out_path.exists() else 0}
 
 

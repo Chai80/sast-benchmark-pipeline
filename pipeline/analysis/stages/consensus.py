@@ -32,10 +32,11 @@ from typing import Any, Dict, List
 
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
-from pipeline.analysis.utils.signatures import cluster_locations
 from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
-from ._shared import build_location_items, max_severity
+from .common.locations import ensure_location_clusters
+from .common.severity import max_severity
+from .common.store_keys import StoreKeys
 
 
 def _sample_field(items: List[Dict[str, Any]], field: str) -> str:
@@ -67,12 +68,7 @@ def _consensus_level(tool_count: int, total_tools: int) -> str:
     description="Compute multi-tool agreement (consensus) per clustered location.",
 )
 def stage_consensus(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
-    clusters = store.get("location_clusters")
-    if not isinstance(clusters, list):
-        # Fallback: build clusters if the location_matrix stage didn't run.
-        items = build_location_items(ctx, store)
-        clusters = cluster_locations(items, tolerance=ctx.tolerance, repo_name=ctx.repo_name)
-        store.put("location_clusters", clusters)
+    clusters = ensure_location_clusters(ctx, store)
 
     total_tools = len(ctx.tools)
 
@@ -126,14 +122,14 @@ def stage_consensus(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any
     for i, r in enumerate(rows, start=1):
         r["rank"] = i
 
-    store.put("consensus_rows", rows)
+    store.put(StoreKeys.CONSENSUS_ROWS, rows)
     summary = {
         "clusters": len(rows),
         "tools": total_tools,
         "top_tool_count": int(rows[0]["tool_count"]) if rows else 0,
         "by_tool_count": {str(k): int(v) for k, v in sorted(by_tool_count.items(), key=lambda kv: kv[0])},
     }
-    store.put("consensus_summary", summary)
+    store.put(StoreKeys.CONSENSUS_SUMMARY, summary)
 
     out_json = Path(ctx.out_dir) / "consensus_queue.json"
     out_csv = Path(ctx.out_dir) / "consensus_queue.csv"

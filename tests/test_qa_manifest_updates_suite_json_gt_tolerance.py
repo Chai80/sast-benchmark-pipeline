@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pipeline.analysis.qa_calibration_manifest import (
+from pipeline.analysis.qa.qa_calibration_manifest import (
     GTTolerancePolicyRecord,
     build_qa_calibration_manifest,
     write_qa_calibration_manifest,

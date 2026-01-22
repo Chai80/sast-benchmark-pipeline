@@ -8,7 +8,9 @@ from typing import Any, Dict, List
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
 
-from ._shared import load_findings_by_tool, severity_rank
+from .common.findings import load_findings_by_tool
+from .common.severity import severity_rank
+from .common.store_keys import StoreKeys
 
 
 @register_stage(
@@ -53,7 +55,7 @@ def stage_tool_profile(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, 
 
     rows.sort(key=lambda r: r.get("tool"))
 
-    store.put("tool_profile_rows", rows)
+    store.put(StoreKeys.TOOL_PROFILE_ROWS, rows)
 
     out_json = Path(ctx.out_dir) / "tool_profile.json"
     out_csv = Path(ctx.out_dir) / "tool_profile.csv"

@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipeline.analysis.suite_triage_calibration import build_triage_calibration
-from pipeline.analysis.suite_triage_dataset import build_triage_dataset
-from pipeline.analysis.suite_triage_eval import build_triage_eval
+from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibration
+from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
+from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
 
 class TestSuiteTriageEvalBaselineIsolation(unittest.TestCase):
