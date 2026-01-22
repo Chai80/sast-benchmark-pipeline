@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
-import argparse
 from itertools import combinations
 from pathlib import Path
 from typing import Any, Dict, List
@@ -61,27 +59,3 @@ def stage_pairwise(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
 
     return {"pairs": len(rows)}
 
-
-def main(argv: List[str] | None = None) -> None:  # pragma: no cover
-    ap = argparse.ArgumentParser(description="Compute pairwise agreement (wrapper around analysis suite).")
-    ap.add_argument("--repo-name", required=True)
-    ap.add_argument("--runs-dir", default="runs")
-    ap.add_argument("--out-dir", default=None)
-    ap.add_argument("--tools", default=DEFAULT_SCANNERS_CSV)
-    ap.add_argument("--tolerance", type=int, default=3)
-    ap.add_argument("--mode", choices=["security", "all"], default="security")
-    args = ap.parse_args(argv)
-
-    from pipeline.analysis.runner import run_suite
-
-    tools = [t.strip() for t in str(args.tools).split(",") if t.strip()]
-    out_dir = Path(args.out_dir) if args.out_dir else (Path(args.runs_dir) / "analysis" / args.repo_name)
-    run_suite(
-        repo_name=args.repo_name,
-        tools=tools,
-        runs_dir=Path(args.runs_dir),
-        out_dir=out_dir,
-        tolerance=args.tolerance,
-        mode=args.mode,
-        formats=["json", "csv"],
-    )

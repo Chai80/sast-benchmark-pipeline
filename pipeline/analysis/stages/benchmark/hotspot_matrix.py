@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import argparse
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List
 
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
-from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
 from ..common.locations import ensure_location_clusters
 from ..common.severity import max_severity
@@ -82,27 +80,3 @@ def stage_hotspot_matrix(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
 
     return {"hotspots": len(rows)}
 
-
-def main(argv: List[str] | None = None) -> None:  # pragma: no cover
-    ap = argparse.ArgumentParser(description="Generate hotspot matrix (wrapper around analysis suite).")
-    ap.add_argument("--repo-name", required=True)
-    ap.add_argument("--runs-dir", default="runs")
-    ap.add_argument("--out-dir", default=None)
-    ap.add_argument("--tools", default=DEFAULT_SCANNERS_CSV)
-    ap.add_argument("--tolerance", type=int, default=3)
-    ap.add_argument("--mode", choices=["security", "all"], default="security")
-    args = ap.parse_args(argv)
-
-    from pipeline.analysis.runner import run_suite
-
-    tools = [t.strip() for t in str(args.tools).split(",") if t.strip()]
-    out_dir = Path(args.out_dir) if args.out_dir else (Path(args.runs_dir) / "analysis" / args.repo_name)
-    run_suite(
-        repo_name=args.repo_name,
-        tools=tools,
-        runs_dir=Path(args.runs_dir),
-        out_dir=out_dir,
-        tolerance=args.tolerance,
-        mode=args.mode,
-        formats=["json", "csv"],
-    )

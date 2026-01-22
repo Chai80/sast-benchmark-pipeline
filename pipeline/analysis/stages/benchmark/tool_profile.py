@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List
@@ -68,24 +67,3 @@ def stage_tool_profile(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, 
 
     return {"tools": len(rows)}
 
-
-def main(argv: List[str] | None = None) -> None:  # pragma: no cover
-    ap = argparse.ArgumentParser(description="Build per-tool profile summary.")
-    ap.add_argument("--in", dest="in_path", required=True, help="Path to a normalized JSON file (single tool)")
-    ap.add_argument("--out", required=True, help="Output JSON path")
-    args = ap.parse_args(argv)
-
-    # Minimal helper: single-tool profiling.
-    import json
-    data = json.loads(Path(args.in_path).read_text(encoding="utf-8"))
-    findings = data.get("findings") or []
-    tool = data.get("tool") or "tool"
-    sev = Counter(str(f.get("severity") or "").upper().strip() for f in findings if isinstance(f, dict))
-    out = {
-        "tool": tool,
-        "findings": len(findings),
-        "high": int(sev.get("HIGH", 0)),
-        "medium": int(sev.get("MEDIUM", 0)),
-        "low": int(sev.get("LOW", 0)),
-    }
-    Path(args.out).write_text(json.dumps(out, indent=2), encoding="utf-8")

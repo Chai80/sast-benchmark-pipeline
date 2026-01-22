@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
@@ -11,7 +10,6 @@ from pipeline.analysis.io.write_artifacts import write_json
 from pipeline.analysis.utils.filters import filter_findings
 from pipeline.analysis.utils.path_norm import is_excluded_path, normalize_file_path
 
-from pipeline.scanners import DEFAULT_SCANNERS_CSV
 
 from ..common.findings import load_normalized_json
 from ..common.store_keys import StoreKeys
@@ -153,28 +151,3 @@ def stage_overview(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         "files": len(report.get("files") or []),
     }
 
-
-def main(argv: List[str] | None = None) -> None:  # pragma: no cover
-    ap = argparse.ArgumentParser(description="Compute latest hotspots-by-file overlap report.")
-    ap.add_argument("--repo-name", required=True)
-    ap.add_argument("--runs-dir", default="runs")
-    ap.add_argument("--tools", default=DEFAULT_SCANNERS_CSV)
-    ap.add_argument("--mode", choices=["security", "all"], default="security")
-    ap.add_argument("--exclude-prefix", action="append", default=[], help="Repeatable repo-relative prefix to exclude")
-    ap.add_argument("--out", help="Optional output JSON path")
-    ap.add_argument("--max-unique", type=int, default=25)
-    args = ap.parse_args(argv)
-
-    tools = [t.strip() for t in str(args.tools).split(",") if t.strip()]
-    report = analyze_latest_hotspots_for_repo(
-        repo_name=args.repo_name,
-        tools=tools,
-        runs_dir=Path(args.runs_dir),
-        mode=args.mode,
-        exclude_prefixes=args.exclude_prefix,
-    )
-
-    if args.out:
-        write_json(Path(args.out), report)
-    else:
-        print_text_report(report, max_unique=args.max_unique)

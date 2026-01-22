@@ -324,6 +324,7 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help=(
             "(analysis suite) GT scoring line-match tolerance (default: 0). "
+            "NOTE: gt_score is intended for benchmark/test suites with ground truth markers/YAML. "
             "This affects only gt_score; it does NOT change location clustering/triage."
         ),
     )
@@ -360,6 +361,7 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help=(
             "(analysis suite) GT source selection (default: auto). "
+            "NOTE: gt_score is intended for benchmark/test suites (cases with GT markers or gt_catalog.yaml). "
             "auto = markers then YAML if present. "
             "markers = require inline markers like '# DURINN_GT id=a07_01 track=sast set=core owasp=A07'. "
             "yaml = require benchmark/gt_catalog.yaml (copied to <case>/gt/gt_catalog.yaml). "

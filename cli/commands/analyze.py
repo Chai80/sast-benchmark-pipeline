@@ -61,6 +61,27 @@ def _case_spec_from_case_dir(case_dir: Path, *, default_track: Optional[str] = N
     )
 
 
+
+def _maybe_warn_gt_scoring(metric: str, gt_source: str) -> None:
+    """Print a user-facing note about GT scoring scope.
+
+    GT scoring (gt_score) is designed for benchmark/test suites where a case has
+    ground-truth annotations (inline markers) or a gt_catalog.yaml. When running
+    analysis on real repos without GT, users should disable it explicitly.
+    """
+
+    metric_s = str(metric or "").strip().lower()
+    gt_src = str(gt_source or "").strip().lower()
+
+    if metric_s != "suite":
+        return
+    if gt_src in {"", "none"}:
+        return
+
+    print("\nℹ️  GT scoring note: gt_score is intended for benchmark/test suites (cases with GT markers or gt_catalog.yaml).")
+    print("    If you're analyzing a real repo without ground truth, pass --gt-source none to skip gt_score.")
+
+
 def run_analyze(
     args,
     pipeline: SASTBenchmarkPipeline,
@@ -70,6 +91,8 @@ def run_analyze(
     suite_id: Optional[str],
 ) -> int:
     metric = args.metric or "hotspots"
+
+    _maybe_warn_gt_scoring(metric, str(getattr(args, "gt_source", "auto")))
 
     tools = _parse_tools(args)
 
@@ -114,6 +137,8 @@ def run_analyze_suite_all_cases(
     metric = str(getattr(args, "metric", "") or "hotspots").strip()
     if metric != "suite":
         raise SystemExit(f"run_analyze_suite_all_cases requires --metric suite (got: {metric!r})")
+
+    _maybe_warn_gt_scoring(metric, str(getattr(args, "gt_source", "auto")))
 
     if getattr(args, "analysis_out_dir", None):
         # In multi-case mode, a single output dir is ambiguous and risks collisions.
