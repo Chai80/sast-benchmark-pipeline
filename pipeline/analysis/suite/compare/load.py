@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pipeline.analysis.io.config_receipts import load_scanner_config
 from pipeline.analysis.io.meta import read_json_if_exists
-from pipeline.analysis.suite_triage_calibration import tool_weights_from_calibration
+from pipeline.analysis.suite.suite_triage_calibration import tool_weights_from_calibration
 
 from .diff import _to_float, _to_int
 

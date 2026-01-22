@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
-from pipeline.analysis.suite_triage_calibration import tool_weights_from_calibration
+from pipeline.analysis.suite.suite_triage_calibration import tool_weights_from_calibration
 from pipeline.orchestrator import AnalyzeRequest
 from pipeline.pipeline import SASTBenchmarkPipeline
 from pipeline.suites.bundles import safe_name
@@ -424,9 +424,9 @@ def run_gt_tolerance_sweep(
         JSON-serializable payload including flattened rows and output paths.
     """
 
-    from pipeline.analysis.suite_triage_dataset import build_triage_dataset
-    from pipeline.analysis.suite_triage_calibration import build_triage_calibration
-    from pipeline.analysis.suite_triage_eval import build_triage_eval
+    from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
+    from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibration
+    from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
     suite_dir = Path(suite_dir).resolve()
     analysis_dir = suite_dir / out_dirname

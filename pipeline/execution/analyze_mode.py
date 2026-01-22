@@ -175,7 +175,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
         # rebuild the suite-level triage_dataset so artifacts stay current.
         if is_suite_layout and (not bool(req.skip_suite_aggregate)):
             try:
-                from pipeline.analysis.suite_triage_dataset import build_triage_dataset
+                from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
 
                 # out_dir is the per-case analysis dir: .../runs/suites/<suite_id>/cases/<case_id>/analysis
                 suite_dir = out_dir.parent.parent.parent  # .../runs/suites/<suite_id>
@@ -189,7 +189,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
 
                 # Best-effort: keep suite-level calibration + eval in sync.
                 try:
-                    from pipeline.analysis.suite_triage_calibration import build_triage_calibration
+                    from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibration
 
                     cal = build_triage_calibration(suite_dir=str(suite_dir), suite_id=str(suite_id))
                     out_json = cal.get("out_json") if isinstance(cal, dict) else getattr(cal, "out_json", None)
@@ -199,7 +199,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
                     print(f"\n[triage_calibration] build skipped/failed: {e}")
 
                 try:
-                    from pipeline.analysis.suite_triage_eval import build_triage_eval
+                    from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
                     ev = build_triage_eval(suite_dir=str(suite_dir), suite_id=str(suite_id))
                     out_summary = ev.get("out_summary_json") if isinstance(ev, dict) else getattr(ev, "out_summary_json", None)

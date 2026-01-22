@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
-from pipeline.analysis.suite_triage_calibration import (
+from pipeline.analysis.suite.suite_triage_calibration import (
     load_triage_calibration,
     tool_weights_for_owasp,
     triage_score_v1,

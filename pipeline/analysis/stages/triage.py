@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
-from pipeline.analysis.suite_triage_calibration import (
+from pipeline.analysis.suite.suite_triage_calibration import (
     load_triage_calibration,
     tool_weights_for_owasp,
     triage_score_v1,
