@@ -200,7 +200,7 @@ def _compute_macro_from_topk_rows(
     topk_rows: List[Dict[str, Any]],
     *,
     ks: Sequence[int] = (10, 25, 50),
-    strategies: Sequence[str] = ("baseline", "agreement", "calibrated"),
+    strategies: Sequence[str] = ("baseline", "agreement", "calibrated_global", "calibrated"),
 ) -> Dict[str, Dict[str, Dict[str, float]]]:
     """Compute macro Precision@K and Coverage@K from triage_eval_topk rows.
 
@@ -768,7 +768,7 @@ def _render_markdown(report: Dict[str, Any]) -> str:
     lines.append("")
     lines.append("| strategy | Precision@10 | Coverage@10 | Precision@25 | Coverage@25 | Precision@50 | Coverage@50 |")
     lines.append("|---|---:|---:|---:|---:|---:|---:|")
-    for strat in ("baseline", "agreement", "calibrated"):
+    for strat in ("baseline", "agreement", "calibrated_global", "calibrated"):
         ks = macro.get(strat) or {}
         def g(k, field):
             v = (ks.get(str(k)) or {}).get(field)

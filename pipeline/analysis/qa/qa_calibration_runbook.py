@@ -851,6 +851,15 @@ def validate_calibration_suite_artifacts(
             )
         )
 
+        out.append(
+            QACheck(
+                name="triage_eval_summary includes strategy calibrated_global",
+                ok=True,
+                detail="skipped (non-scored mode)",
+                path=str(eval_summary),
+            )
+        )
+
         # These are only meaningful for scored suites. Keep the checklist
         # stable by explicitly marking them as skipped in non-scored mode.
         out.append(
@@ -894,6 +903,14 @@ def validate_calibration_suite_artifacts(
     if not eval_summary.exists():
         out.append(
             QACheck(
+                name="triage_eval_summary includes strategy calibrated_global",
+                ok=False,
+                detail="missing triage_eval_summary.json",
+                path=str(eval_summary),
+            )
+        )
+        out.append(
+            QACheck(
                 name="triage_eval_summary includes strategy calibrated",
                 ok=False,
                 detail="missing triage_eval_summary.json",
@@ -905,13 +922,23 @@ def validate_calibration_suite_artifacts(
             payload = _read_json(eval_summary)
             strategies = payload.get("strategies") if isinstance(payload, dict) else None
             strategies_list = list(strategies) if isinstance(strategies, list) else []
-            ok = "calibrated" in strategies_list
-            detail = "" if ok else f"strategies={strategies_list}"
+            ok_calibrated = "calibrated" in strategies_list
+            ok_global = "calibrated_global" in strategies_list
+            detail_calibrated = "" if ok_calibrated else f"strategies={strategies_list}"
+            detail_global = "" if ok_global else f"strategies={strategies_list}"
             out.append(
                 QACheck(
                     name="triage_eval_summary includes strategy calibrated",
-                    ok=ok,
-                    detail=detail,
+                    ok=ok_calibrated,
+                    detail=detail_calibrated,
+                    path=str(eval_summary),
+                )
+            )
+            out.append(
+                QACheck(
+                    name="triage_eval_summary includes strategy calibrated_global",
+                    ok=ok_global,
+                    detail=detail_global,
                     path=str(eval_summary),
                 )
             )
@@ -919,6 +946,15 @@ def validate_calibration_suite_artifacts(
             out.append(
                 QACheck(
                     name="triage_eval_summary includes strategy calibrated",
+                    ok=False,
+                    detail=f"failed to read/parse JSON: {e}",
+                    path=str(eval_summary),
+                )
+            )
+
+            out.append(
+                QACheck(
+                    name="triage_eval_summary includes strategy calibrated_global",
                     ok=False,
                     detail=f"failed to read/parse JSON: {e}",
                     path=str(eval_summary),

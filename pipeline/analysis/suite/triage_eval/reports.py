@@ -25,7 +25,7 @@ from .metrics import (
     _to_int,
     _tools_for_row,
 )
-from .strategies import _load_suite_calibration, _rank_agreement, _rank_baseline, _rank_calibrated
+from .strategies import _load_suite_calibration, _rank_agreement, _rank_baseline, _rank_calibrated, _rank_calibrated_global
 
 
 def _now_iso() -> str:
@@ -110,7 +110,7 @@ def build_triage_eval(
     *,
     suite_dir: Path,
     suite_id: Optional[str] = None,
-    ks: Sequence[int] = (1, 3, 5, 10, 25),
+    ks: Sequence[int] = (1, 3, 5, 10, 25, 50),
     out_dirname: str = "analysis",
     include_tool_marginal: bool = True,
     dataset_relpath: str = "analysis/_tables/triage_dataset.csv",
@@ -168,15 +168,21 @@ def build_triage_eval(
 
     if cal:
         # Capture cal in a default argument to keep behavior deterministic.
+
+        def _rank_cal_global(rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal) -> List[Dict[str, str]]:
+            return _rank_calibrated_global(rows, cal=_cal)
+
         def _rank_cal(rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal) -> List[Dict[str, str]]:
             return _rank_calibrated(rows, cal=_cal)
 
+        # Keep both so reports can compare global vs per-OWASP calibrated ranking.
+        strategies["calibrated_global"] = _rank_cal_global
         strategies["calibrated"] = _rank_cal
 
     # Normalize K values.
     k_list = sorted({int(k) for k in ks if int(k) > 0})
     if not k_list:
-        k_list = [1, 3, 5, 10, 25]
+        k_list = [1, 3, 5, 10, 25, 50]
 
     max_k = max(k_list) if k_list else 0
 
@@ -881,6 +887,53 @@ def build_triage_eval(
                 "gt_coverage_delta",
             ],
         )
+
+
+    # --- Focused comparison (Layer 2) --------------------------------------
+    # Convenience section for reports: compare baseline vs calibrated_global vs
+    # calibrated (per-OWASP w/ fallback) at common review sizes.
+    focus_ks = [k for k in (10, 25, 50) if k in k_list]
+    focus_strategies = [s for s in ("baseline", "calibrated_global", "calibrated") if s in strategies]
+
+    topk_focus: Dict[str, Any] = {
+        "ks": list(focus_ks),
+        "strategies": list(focus_strategies),
+        "macro": {},
+        "micro": {},
+    }
+
+    for agg_name, agg in (("macro", macro), ("micro", micro)):
+        for k in focus_ks:
+            kk = str(k)
+            topk_focus[agg_name][kk] = {}
+            for strat in focus_strategies:
+                mm = (agg.get(strat) or {}).get(kk) or {}
+                topk_focus[agg_name][kk][strat] = {
+                    "precision": mm.get("precision"),
+                    "gt_coverage": mm.get("gt_coverage"),
+                }
+
+    # Calibration context (for interpreting calibrated vs calibrated_global).
+    calibration_context: Optional[Dict[str, Any]] = None
+    if cal and isinstance(cal, dict):
+        scoring = cal.get("scoring") if isinstance(cal.get("scoring"), dict) else {}
+        min_support_by_owasp = int(scoring.get("min_support_by_owasp", 10))
+
+        fallback: List[str] = []
+        by_owasp = cal.get("tool_stats_by_owasp") if isinstance(cal.get("tool_stats_by_owasp"), dict) else {}
+        if isinstance(by_owasp, dict):
+            for oid, v in by_owasp.items():
+                if not isinstance(v, dict):
+                    continue
+                sup = v.get("support") if isinstance(v.get("support"), dict) else {}
+                clusters_n = int(sup.get("clusters") or 0)
+                if clusters_n < min_support_by_owasp:
+                    fallback.append(str(oid))
+
+        calibration_context = {
+            "min_support_by_owasp": int(min_support_by_owasp),
+            "owasp_fallback_ids": sorted({str(x) for x in fallback if str(x)}),
+        }
     summary: Dict[str, Any] = {
         "suite_id": sid,
         "suite_dir": str(suite_dir),
@@ -897,6 +950,8 @@ def build_triage_eval(
         "macro": macro,
         "micro": micro,
         "delta_vs_baseline": delta_vs_baseline,
+        "topk_focus": topk_focus,
+        "calibration_context": calibration_context,
         "out_by_case_csv": str(out_by_case_csv),
         "out_summary_json": str(out_summary_json),
         "out_tool_utility_csv": str(out_tool_csv),
