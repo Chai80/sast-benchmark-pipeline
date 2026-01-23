@@ -28,6 +28,7 @@ def _load_normalized_by_tool(ctx: AnalysisContext) -> Dict[str, Dict[str, Any]]:
     "diagnostics_schema",
     kind="diagnostic",
     description="Schema sanity checks for normalized JSON files.",
+    produces=(StoreKeys.DIAGNOSTICS_SCHEMA,),
 )
 def stage_diagnostics_schema(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     normalized = _load_normalized_by_tool(ctx)

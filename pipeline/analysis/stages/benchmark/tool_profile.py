@@ -16,6 +16,7 @@ from ..common.store_keys import StoreKeys
     "tool_profile",
     kind="analysis",
     description="Summarize finding counts and severity distribution per tool.",
+    produces=(StoreKeys.FINDINGS_BY_TOOL, StoreKeys.TOOL_PROFILE_ROWS),
 )
 def stage_tool_profile(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     fb = load_findings_by_tool(ctx, store)

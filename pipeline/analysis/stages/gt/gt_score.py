@@ -63,6 +63,7 @@ from typing import Any, Dict
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 
 from ..common.locations import build_location_items
+from ..common.store_keys import StoreKeys
 
 from .gap_queue import build_gap_queue
 from .io import cache_gt_score_results, write_gt_score_artifacts
@@ -75,6 +76,8 @@ from .sources import case_scoring_track, choose_gt_source, find_case_dir, load_c
     "gt_score",
     kind="analysis",
     description="Optional GT scoring (markers/YAML) for a suite case.",
+    requires=(StoreKeys.LOCATION_ITEMS,),
+    produces=(StoreKeys.GT_SCORE_ROWS, StoreKeys.GT_SCORE_SUMMARY, StoreKeys.GT_GAP_ROWS),
 )
 def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     cfg = dict(ctx.config or {})

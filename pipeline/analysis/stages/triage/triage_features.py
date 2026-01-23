@@ -218,6 +218,7 @@ def _choose_sample_item(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     "triage_features",
     kind="analysis",
     description="Emit DS-ready cluster-level feature table (analysis/_tables/triage_features.csv).",
+    requires=(StoreKeys.LOCATION_CLUSTERS,),
 )
 def stage_triage_features(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     generated_at = _now_iso()

@@ -18,6 +18,8 @@ from ..common.store_keys import StoreKeys
     "location_matrix",
     kind="analysis",
     description="Cluster findings into location buckets and write a per-location tool matrix.",
+    requires=(StoreKeys.FINDINGS_BY_TOOL,),
+    produces=(StoreKeys.LOCATION_ITEMS, StoreKeys.LOCATION_CLUSTERS, StoreKeys.LOCATION_MATRIX_ROWS),
 )
 def stage_location_matrix(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     items = build_location_items(ctx, store)

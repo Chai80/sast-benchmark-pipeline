@@ -15,6 +15,8 @@ from ..common.store_keys import StoreKeys
     "pairwise_agreement",
     kind="analysis",
     description="Compute pairwise Jaccard similarity across tools over clustered locations.",
+    requires=(StoreKeys.LOCATION_CLUSTERS,),
+    produces=(StoreKeys.PAIRWISE_ROWS,),
 )
 def stage_pairwise(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     clusters = ensure_location_clusters(ctx, store)

@@ -62,6 +62,8 @@ def build_hotspot_drilldown_pack(ctx: AnalysisContext, store: ArtifactStore, *, 
     "hotspot_drilldown_pack",
     kind="reporting",
     description="Write hotspot_drilldown_pack.json (top-N hotspots with example findings).",
+    requires=(StoreKeys.LOCATION_CLUSTERS,),
+    produces=(StoreKeys.HOTSPOT_DRILLDOWN_PACK,),
 )
 def stage_drilldown_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     pack = build_hotspot_drilldown_pack(ctx, store, limit=200)

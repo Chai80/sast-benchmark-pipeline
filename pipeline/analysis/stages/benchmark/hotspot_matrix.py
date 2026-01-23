@@ -16,6 +16,8 @@ from ..common.store_keys import StoreKeys
     "hotspot_matrix",
     kind="analysis",
     description="Rank clustered locations (hotspots) by cross-tool agreement.",
+    requires=(StoreKeys.LOCATION_CLUSTERS,),
+    produces=(StoreKeys.HOTSPOT_MATRIX_ROWS,),
 )
 def stage_hotspot_matrix(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     clusters = ensure_location_clusters(ctx, store)

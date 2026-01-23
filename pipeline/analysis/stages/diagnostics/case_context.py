@@ -37,6 +37,7 @@ def _load_case_json(case_dir: Path) -> Optional[Dict[str, Any]]:
     "diagnostics_case_context",
     kind="diagnostic",
     description="Validate scanned git branch/commit against case expectations (suite mode).",
+    produces=(StoreKeys.DIAGNOSTICS_CASE_CONTEXT,),
 )
 def stage_diagnostics_case_context(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     case_dir = _find_case_dir(ctx)

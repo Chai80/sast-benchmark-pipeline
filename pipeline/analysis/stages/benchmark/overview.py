@@ -131,6 +131,7 @@ def print_text_report(report: Dict[str, Any], *, max_unique: int = 25) -> None:
     "overview",
     kind="analysis",
     description="Compute per-file overlap + unique-file summary across tools.",
+    produces=(StoreKeys.OVERVIEW_REPORT,),
 )
 def stage_overview(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     report = analyze_latest_hotspots_for_repo(

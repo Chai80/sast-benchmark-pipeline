@@ -91,6 +91,8 @@ def _choose_codes(resolved: Dict[str, Any], *, prefer: str = "canonical") -> Lis
     "taxonomy",
     kind="analysis",
     description="Derive OWASP Top10 categories (canonical via CWE) and write taxonomy counts.",
+    requires=(StoreKeys.FINDINGS_BY_TOOL,),
+    produces=(StoreKeys.CWE_TO_OWASP_MAP, StoreKeys.TAXONOMY_ROWS),
 )
 def stage_taxonomy(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     fb = load_findings_by_tool(ctx, store)

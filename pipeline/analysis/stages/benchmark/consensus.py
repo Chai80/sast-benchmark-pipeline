@@ -64,6 +64,8 @@ def _consensus_level(tool_count: int, total_tools: int) -> str:
     "consensus_queue",
     kind="analysis",
     description="Compute multi-tool agreement (consensus) per clustered location.",
+    requires=(StoreKeys.LOCATION_CLUSTERS,),
+    produces=(StoreKeys.CONSENSUS_ROWS, StoreKeys.CONSENSUS_SUMMARY),
 )
 def stage_consensus(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     clusters = ensure_location_clusters(ctx, store)

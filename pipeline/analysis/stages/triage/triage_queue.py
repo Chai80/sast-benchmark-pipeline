@@ -123,6 +123,8 @@ def _choose_sample_item(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     "triage_queue",
     kind="analysis",
     description="Create a ranked triage queue of hotspots to review first.",
+    requires=(StoreKeys.LOCATION_CLUSTERS,),
+    produces=(StoreKeys.TRIAGE_ROWS,),
 )
 def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     # Optional suite-level calibration (best-effort).
