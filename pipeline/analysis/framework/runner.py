@@ -4,7 +4,7 @@ import json
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Iterable, List, Optional, Sequence, Set
 
 from .context import AnalysisContext
 from .registry import get_stage
@@ -24,15 +24,56 @@ def run_pipeline(
     stage_names: Sequence[str],
     store: Optional[ArtifactStore] = None,
     continue_on_error: bool = True,
+    strict_deps: bool = False,
 ) -> List[StageResult]:
     """Run an ordered list of registered stages."""
     store = store or ArtifactStore()
     results: List[StageResult] = []
 
-    for name in stage_names:
+    stage_defs = [get_stage(n) for n in stage_names]
+
+    def _produces_later(i: int) -> Set[str]:
+        out: Set[str] = set()
+        for sd in stage_defs[i + 1 :]:
+            out.update(sd.produces or ())
+        return out
+
+    # Pre-flight: detect obvious ordering mismatches where a stage claims it
+    # requires keys that are only produced by later stages.
+    available: Set[str] = set(store.data.keys())
+    for i, sd in enumerate(stage_defs):
+        if not sd.requires:
+            available.update(sd.produces or ())
+            continue
+        missing = [k for k in sd.requires if k not in available]
+        if missing:
+            later = _produces_later(i)
+            wrong_order = [k for k in missing if k in later]
+            if wrong_order:
+                msg = (
+                    f"deps: stage '{sd.name}' requires keys produced later in the pipeline: {wrong_order}. "
+                    "Consider reordering stages or adjusting requires/produces."
+                )
+                if strict_deps:
+                    # Fail fast for deterministic debugging.
+                    raise RuntimeError(msg)
+                store.add_warning(msg)
+
+        available.update(sd.produces or ())
+
+    for stage_def in stage_defs:
+        name = stage_def.name
         started = _now_iso()
         try:
-            stage_def = get_stage(name)
+            # Dependency check (store keys).
+            if stage_def.requires:
+                missing_now = [k for k in stage_def.requires if k not in store.data]
+                if missing_now:
+                    msg = f"deps: stage '{name}' missing required store keys: {missing_now}"
+                    if strict_deps:
+                        raise KeyError(msg)
+                    store.add_warning(msg)
+
             summary = stage_def.func(ctx, store) or {}
             finished = _now_iso()
             results.append(

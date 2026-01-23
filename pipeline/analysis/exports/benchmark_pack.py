@@ -94,6 +94,16 @@ def build_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
     "benchmark_pack",
     kind="reporting",
     description="Write a single benchmark_pack.json for ingestion/reporting.",
+    requires=(
+        StoreKeys.OVERVIEW_REPORT,
+        StoreKeys.TOOL_PROFILE_ROWS,
+        StoreKeys.PAIRWISE_ROWS,
+        StoreKeys.TAXONOMY_ROWS,
+        StoreKeys.TRIAGE_ROWS,
+        StoreKeys.CONSENSUS_ROWS,
+        StoreKeys.CONSENSUS_SUMMARY,
+    ),
+    produces=(StoreKeys.BENCHMARK_PACK,),
 )
 def stage_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     pack = build_benchmark_pack(ctx, store)
