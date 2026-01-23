@@ -85,32 +85,6 @@ def _run_git(*, cwd: Path, argv: List[str]) -> None:
             msg += f"\n{out}"
         raise SystemExit(msg)
 
-def _list_origin_remote_branches(*, cwd: Path) -> List[str]:
-    """Return remote branch names under origin/ (without the 'origin/' prefix)."""
-    p = subprocess.run(
-        ["git", "for-each-ref", "refs/remotes/origin", "--format=%(refname:short)"],
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-    )
-    if p.returncode != 0:
-        out = ((p.stdout or "") + (p.stderr or "")).strip()
-        raise SystemExit(f"git for-each-ref refs/remotes/origin failed (cwd={cwd})\n{out}")
-
-    branches: List[str] = []
-    for line in (p.stdout or "").splitlines():
-        s = (line or "").strip()
-        if not s:
-            continue
-        if s.startswith("origin/"):
-            s = s[len("origin/") :]
-        if s.upper() == "HEAD":
-            continue
-        branches.append(s)
-
-    return sorted(set(branches))
-
-
 def _resolve_branch_token_to_origin_branch(token: str, *, origin_branches: List[str]) -> str:
     """Resolve a user token like 'A01' to a real origin branch name.
 
@@ -277,7 +251,6 @@ def _bootstrap_worktrees_from_repo_url(*, repo_url: str, branches: List[str], wo
     _run_git(cwd=base, argv=["fetch", "origin", "--prune"])
     _run_git(cwd=base, argv=["worktree", "prune"])
 
-    # NOTE: your helper expects base=..., not cwd=...
     origin_branches = _list_origin_remote_branches(base=base)
 
     # Deterministic branch ordering.
