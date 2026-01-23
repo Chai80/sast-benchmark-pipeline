@@ -43,3 +43,4 @@ suites/*.csv
 firstTestRun
 
 .DS_Store
+sast-benchmark-pipeline-refactor-*/

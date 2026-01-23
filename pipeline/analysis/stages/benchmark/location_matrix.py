@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
+from pipeline.analysis.compute.location_matrix import build_location_matrix_rows
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
 from pipeline.analysis.utils.signatures import cluster_locations
 
-
 from ..common.locations import build_location_items
-from ..common.severity import max_severity
 from ..common.store_keys import StoreKeys
 
 
@@ -26,29 +24,7 @@ def stage_location_matrix(ctx: AnalysisContext, store: ArtifactStore) -> Dict[st
     clusters = cluster_locations(items, tolerance=ctx.tolerance, repo_name=ctx.repo_name)
     store.put(StoreKeys.LOCATION_CLUSTERS, clusters)
 
-    tools = list(ctx.tools)
-
-    rows: List[Dict[str, Any]] = []
-    for c in clusters:
-        tool_counts = Counter()
-        for it in c.get("items") or []:
-            tool_counts[str(it.get("tool") or "")] += 1
-
-        sev, _rank = max_severity(list(c.get("items") or []))
-        rows.append(
-            {
-                "cluster_id": c.get("cluster_id"),
-                "file_path": c.get("file_path"),
-                "start_line": c.get("start_line"),
-                "end_line": c.get("end_line"),
-                "tool_count": c.get("tool_count"),
-                "tools": ",".join(c.get("tools") or []),
-                "total_findings": sum(tool_counts.values()),
-                "max_severity": sev,
-                **{f"{t}_count": int(tool_counts.get(t, 0)) for t in tools},
-            }
-        )
-
+    rows = build_location_matrix_rows(clusters, tools=list(ctx.tools))
     store.put(StoreKeys.LOCATION_MATRIX_ROWS, rows)
 
     out_json = Path(ctx.out_dir) / "location_matrix.json"
@@ -67,9 +43,8 @@ def stage_location_matrix(ctx: AnalysisContext, store: ArtifactStore) -> Dict[st
             "tools",
             "total_findings",
             "max_severity",
-        ] + [f"{t}_count" for t in tools]
+        ] + [f"{t}_count" for t in ctx.tools]
         write_csv(out_csv, rows, fieldnames=fieldnames)
         store.add_artifact("location_matrix_csv", out_csv)
 
     return {"clusters": len(rows)}
-
