@@ -94,6 +94,41 @@ class SuiteRunContext:
     # QA checklist result (filled best-effort).
     qa_checklist_pass: Optional[bool] = None
 
+    @classmethod
+    def from_args(
+        cls,
+        *,
+        args: argparse.Namespace,
+        pipeline: SASTBenchmarkPipeline,
+        repo_registry: Dict[str, Dict[str, str]],
+    ) -> "SuiteRunContext":
+        """Create a context with stable paths and captured mode flags.
+
+        We anchor suite_root under the repo root unless the user passed an
+        absolute path. This avoids path drift when the CLI is invoked from
+        different working directories.
+        """
+
+        suite_root = anchor_under_repo_root(Path(args.suite_root).expanduser())
+
+        flags = SuiteFlags(
+            qa_mode=bool(getattr(args, "qa_calibration", False)),
+            qa_no_reanalyze=bool(getattr(args, "qa_no_reanalyze", False)),
+        )
+
+        # Capture GT tolerance input *before* any sweep/auto-selection mutates args.
+        gt_tolerance_initial = int(getattr(args, "gt_tolerance", 0) or 0)
+
+        return cls(
+            args=args,
+            pipeline=pipeline,
+            repo_registry=repo_registry,
+            suite_root=suite_root,
+            flags=flags,
+            gt_tolerance_initial=gt_tolerance_initial,
+            gt_sweep=GTToleranceSweepState(),
+        )
+
 
 def validate_suite_args(ctx: SuiteRunContext) -> Optional[int]:
     """Validate and normalize CLI args.
@@ -491,6 +526,262 @@ def run_suite_cases(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun) -> int
     return overall
 
 
+def build_suite_artifacts(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun) -> int:
+    """Build suite-level artifacts after running all cases.
+
+    This is intentionally filesystem-first and best-effort. Most failures should
+    not abort the suite run.
+
+    Returns
+    -------
+    int
+        Exit code contribution for artifact build steps.
+
+        Today, this is primarily used for QA calibration runs where a requested
+        GT tolerance sweep is treated as a first-class requirement.
+    """
+
+    args = ctx.args
+
+    qa_mode = ctx.flags.qa_mode
+
+    suite_id = resolved_run.suite_id
+    suite_root = resolved_run.suite_root
+    suite_dir = resolved_run.suite_dir
+
+    scanners = list(ctx.scanners)
+    tolerance = int(ctx.tolerance or 0)
+    analysis_filter = str(ctx.analysis_filter or "")
+    skip_analysis = bool(ctx.skip_analysis)
+
+    if bool(args.dry_run) or skip_analysis:
+        return 0
+
+    stage_rc = 0
+
+    # ------------------------------------------------------------------
+    # Optional deterministic GT tolerance sweep (QA calibration).
+    # ------------------------------------------------------------------
+    sweep_raw = getattr(args, "gt_tolerance_sweep", None)
+    sweep_auto = bool(getattr(args, "gt_tolerance_auto", False))
+    sweep_min_frac = float(getattr(args, "gt_tolerance_auto_min_fraction", 0.95) or 0.95)
+
+    ctx.gt_sweep.sweep_raw = str(sweep_raw) if sweep_raw is not None else None
+    ctx.gt_sweep.auto_enabled = bool(sweep_auto)
+    ctx.gt_sweep.auto_min_fraction = float(sweep_min_frac)
+
+    if qa_mode and (sweep_raw or sweep_auto):
+        # Mark as requested immediately so later manifests can record intent,
+        # even if the sweep fails early.
+        ctx.gt_sweep.enabled = True
+        ctx.gt_sweep.report_csv = str((suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").resolve())
+        ctx.gt_sweep.payload_json = str((suite_dir / "analysis" / "gt_tolerance_sweep.json").resolve())
+
+        try:
+            from pipeline.analysis.suite.gt_tolerance_sweep import (
+                disable_suite_calibration,
+                parse_gt_tolerance_candidates,
+                run_gt_tolerance_sweep,
+                select_gt_tolerance_auto,
+            )
+
+            candidates = parse_gt_tolerance_candidates(sweep_raw)
+            ctx.gt_sweep.candidates = list(candidates)
+
+            sweep_payload = run_gt_tolerance_sweep(
+                pipeline=ctx.pipeline,
+                suite_root=suite_root,
+                suite_id=suite_id,
+                suite_dir=suite_dir,
+                cases=[rc.suite_case.case for rc in resolved_run.cases],
+                tools=scanners,
+                tolerance=int(tolerance),
+                gt_source=str(getattr(args, "gt_source", "auto")),
+                analysis_filter=str(analysis_filter),
+                exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
+                include_harness=bool(getattr(args, "include_harness", False)),
+                candidates=candidates,
+            )
+
+            # Record the emitted report path (should match the canonical path).
+            ctx.gt_sweep.report_csv = str(sweep_payload.get("out_report_csv") or ctx.gt_sweep.report_csv)
+
+            # Persist sweep payload for later selection/manifest writing.
+            ctx.gt_sweep.payload = sweep_payload
+
+            if sweep_auto:
+                sel = select_gt_tolerance_auto(
+                    sweep_payload.get("rows") or [],
+                    min_fraction=sweep_min_frac,
+                )
+                chosen = int(sel.get("selected_gt_tolerance", int(getattr(args, "gt_tolerance", 0))))
+
+                # Record decision (we write the selection file later so the QA checklist
+                # can enforce it regardless of auto vs explicit selection).
+                ctx.gt_sweep.selection = dict(sel)
+                ctx.gt_sweep.selection_warnings = [str(w) for w in (sel.get("warnings") or []) if str(w).strip()]
+
+                print(f"\n✅ GT tolerance auto-selected: {chosen}")
+                if ctx.gt_sweep.selection_warnings:
+                    for w in ctx.gt_sweep.selection_warnings:
+                        print(f"  ⚠️  {w}")
+
+                # Make downstream steps (final build + re-analyze pass) use the chosen tolerance.
+                try:
+                    setattr(args, "gt_tolerance", chosen)
+                except Exception:
+                    pass
+            else:
+                # Explicit tolerance path: still record for CI reproducibility.
+                ctx.gt_sweep.selection = {
+                    "schema_version": "gt_tolerance_selection_v1",
+                    "selected_gt_tolerance": int(getattr(args, "gt_tolerance", 0) or 0),
+                    "mode": "explicit",
+                    "warnings": [],
+                }
+                print("\nℹ️  GT tolerance sweep complete (no auto selection; continuing with --gt-tolerance)")
+
+            # After the sweep, rebuild canonical suite calibration artifacts once
+            # for the effective tolerance (explicit or auto-selected).
+            eff_tol = int(getattr(args, "gt_tolerance", 0))
+            print(f"\n🔁 Finalizing suite calibration build for gt_tolerance={eff_tol}")
+
+            # Ensure per-case analysis uses baseline ordering for triage_rank.
+            disable_suite_calibration(suite_dir)
+
+            # Re-analyze all cases once with the chosen tolerance (skip suite aggregation
+            # inside each analyze call; we'll build suite artifacts once below).
+            for j, rc2 in enumerate(resolved_run.cases, start=1):
+                c2 = rc2.suite_case.case
+                print("\n" + "-" * 72)
+                print(f"🔁 Analyze (finalize) {j}/{len(resolved_run.cases)}: {c2.case_id}")
+
+                case_dir = (suite_dir / "cases" / safe_name(c2.case_id)).resolve()
+                try:
+                    areq = AnalyzeRequest(
+                        metric="suite",
+                        case=c2,
+                        suite_root=suite_root,
+                        suite_id=suite_id,
+                        case_path=str(case_dir),
+                        tools=tuple(scanners),
+                        tolerance=int(tolerance),
+                        gt_tolerance=int(eff_tol),
+                        gt_source=str(getattr(args, "gt_source", "auto")),
+                        analysis_filter=str(analysis_filter),
+                        exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
+                        include_harness=bool(getattr(args, "include_harness", False)),
+                        skip_suite_aggregate=True,
+                    )
+                    rc_code2 = int(ctx.pipeline.analyze(areq))
+                except Exception as e:
+                    print(f"  ❌ analyze finalize failed for {c2.case_id}: {e}")
+                    rc_code2 = 2
+
+                stage_rc = max(stage_rc, rc_code2)
+
+        except Exception as e:
+            print(f"\n❌ GT tolerance sweep failed: {e}")
+            # In QA mode, requested sweeps are first-class; fail the run (but keep going
+            # to emit whatever artifacts we can).
+            stage_rc = max(stage_rc, 2)
+            ctx.gt_sweep.selection_warnings = list(ctx.gt_sweep.selection_warnings or []) + [f"sweep_failed: {e}"]
+
+    # ------------------------------------------------------------------
+    # Suite-level aggregation: triage dataset + calibration (+ optional eval).
+    # ------------------------------------------------------------------
+    # From this point on, the rest of the runbook assumes the *effective*
+    # gt_tolerance has been applied (either explicit or auto-selected).
+    try:
+        from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
+
+        ds = build_triage_dataset(suite_dir=suite_dir, suite_id=suite_id)
+
+        print("\n📦 Suite triage_dataset")
+        print(f"  Output : {ds.get('out_csv')}")
+        print(f"  Rows   : {ds.get('rows')}")
+
+        if ds.get("missing_cases"):
+            missing = ds.get("missing_cases") or []
+            print(f"  ⚠️  Missing triage_features.csv for {len(missing)} case(s): " + ", ".join([str(x) for x in missing]))
+
+        if ds.get("empty_cases"):
+            empty = ds.get("empty_cases") or []
+            print(f"  ⚠️  Empty triage_features.csv for {len(empty)} case(s): " + ", ".join([str(x) for x in empty]))
+
+        if ds.get("read_errors"):
+            errs = ds.get("read_errors") or []
+            print(
+                f"  ⚠️  Failed to read triage_features.csv for {len(errs)} case(s). "
+                "See triage_dataset_build.log under suite analysis."
+            )
+
+        if ds.get("schema_mismatch_cases"):
+            mism = ds.get("schema_mismatch_cases") or []
+            print(
+                f"  ⚠️  Schema mismatch triage_features.csv for {len(mism)} case(s). "
+                "See triage_dataset_build.log under suite analysis."
+            )
+
+    except Exception as e:
+        print(f"\n⚠️  Failed to build suite triage_dataset: {e}")
+
+    # Suite-level calibration: tool weights for triage tie-breaking.
+    try:
+        from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibration
+
+        cal = build_triage_calibration(suite_dir=suite_dir, suite_id=suite_id)
+
+        print("\n🧭 Suite triage_calibration")
+        print(f"  Output : {cal.get('out_json')}")
+        print(f"  Tools  : {cal.get('tools')}")
+        print(f"  Cases  : {len(cal.get('included_cases') or [])} (included w/ GT)")
+
+        if cal.get("excluded_cases_no_gt"):
+            ex = cal.get("excluded_cases_no_gt") or []
+            print(f"  ⚠️  Excluded cases without GT: {len(ex)}")
+
+        if cal.get("suspicious_cases"):
+            sus = cal.get("suspicious_cases") or []
+            print(f"  ⚠️  Suspicious cases (GT present but no overlaps): {len(sus)}")
+
+    except Exception as e:
+        print(f"\n⚠️  Failed to build suite triage_calibration: {e}")
+
+    # Suite-level evaluation: triage ranking quality + tool utility.
+    # In QA calibration mode, we evaluate after the re-analyze pass.
+    if not qa_mode:
+        try:
+            from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
+
+            ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
+
+            print("\n📈 Suite triage_eval")
+            print(f"  Summary : {ev.get('out_summary_json')}")
+            print(f"  By-case : {ev.get('out_by_case_csv')}")
+            print(f"  Tools   : {ev.get('out_tool_utility_csv')}")
+
+            if ev.get("out_tool_marginal_csv"):
+                print(f"  Marginal: {ev.get('out_tool_marginal_csv')}")
+
+            # Print a compact macro snapshot for Ks that matter for triage.
+            try:
+                ks_list = ev.get("ks") or [1, 3, 5, 10, 25]
+                for k in ks_list:
+                    for strat in ["baseline", "agreement", "calibrated"]:
+                        ks = ev.get("macro", {}).get(strat, {}).get(str(k))
+                        if ks:
+                            mp = ks.get("precision")
+                            mc = ks.get("gt_coverage")
+                            print(f"  {strat} macro@{k}: precision={mp} coverage={mc}")
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"\n⚠️  Failed to build suite triage_eval: {e}")
+
+    return int(stage_rc)
+
+
 def post_run_aggregation_and_qa(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun, overall: int) -> int:
     """Suite-level aggregation + QA calibration runbook (best-effort)."""
 
@@ -508,230 +799,7 @@ def post_run_aggregation_and_qa(ctx: SuiteRunContext, resolved_run: ResolvedSuit
     analysis_filter = str(ctx.analysis_filter or "")
     skip_analysis = bool(ctx.skip_analysis)
 
-    # ------------------------------------------------------------------
-    # Suite-level aggregation: triage dataset (+ optional gt_tolerance sweep)
-    # ------------------------------------------------------------------
-    # This is intentionally filesystem-first and best-effort.
-    # If some cases are missing triage_features.csv (analysis skipped/failed),
-    # the builder will log them explicitly.
-    if (not bool(args.dry_run)) and (not bool(skip_analysis)):
-
-        # Optional deterministic GT tolerance sweep (QA calibration).
-        sweep_raw = getattr(args, "gt_tolerance_sweep", None)
-        sweep_auto = bool(getattr(args, "gt_tolerance_auto", False))
-        sweep_min_frac = float(getattr(args, "gt_tolerance_auto_min_fraction", 0.95) or 0.95)
-
-        ctx.gt_sweep.sweep_raw = str(sweep_raw) if sweep_raw is not None else None
-        ctx.gt_sweep.auto_enabled = bool(sweep_auto)
-        ctx.gt_sweep.auto_min_fraction = float(sweep_min_frac)
-
-        if qa_mode and (sweep_raw or sweep_auto):
-            # Mark as "requested" immediately so the QA manifest can record intent
-            # even if the sweep fails early.
-            ctx.gt_sweep.enabled = True
-            ctx.gt_sweep.report_csv = str((suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").resolve())
-            ctx.gt_sweep.payload_json = str((suite_dir / "analysis" / "gt_tolerance_sweep.json").resolve())
-
-            try:
-                from pipeline.analysis.suite.gt_tolerance_sweep import (
-                    disable_suite_calibration,
-                    parse_gt_tolerance_candidates,
-                    run_gt_tolerance_sweep,
-                    select_gt_tolerance_auto,
-                )
-
-                candidates = parse_gt_tolerance_candidates(sweep_raw)
-                ctx.gt_sweep.candidates = list(candidates)
-
-                sweep_payload = run_gt_tolerance_sweep(
-                    pipeline=ctx.pipeline,
-                    suite_root=suite_root,
-                    suite_id=suite_id,
-                    suite_dir=suite_dir,
-                    cases=[rc.suite_case.case for rc in resolved_run.cases],
-                    tools=scanners,
-                    tolerance=int(tolerance),
-                    gt_source=str(getattr(args, "gt_source", "auto")),
-                    analysis_filter=str(analysis_filter),
-                    exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
-                    include_harness=bool(getattr(args, "include_harness", False)),
-                    candidates=candidates,
-                )
-
-                # Record the emitted report path (should match the canonical path).
-                ctx.gt_sweep.report_csv = str(sweep_payload.get("out_report_csv") or ctx.gt_sweep.report_csv)
-
-                # Persist sweep payload for later selection/manifest writing.
-                ctx.gt_sweep.payload = sweep_payload
-
-                if sweep_auto:
-                    sel = select_gt_tolerance_auto(
-                        sweep_payload.get("rows") or [],
-                        min_fraction=sweep_min_frac,
-                    )
-                    chosen = int(sel.get("selected_gt_tolerance", int(getattr(args, "gt_tolerance", 0))))
-
-                    # Record decision (we write the selection file later so the QA checklist
-                    # can enforce it regardless of auto vs explicit selection).
-                    ctx.gt_sweep.selection = dict(sel)
-                    ctx.gt_sweep.selection_warnings = [str(w) for w in (sel.get("warnings") or []) if str(w).strip()]
-
-                    print(f"\n✅ GT tolerance auto-selected: {chosen}")
-                    if ctx.gt_sweep.selection_warnings:
-                        for w in ctx.gt_sweep.selection_warnings:
-                            print(f"  ⚠️  {w}")
-
-                    # Make downstream steps (final build + re-analyze pass) use the chosen tolerance.
-                    try:
-                        setattr(args, "gt_tolerance", chosen)
-                    except Exception:
-                        pass
-                else:
-                    # Explicit tolerance path: still record for CI reproducibility.
-                    ctx.gt_sweep.selection = {
-                        "schema_version": "gt_tolerance_selection_v1",
-                        "selected_gt_tolerance": int(getattr(args, "gt_tolerance", 0) or 0),
-                        "mode": "explicit",
-                        "warnings": [],
-                    }
-                    print("\nℹ️  GT tolerance sweep complete (no auto selection; continuing with --gt-tolerance)")
-
-                # After the sweep, rebuild canonical suite calibration artifacts once
-                # for the effective tolerance (explicit or auto-selected).
-                eff_tol = int(getattr(args, "gt_tolerance", 0))
-                print(f"\n🔁 Finalizing suite calibration build for gt_tolerance={eff_tol}")
-
-                # Ensure per-case analysis uses baseline ordering for triage_rank.
-                disable_suite_calibration(suite_dir)
-
-                # Re-analyze all cases once with the chosen tolerance (skip suite aggregation
-                # inside each analyze call; we'll build suite artifacts once below).
-                for j, rc2 in enumerate(resolved_run.cases, start=1):
-                    c2 = rc2.suite_case.case
-                    print("\n" + "-" * 72)
-                    print(f"🔁 Analyze (finalize) {j}/{len(resolved_run.cases)}: {c2.case_id}")
-
-                    case_dir = (suite_dir / "cases" / safe_name(c2.case_id)).resolve()
-                    try:
-                        areq = AnalyzeRequest(
-                            metric="suite",
-                            case=c2,
-                            suite_root=suite_root,
-                            suite_id=suite_id,
-                            case_path=str(case_dir),
-                            tools=tuple(scanners),
-                            tolerance=int(tolerance),
-                            gt_tolerance=int(eff_tol),
-                            gt_source=str(getattr(args, "gt_source", "auto")),
-                            analysis_filter=str(analysis_filter),
-                            exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
-                            include_harness=bool(getattr(args, "include_harness", False)),
-                            skip_suite_aggregate=True,
-                        )
-                        rc_code2 = int(ctx.pipeline.analyze(areq))
-                    except Exception as e:
-                        print(f"  ❌ analyze finalize failed for {c2.case_id}: {e}")
-                        rc_code2 = 2
-
-                    overall = max(overall, rc_code2)
-
-            except Exception as e:
-                print(f"\n❌ GT tolerance sweep failed: {e}")
-                # In QA mode, requested sweeps are first-class; fail the run (but keep going to emit whatever artifacts we can).
-                overall = max(overall, 2)
-                ctx.gt_sweep.selection_warnings = list(ctx.gt_sweep.selection_warnings or []) + [f"sweep_failed: {e}"]
-
-        # From this point on, the rest of the runbook assumes the *effective*
-        # gt_tolerance has been applied (either explicit or auto-selected).
-        try:
-            from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
-
-            ds = build_triage_dataset(suite_dir=suite_dir, suite_id=suite_id)
-
-            print("\n📦 Suite triage_dataset")
-            print(f"  Output : {ds.get('out_csv')}")
-            print(f"  Rows   : {ds.get('rows')}")
-
-            if ds.get("missing_cases"):
-                missing = ds.get("missing_cases") or []
-                print(f"  ⚠️  Missing triage_features.csv for {len(missing)} case(s): " + ", ".join([str(x) for x in missing]))
-
-            if ds.get("empty_cases"):
-                empty = ds.get("empty_cases") or []
-                print(f"  ⚠️  Empty triage_features.csv for {len(empty)} case(s): " + ", ".join([str(x) for x in empty]))
-
-            if ds.get("read_errors"):
-                errs = ds.get("read_errors") or []
-                print(
-                    f"  ⚠️  Failed to read triage_features.csv for {len(errs)} case(s). "
-                    "See triage_dataset_build.log under suite analysis."
-                )
-
-            if ds.get("schema_mismatch_cases"):
-                mism = ds.get("schema_mismatch_cases") or []
-                print(
-                    f"  ⚠️  Schema mismatch triage_features.csv for {len(mism)} case(s). "
-                    "See triage_dataset_build.log under suite analysis."
-                )
-
-        except Exception as e:
-            print(f"\n⚠️  Failed to build suite triage_dataset: {e}")
-
-        # ------------------------------------------------------------------
-        # Suite-level calibration: tool weights for triage tie-breaking
-        # ------------------------------------------------------------------
-        try:
-            from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibration
-
-            cal = build_triage_calibration(suite_dir=suite_dir, suite_id=suite_id)
-
-            print("\n🧭 Suite triage_calibration")
-            print(f"  Output : {cal.get('out_json')}")
-            print(f"  Tools  : {cal.get('tools')}")
-            print(f"  Cases  : {len(cal.get('included_cases') or [])} (included w/ GT)")
-
-            if cal.get("excluded_cases_no_gt"):
-                ex = cal.get("excluded_cases_no_gt") or []
-                print(f"  ⚠️  Excluded cases without GT: {len(ex)}")
-
-            if cal.get("suspicious_cases"):
-                sus = cal.get("suspicious_cases") or []
-                print(f"  ⚠️  Suspicious cases (GT present but no overlaps): {len(sus)}")
-
-        except Exception as e:
-            print(f"\n⚠️  Failed to build suite triage_calibration: {e}")
-
-        # ------------------------------------------------------------------
-        # Suite-level evaluation: triage ranking quality + tool utility
-        # ------------------------------------------------------------------
-        if not qa_mode:
-            try:
-                from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
-
-                ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
-
-                print("\n📈 Suite triage_eval")
-                print(f"  Summary : {ev.get('out_summary_json')}")
-                print(f"  By-case : {ev.get('out_by_case_csv')}")
-                print(f"  Tools   : {ev.get('out_tool_utility_csv')}")
-
-                if ev.get("out_tool_marginal_csv"):
-                    print(f"  Marginal: {ev.get('out_tool_marginal_csv')}")
-
-                # Print a compact macro snapshot for Ks that matter for triage.
-                try:
-                    ks_list = ev.get("ks") or [1, 3, 5, 10, 25]
-                    for k in ks_list:
-                        for strat in ["baseline", "agreement", "calibrated"]:
-                            ks = ev.get("macro", {}).get(strat, {}).get(str(k))
-                            if ks:
-                                mp = ks.get("precision")
-                                mc = ks.get("gt_coverage")
-                                print(f"  {strat} macro@{k}: precision={mp} coverage={mc}")
-                except Exception:
-                    pass
-            except Exception as e:
-                print(f"\n⚠️  Failed to build suite triage_eval: {e}")
+    overall = max(overall, build_suite_artifacts(ctx, resolved_run))
 
     # ------------------------------------------------------------------
     # QA calibration runbook: second pass analyze + deterministic checklist
