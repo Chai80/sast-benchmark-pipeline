@@ -372,49 +372,155 @@ def _compute_macro_from_topk_rows(
     return out
 
 
+
+
 # ---------------------------------------------------------------------------
-# Main builder
+# Report model builder (compute only; no I/O or markdown formatting)
 # ---------------------------------------------------------------------------
 
 
-def build_suite_report(
+@dataclass(frozen=True)
+class SuiteReportInputs:
+    """Inputs for suite report generation.
+
+    This structure is loaded from on-disk suite artifacts (suite.json, analysis
+    manifests, aggregate tables, and optional QA/calibration outputs).
+    """
+
+    suite_dir: Path
+    suite_id: str
+    out_dirname: str
+    analysis_dir: Path
+    out_tables: Path
+
+    suite: Dict[str, Any]
+    plan: Dict[str, Any]
+    scanners_requested: List[str]
+
+    qa_manifest: Dict[str, Any]
+    qa_scope: Optional[str]
+    qa_no_reanalyze: Optional[bool]
+    qa_calibration_manifest: Dict[str, Any]
+    qa_result: Dict[str, Any]
+
+    triage_calibration: Dict[str, Any]
+    min_support_by_owasp: Optional[int]
+
+    case_ids: List[str]
+
+
+@dataclass
+class _CaseScanSummary:
+    """Per-case rows plus summary signals used by action items/pointers."""
+
+    case_rows: List[CaseRow]
+    tools_used_union: set[str]
+    tools_missing_union: set[str]
+    cases_missing_outputs: List[str]
+    cases_no_clusters: List[str]
+    cases_analyzed_ok: List[str]
+    empty_tool_cases: Dict[str, List[str]]
+
+
+def _extract_scanners_requested(*, suite: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
+    scanners_requested: List[str] = []
+    if isinstance(plan.get("scanners"), list):
+        scanners_requested = [str(x) for x in plan.get("scanners") if x]
+    elif isinstance(suite.get("scanners"), list):
+        scanners_requested = [str(x) for x in suite.get("scanners") if x]
+    return scanners_requested
+
+
+def load_suite_report_inputs(
     *,
     suite_dir: Path,
     suite_id: Optional[str] = None,
     out_dirname: str = "analysis",
-) -> Dict[str, Any]:
+) -> SuiteReportInputs:
+    """Load on-disk inputs required to build a suite report model."""
+
     suite_dir = Path(suite_dir).resolve()
     sid = str(suite_id) if suite_id else suite_dir.name
+
     analysis_dir = suite_dir / out_dirname
     out_tables = analysis_dir / "_tables"
 
     suite = _safe_read_json(suite_dir / "suite.json") or {}
     plan = suite.get("plan") if isinstance(suite.get("plan"), dict) else {}
 
-    scanners_requested: List[str] = []
-    if isinstance(plan.get("scanners"), list):
-        scanners_requested = [str(x) for x in plan.get("scanners") if x]
-    elif isinstance(suite.get("scanners"), list):
-        scanners_requested = [str(x) for x in suite.get("scanners") if x]
+    scanners_requested = _extract_scanners_requested(suite=suite, plan=plan)
 
     # QA inputs (if present)
     qa_manifest = _safe_read_json(analysis_dir / "qa_manifest.json") or {}
-    qa_inputs = qa_manifest.get("inputs") if isinstance(qa_manifest.get("inputs"), dict) else {}
-    qa_cfg = qa_inputs.get("qa") if isinstance(qa_inputs.get("qa"), dict) else {}
-    qa_scope = qa_cfg.get("scope")
-    qa_no_reanalyze = qa_cfg.get("no_reanalyze")
+    qa_scope: Optional[str] = None
+    qa_no_reanalyze: Optional[bool] = None
+    if isinstance(qa_manifest, dict):
+        qa_inputs = qa_manifest.get("inputs") if isinstance(qa_manifest.get("inputs"), dict) else {}
+        qa_cfg = qa_inputs.get("qa") if isinstance(qa_inputs.get("qa"), dict) else {}
+        qa_scope = qa_cfg.get("scope")
+        qa_no_reanalyze = qa_cfg.get("no_reanalyze")
 
     qa_cal_manifest = _safe_read_json(analysis_dir / "qa_calibration_manifest.json") or {}
     qa_result = qa_cal_manifest.get("result") if isinstance(qa_cal_manifest.get("result"), dict) else {}
 
     # Calibration artifacts (if present)
     triage_cal = _safe_read_json(analysis_dir / "triage_calibration.json") or {}
-    min_support_by_owasp = None
+    min_support_by_owasp: Optional[int] = None
     if isinstance(triage_cal, dict):
         scoring = triage_cal.get("scoring") if isinstance(triage_cal.get("scoring"), dict) else {}
-        min_support_by_owasp = scoring.get("min_support_by_owasp")
+        m = scoring.get("min_support_by_owasp")
+        min_support_by_owasp = int(m) if isinstance(m, int) else None
 
     case_ids = _resolve_suite_case_ids(suite_dir)
+
+    return SuiteReportInputs(
+        suite_dir=suite_dir,
+        suite_id=sid,
+        out_dirname=out_dirname,
+        analysis_dir=analysis_dir,
+        out_tables=out_tables,
+        suite=suite,
+        plan=plan,
+        scanners_requested=scanners_requested,
+        qa_manifest=qa_manifest if isinstance(qa_manifest, dict) else {},
+        qa_scope=str(qa_scope) if isinstance(qa_scope, str) else None,
+        qa_no_reanalyze=bool(qa_no_reanalyze) if isinstance(qa_no_reanalyze, bool) else None,
+        qa_calibration_manifest=qa_cal_manifest if isinstance(qa_cal_manifest, dict) else {},
+        qa_result=qa_result if isinstance(qa_result, dict) else {},
+        triage_calibration=triage_cal if isinstance(triage_cal, dict) else {},
+        min_support_by_owasp=min_support_by_owasp,
+        case_ids=case_ids,
+    )
+
+
+def _normalize_artifact_path(p: Optional[str], *, suite_dir: Path) -> Optional[str]:
+    """Normalize a manifest artifact path to a suite-relative path when possible."""
+
+    if not p:
+        return None
+
+    resolved = _try_resolve_path(str(p), suite_dir=suite_dir)
+    if resolved and resolved.exists():
+        return _rel(resolved, suite_dir)
+
+    # If it already looks relative, keep it.
+    if not str(p).startswith("/"):
+        return str(p)
+
+    return None
+
+
+def _collect_case_rows(
+    *,
+    suite_dir: Path,
+    case_ids: Sequence[str],
+    out_dirname: str,
+    scanners_requested: Sequence[str],
+) -> _CaseScanSummary:
+    """Load per-case analysis manifests and build CaseRow records."""
+
+    suite_dir = Path(suite_dir).resolve()
+
     case_rows: List[CaseRow] = []
 
     tools_used_union: set[str] = set()
@@ -438,7 +544,7 @@ def build_suite_report(
                 CaseRow(
                     case_id=cid,
                     tools_used=[],
-                    tools_missing=scanners_requested.copy(),
+                    tools_missing=list(scanners_requested),
                     clusters=0,
                     triage_rows=0,
                     gt_matched=0,
@@ -464,7 +570,7 @@ def build_suite_report(
 
         ctx = manifest.get("context") if isinstance(manifest.get("context"), dict) else {}
         cfg = ctx.get("config") if isinstance(ctx.get("config"), dict) else {}
-        requested_tools = cfg.get("requested_tools") if isinstance(cfg.get("requested_tools"), list) else scanners_requested
+        requested_tools = cfg.get("requested_tools") if isinstance(cfg.get("requested_tools"), list) else list(scanners_requested)
         requested_tools = [str(x) for x in (requested_tools or []) if x]
 
         normalized_paths = ctx.get("normalized_paths") if isinstance(ctx.get("normalized_paths"), dict) else {}
@@ -484,9 +590,11 @@ def build_suite_report(
         gt_total = int(gt.get("total_gt_items") or 0)
         gt_matched = int(gt.get("matched_gt_items") or 0)
         match_rate = gt.get("match_rate")
-        gap_total = None
+
+        gap_total: Optional[int] = None
         try:
-            gap_total = int(((gt.get("gap_summary") or {}) if isinstance(gt.get("gap_summary"), dict) else {}).get("gap_total"))
+            gap_summary = gt.get("gap_summary") if isinstance(gt.get("gap_summary"), dict) else {}
+            gap_total = int(gap_summary.get("gap_total"))
         except Exception:
             gap_total = None
 
@@ -505,25 +613,9 @@ def build_suite_report(
         warnings_short = [_shorten_warning(w) for w in warnings[:3]]
 
         artifacts = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), dict) else {}
-        triage_queue_csv = artifacts.get("triage_queue_csv")
-        triage_queue_json = artifacts.get("triage_queue_json")
-        hotspot_pack = artifacts.get("hotspot_drilldown_pack")
-
-        # Convert artifact paths to suite-relative (some manifests store absolute paths)
-        def _norm_art_path(p: Optional[str]) -> Optional[str]:
-            if not p:
-                return None
-            pp = _try_resolve_path(p, suite_dir=suite_dir)
-            if pp and pp.exists():
-                return _rel(pp, suite_dir)
-            # If it already looks relative, keep it.
-            if not str(p).startswith("/"):
-                return str(p)
-            return None
-
-        triage_queue_csv_r = _norm_art_path(triage_queue_csv)
-        triage_queue_json_r = _norm_art_path(triage_queue_json)
-        hotspot_pack_r = _norm_art_path(hotspot_pack)
+        triage_queue_csv = _normalize_artifact_path(artifacts.get("triage_queue_csv"), suite_dir=suite_dir)
+        triage_queue_json = _normalize_artifact_path(artifacts.get("triage_queue_json"), suite_dir=suite_dir)
+        hotspot_pack = _normalize_artifact_path(artifacts.get("hotspot_drilldown_pack"), suite_dir=suite_dir)
 
         gt_score_path = case_dir / "gt" / "gt_score.json"
         gt_gap_csv = case_dir / "gt" / "gt_gap_queue.csv"
@@ -554,43 +646,70 @@ def build_suite_report(
                 top_severity=str(top_sev) if top_sev else None,
                 warnings=warnings_short,
                 analysis_manifest=_rel(manifest_path, suite_dir),
-                triage_queue_csv=triage_queue_csv_r,
-                triage_queue_json=triage_queue_json_r,
+                triage_queue_csv=triage_queue_csv,
+                triage_queue_json=triage_queue_json,
                 gt_score_json=_rel(gt_score_path, suite_dir) if gt_score_path.exists() else None,
                 gt_gap_queue_csv=_rel(gt_gap_csv, suite_dir) if gt_gap_csv.exists() else None,
-                hotspot_pack_json=hotspot_pack_r,
+                hotspot_pack_json=hotspot_pack,
                 tool_findings=tool_findings,
             )
         )
 
-    # Evaluate macro metrics
-    topk_rows = _load_topk_csv(suite_dir, out_dirname)
-    macro_metrics = None
-    if topk_rows:
-        macro_metrics = _compute_macro_from_topk_rows(topk_rows)
+    return _CaseScanSummary(
+        case_rows=case_rows,
+        tools_used_union=tools_used_union,
+        tools_missing_union=tools_missing_union,
+        cases_missing_outputs=cases_missing_outputs,
+        cases_no_clusters=cases_no_clusters,
+        cases_analyzed_ok=cases_analyzed_ok,
+        empty_tool_cases=empty_tool_cases,
+    )
 
-    # OWASP support counts (from calibration)
+
+def _compute_owasp_support(
+    *,
+    triage_cal: Dict[str, Any],
+    min_support_by_owasp: Optional[int],
+) -> Tuple[Dict[str, Dict[str, int]], List[str]]:
     owasp_support: Dict[str, Dict[str, int]] = {}
     owasp_fallback: List[str] = []
-    if isinstance(triage_cal, dict):
-        by_owasp = triage_cal.get("tool_stats_by_owasp") if isinstance(triage_cal.get("tool_stats_by_owasp"), dict) else {}
-        for k, v in by_owasp.items():
-            if not isinstance(v, dict):
-                continue
-            sup = v.get("support") if isinstance(v.get("support"), dict) else {}
-            cases_n = int(sup.get("cases") or 0)
-            clusters_n = int(sup.get("clusters") or 0)
-            gtpos_n = int(sup.get("gt_positive_clusters") or 0)
-            owasp_support[str(k)] = {"cases": cases_n, "clusters": clusters_n, "gt_positive_clusters": gtpos_n}
-            if isinstance(min_support_by_owasp, int) and clusters_n < min_support_by_owasp:
-                owasp_fallback.append(str(k))
 
-    # Executive summary inputs
-    created_at = suite.get("created_at") or suite.get("updated_at") or plan.get("provenance", {}).get("created_at") if isinstance(plan.get("provenance"), dict) else None
-    scanners_used = sorted(list(tools_used_union))
-    scanners_missing = sorted([t for t in scanners_requested if t not in set(scanners_used)])
+    by_owasp = triage_cal.get("tool_stats_by_owasp") if isinstance(triage_cal.get("tool_stats_by_owasp"), dict) else {}
+    for k, v in by_owasp.items():
+        if not isinstance(v, dict):
+            continue
+        sup = v.get("support") if isinstance(v.get("support"), dict) else {}
+        cases_n = int(sup.get("cases") or 0)
+        clusters_n = int(sup.get("clusters") or 0)
+        gtpos_n = int(sup.get("gt_positive_clusters") or 0)
+        owasp_support[str(k)] = {"cases": cases_n, "clusters": clusters_n, "gt_positive_clusters": gtpos_n}
+        if isinstance(min_support_by_owasp, int) and clusters_n < min_support_by_owasp:
+            owasp_fallback.append(str(k))
 
-    # Action items
+    return owasp_support, owasp_fallback
+
+
+def _resolve_created_at(*, suite: Dict[str, Any], plan: Dict[str, Any]) -> Optional[str]:
+    created_at = suite.get("created_at") or suite.get("updated_at")
+    if created_at:
+        return str(created_at)
+
+    prov = plan.get("provenance") if isinstance(plan.get("provenance"), dict) else {}
+    ca = prov.get("created_at")
+    return str(ca) if ca else None
+
+
+def _build_action_items(
+    *,
+    suite_dir: Path,
+    out_dirname: str,
+    cases_missing_outputs: Sequence[str],
+    cases_no_clusters: Sequence[str],
+    empty_tool_cases: Dict[str, List[str]],
+    min_support_by_owasp: Optional[int],
+    owasp_fallback: Sequence[str],
+    case_rows: Sequence[CaseRow],
+) -> List[str]:
     action_items: List[str] = []
 
     if cases_missing_outputs:
@@ -603,8 +722,7 @@ def build_suite_report(
         # Try to extract a likely reason from the first case with no clusters.
         sample = next((r for r in case_rows if r.case_id in set(cases_no_clusters)), None)
         if sample:
-            # Look up include_harness/exclude_prefixes for the sample
-            m = _safe_read_json(suite_dir / "cases" / sample.case_id / out_dirname / "analysis_manifest.json") or {}
+            m = _safe_read_json(Path(suite_dir) / "cases" / sample.case_id / out_dirname / "analysis_manifest.json") or {}
             ctx = m.get("context") if isinstance(m.get("context"), dict) else {}
             include_harness = ctx.get("include_harness")
             exclude_prefixes = ctx.get("exclude_prefixes") if isinstance(ctx.get("exclude_prefixes"), list) else []
@@ -620,7 +738,6 @@ def build_suite_report(
             )
 
     for tool, cids in sorted(empty_tool_cases.items()):
-        # Only call out if the tool was requested/present at least somewhere
         if cids:
             examples = ", ".join(cids[:3])
             extra = "" if len(cids) <= 3 else f" (+{len(cids)-3} more)"
@@ -635,6 +752,20 @@ def build_suite_report(
             "Those categories may fall back to global weights."
         )
 
+    return action_items
+
+
+def _existing_rel(path: Path, *, suite_dir: Path) -> Optional[str]:
+    return _rel(path, suite_dir) if Path(path).exists() else None
+
+
+def _build_pointers(
+    *,
+    suite_dir: Path,
+    analysis_dir: Path,
+    out_tables: Path,
+    case_rows: Sequence[CaseRow],
+) -> Dict[str, Any]:
     # Pointers: top cases by GT gap + severity
     top_gap = sorted(
         [r for r in case_rows if isinstance(r.gap_total, int)],
@@ -643,36 +774,30 @@ def build_suite_report(
     )[:3]
 
     top_sev = sorted(
-        case_rows,
+        list(case_rows),
         key=lambda r: (_severity_rank(r.top_severity), r.triage_rows),
         reverse=True,
     )[:3]
 
-    pointers = {
-        "suite_tables": {
-            "triage_dataset_csv": _rel(out_tables / "triage_dataset.csv", suite_dir) if (out_tables / "triage_dataset.csv").exists() else None,
-            "triage_eval_summary_json": _rel(out_tables / "triage_eval_summary.json", suite_dir) if (out_tables / "triage_eval_summary.json").exists() else None,
-            "triage_eval_by_case_csv": _rel(out_tables / "triage_eval_by_case.csv", suite_dir) if (out_tables / "triage_eval_by_case.csv").exists() else None,
-            "triage_eval_topk_csv": _rel(out_tables / "triage_eval_topk.csv", suite_dir) if (out_tables / "triage_eval_topk.csv").exists() else None,
-            "triage_calibration_json": _rel(analysis_dir / "triage_calibration.json", suite_dir) if (analysis_dir / "triage_calibration.json").exists() else None,
-            "triage_calibration_report_csv": _rel(out_tables / "triage_calibration_report.csv", suite_dir) if (out_tables / "triage_calibration_report.csv").exists() else None,
-            "triage_calibration_report_by_owasp_csv": _rel(out_tables / "triage_calibration_report_by_owasp.csv", suite_dir)
-            if (out_tables / "triage_calibration_report_by_owasp.csv").exists()
-            else None,
-            "triage_eval_log": _rel(analysis_dir / "triage_eval.log", suite_dir) if (analysis_dir / "triage_eval.log").exists() else None,
-            "qa_checklist_md": _rel(analysis_dir / "qa_checklist.md", suite_dir) if (analysis_dir / "qa_checklist.md").exists() else None,
-            "qa_checklist_json": _rel(analysis_dir / "qa_checklist.json", suite_dir) if (analysis_dir / "qa_checklist.json").exists() else None,
-            "qa_calibration_checklist_txt": _rel(analysis_dir / "qa_calibration_checklist.txt", suite_dir)
-            if (analysis_dir / "qa_calibration_checklist.txt").exists()
-            else None,
-            "qa_manifest_json": _rel(analysis_dir / "qa_manifest.json", suite_dir) if (analysis_dir / "qa_manifest.json").exists() else None,
-            "qa_calibration_manifest_json": _rel(analysis_dir / "qa_calibration_manifest.json", suite_dir)
-            if (analysis_dir / "qa_calibration_manifest.json").exists()
-            else None,
-            "gt_tolerance_sweep_summary_csv": _rel(analysis_dir / "gt_tolerance_sweep_summary.csv", suite_dir)
-            if (analysis_dir / "gt_tolerance_sweep_summary.csv").exists()
-            else None,
-        },
+    suite_tables = {
+        "triage_dataset_csv": _existing_rel(out_tables / "triage_dataset.csv", suite_dir=suite_dir),
+        "triage_eval_summary_json": _existing_rel(out_tables / "triage_eval_summary.json", suite_dir=suite_dir),
+        "triage_eval_by_case_csv": _existing_rel(out_tables / "triage_eval_by_case.csv", suite_dir=suite_dir),
+        "triage_eval_topk_csv": _existing_rel(out_tables / "triage_eval_topk.csv", suite_dir=suite_dir),
+        "triage_calibration_json": _existing_rel(analysis_dir / "triage_calibration.json", suite_dir=suite_dir),
+        "triage_calibration_report_csv": _existing_rel(out_tables / "triage_calibration_report.csv", suite_dir=suite_dir),
+        "triage_calibration_report_by_owasp_csv": _existing_rel(out_tables / "triage_calibration_report_by_owasp.csv", suite_dir=suite_dir),
+        "triage_eval_log": _existing_rel(analysis_dir / "triage_eval.log", suite_dir=suite_dir),
+        "qa_checklist_md": _existing_rel(analysis_dir / "qa_checklist.md", suite_dir=suite_dir),
+        "qa_checklist_json": _existing_rel(analysis_dir / "qa_checklist.json", suite_dir=suite_dir),
+        "qa_calibration_checklist_txt": _existing_rel(analysis_dir / "qa_calibration_checklist.txt", suite_dir=suite_dir),
+        "qa_manifest_json": _existing_rel(analysis_dir / "qa_manifest.json", suite_dir=suite_dir),
+        "qa_calibration_manifest_json": _existing_rel(analysis_dir / "qa_calibration_manifest.json", suite_dir=suite_dir),
+        "gt_tolerance_sweep_summary_csv": _existing_rel(analysis_dir / "gt_tolerance_sweep_summary.csv", suite_dir=suite_dir),
+    }
+
+    return {
+        "suite_tables": suite_tables,
         "top_gt_gap_cases": [
             {
                 "case_id": r.case_id,
@@ -694,6 +819,54 @@ def build_suite_report(
         ],
     }
 
+
+def build_suite_report_model(inputs: SuiteReportInputs) -> Dict[str, Any]:
+    """Build the suite report model (JSON-serializable dict)."""
+
+    suite_dir = inputs.suite_dir
+    sid = inputs.suite_id
+    analysis_dir = inputs.analysis_dir
+    out_tables = inputs.out_tables
+
+    case_summary = _collect_case_rows(
+        suite_dir=suite_dir,
+        case_ids=inputs.case_ids,
+        out_dirname=inputs.out_dirname,
+        scanners_requested=inputs.scanners_requested,
+    )
+
+    # Evaluate macro metrics
+    topk_rows = _load_topk_csv(suite_dir, inputs.out_dirname)
+    macro_metrics = _compute_macro_from_topk_rows(topk_rows) if topk_rows else None
+
+    owasp_support, owasp_fallback = _compute_owasp_support(
+        triage_cal=inputs.triage_calibration,
+        min_support_by_owasp=inputs.min_support_by_owasp,
+    )
+
+    created_at = _resolve_created_at(suite=inputs.suite, plan=inputs.plan)
+
+    scanners_used = sorted(list(case_summary.tools_used_union))
+    scanners_missing = sorted([t for t in inputs.scanners_requested if t not in set(scanners_used)])
+
+    action_items = _build_action_items(
+        suite_dir=suite_dir,
+        out_dirname=inputs.out_dirname,
+        cases_missing_outputs=case_summary.cases_missing_outputs,
+        cases_no_clusters=case_summary.cases_no_clusters,
+        empty_tool_cases=case_summary.empty_tool_cases,
+        min_support_by_owasp=inputs.min_support_by_owasp,
+        owasp_fallback=owasp_fallback,
+        case_rows=case_summary.case_rows,
+    )
+
+    pointers = _build_pointers(
+        suite_dir=suite_dir,
+        analysis_dir=analysis_dir,
+        out_tables=out_tables,
+        case_rows=case_summary.case_rows,
+    )
+
     integrity = _load_gt_tolerance_integrity(suite_dir=suite_dir, analysis_dir=analysis_dir)
 
     report_json: Dict[str, Any] = {
@@ -702,23 +875,23 @@ def build_suite_report(
         "suite_dir": str(suite_dir),
         "analysis_dir": str(analysis_dir),
         "created_at": created_at,
-        "scanners_requested": scanners_requested,
+        "scanners_requested": inputs.scanners_requested,
         "scanners_used": scanners_used,
         "scanners_missing": scanners_missing,
-        "cases_total": len(case_ids),
-        "cases_analyzed_ok": len(cases_analyzed_ok),
-        "cases_no_clusters": cases_no_clusters,
-        "cases_missing_tool_outputs": cases_missing_outputs,
+        "cases_total": len(inputs.case_ids),
+        "cases_analyzed_ok": len(case_summary.cases_analyzed_ok),
+        "cases_no_clusters": case_summary.cases_no_clusters,
+        "cases_missing_tool_outputs": case_summary.cases_missing_outputs,
         "qa": {
-            "qa_manifest_present": bool(qa_manifest),
-            "scope": qa_scope,
-            "no_reanalyze": qa_no_reanalyze,
-            "checklist_pass": qa_result.get("checklist_pass") if isinstance(qa_result, dict) else None,
-            "exit_code": qa_result.get("exit_code") if isinstance(qa_result, dict) else None,
+            "qa_manifest_present": bool(inputs.qa_manifest),
+            "scope": inputs.qa_scope,
+            "no_reanalyze": inputs.qa_no_reanalyze,
+            "checklist_pass": inputs.qa_result.get("checklist_pass") if isinstance(inputs.qa_result, dict) else None,
+            "exit_code": inputs.qa_result.get("exit_code") if isinstance(inputs.qa_result, dict) else None,
         },
         "calibration": {
-            "triage_calibration_present": bool(triage_cal),
-            "min_support_by_owasp": min_support_by_owasp,
+            "triage_calibration_present": bool(inputs.triage_calibration),
+            "min_support_by_owasp": inputs.min_support_by_owasp,
             "owasp_support": owasp_support,
             "owasp_fallback": sorted(owasp_fallback),
         },
@@ -729,13 +902,29 @@ def build_suite_report(
         "integrity": integrity,
         "action_items": action_items,
         "pointers": pointers,
-        "cases": [asdict(r) for r in case_rows],
+        "cases": [asdict(r) for r in case_summary.case_rows],
     }
 
     return report_json
 
 
-def _render_markdown(report: Dict[str, Any]) -> str:
+# ---------------------------------------------------------------------------
+# Public API (model builder)
+# ---------------------------------------------------------------------------
+
+
+def build_suite_report(
+    *,
+    suite_dir: Path,
+    suite_id: Optional[str] = None,
+    out_dirname: str = "analysis",
+) -> Dict[str, Any]:
+    """Backwards-compatible wrapper that returns the suite report model."""
+
+    inputs = load_suite_report_inputs(suite_dir=suite_dir, suite_id=suite_id, out_dirname=out_dirname)
+    return build_suite_report_model(inputs)
+
+def render_suite_report_markdown(report: Dict[str, Any]) -> str:
     sid = report.get("suite_id")
     created_at = report.get("created_at")
     scanners_requested = report.get("scanners_requested") or []
@@ -969,6 +1158,11 @@ def _render_markdown(report: Dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _render_markdown(report: Dict[str, Any]) -> str:
+    """Backward-compatible alias for render_suite_report_markdown()."""
+
+    return render_suite_report_markdown(report)
+
 def write_suite_report(
     *,
     suite_dir: Path,
@@ -986,8 +1180,9 @@ def write_suite_report(
     sid = str(suite_id) if suite_id else suite_dir.name
     analysis_dir = Path(out_dir).resolve() if out_dir else (suite_dir / out_dirname)
 
-    report = build_suite_report(suite_dir=suite_dir, suite_id=sid, out_dirname=analysis_dir.name)
-    md = _render_markdown(report)
+    inputs = load_suite_report_inputs(suite_dir=suite_dir, suite_id=sid, out_dirname=analysis_dir.name)
+    report = build_suite_report_model(inputs)
+    md = render_suite_report_markdown(report)
 
     out_md = analysis_dir / "suite_report.md"
     out_json = analysis_dir / "suite_report.json"
