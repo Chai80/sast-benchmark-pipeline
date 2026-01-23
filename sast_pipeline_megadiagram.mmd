@@ -26,7 +26,7 @@ flowchart TD
     direction TB
     P0[SASTBenchmarkPipeline facade<br/>(pipeline/pipeline.py)]
     P1[RunRequest / AnalyzeRequest<br/>(pipeline/orchestrator.py)]
-    P2[run_tools (scan|benchmark|suite-case)<br/>(pipeline/execution/run_case.py)]
+    P2[run_tools (scan|benchmark|suite-case)<br/>(pipeline/execution/run_case.py<br/>+ plan.py + runner.py + record.py)]
     P3[run_analyze (post-hoc)<br/>(pipeline/execution/analyze_mode.py)]
     P4[Build scan cmd<br/>(pipeline/core.build_scan_command)]
   end
@@ -40,7 +40,7 @@ flowchart TD
   subgraph Analysis["Analysis (pipeline/analysis/*)"]
     direction TB
     AN0[Read normalized.json] --> AN1[Compute metrics / exports / scoring] --> AN2[Write case_dir/analysis/*]
-    ANQ[QA triage calibration runbook<br/>(pipeline/analysis/qa_calibration_runbook.py)]
+    ANQ[QA triage calibration runbook<br/>(pipeline/analysis/qa_calibration_runbook/)<br/>(wrapper: pipeline/analysis/qa/qa_calibration_runbook.py)]
     ANDS[Build triage_dataset.csv<br/>(pipeline/analysis/suite_triage_dataset.py)]
     ANC[Build triage_calibration.json (v2)<br/>(pipeline/analysis/suite_triage_calibration.py)]
     ANE[Build triage_eval_summary.json<br/>(pipeline/analysis/suite_triage_eval.py)]

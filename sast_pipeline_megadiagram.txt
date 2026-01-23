@@ -43,7 +43,7 @@ A) OWNERSHIP / LAYERING  (where everything belongs)
 |           pipeline/models.py          (RepoSpec / CaseSpec / manifests)          |
 |           pipeline/scanners.py        (supported scanners + defaults)            |
 |           pipeline/core.py            (build scan_<tool> command lines)          |
-|           pipeline/execution/run_case.py    (run_tools implementation)           |
+|           pipeline/execution/run_case.py    (run_tools coordinator; uses plan/runner/record)           |
 |           pipeline/execution/analyze_mode.py (run_analyze implementation)        |
 |           pipeline/suites/*           (suite resolver + layout helpers)          |
 |                                                                                  |
@@ -75,7 +75,7 @@ A) OWNERSHIP / LAYERING  (where everything belongs)
 |  modules: pipeline/analysis/analyze_suite.py (per-case analysis entrypoint)     |
 |           pipeline/analysis/framework/*, pipeline/analysis/stages/*              |
 |           pipeline/analysis/exports/*, pipeline/scoring/*                        |
-|           pipeline/analysis/qa_calibration_runbook.py (suite-scoped QA helper)  |
+|           pipeline/analysis/qa_calibration_runbook/ (suite-scoped QA helper; wrapper: pipeline/analysis/qa/qa_calibration_runbook.py)  |
 |           pipeline/analysis/suite_triage_*.py (dataset/calibration/eval)         |
 |                                                                                  |
 |  Responsibilities:                                                               |
@@ -254,7 +254,7 @@ FLOW FOR suite  (multi-case)
   |
   v
   [Validate expected artifacts]
-    (module: pipeline/analysis/qa_calibration_runbook.py)
+    (module: pipeline/analysis/qa_calibration_runbook/; wrapper: pipeline/analysis/qa/qa_calibration_runbook.py)
     (prints: deterministic PASS/FAIL checklist)
   |
   v

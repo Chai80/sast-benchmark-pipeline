@@ -14,14 +14,16 @@ The design goal is **clean, non-spaghetti automation**:
 
 1. `sast_cli.py` — CLI + UX (modes + inputs)
 2. `pipeline/orchestrator.py` — high-level coordinator (cases/tools, manifests, errors)
-3. `pipeline/scanners.py` — scanner registry (supported tools, labels, scripts, tracks)
-4. `pipeline/core.py` — builds the subprocess commands (`tools/scan_*.py` invocations)
-5. `cli/commands/suite.py` — suite mode (resolver boundary + QA triage calibration)
-6. `sast_benchmark/io/layout.py` + `pipeline/suites/layout.py` — canonical output paths + suite/case manifests
-7. `pipeline/analysis/runner.py` + `pipeline/analysis/framework/*` — stage engine for per-case analysis
-8. `pipeline/analysis/qa_calibration_runbook.py` + `pipeline/analysis/suite_triage_*` — suite-scoped triage calibration
-9. `pipeline/scoring/gt_scorer.py` + `pipeline/scoring/gt_markers.py` — GT matching + scoring primitives
-10. `tools/scan_semgrep.py` → `tools/semgrep/*` — representative scanner adapter pattern
+3. `pipeline/execution/run_case.py` + `pipeline/execution/{plan,runner,record}.py` — execution engine (planning + subprocess + receipts)
+4. `pipeline/scanners.py` — scanner registry (supported tools, labels, scripts, tracks)
+5. `pipeline/core.py` — builds the subprocess commands (`tools/scan_*.py` invocations)
+6. `cli/commands/suite.py` + `cli/commands/suite/runbook.py` (`cli/commands/suite/runbook_steps/*`) — suite mode + interactive runbook (resolver boundary + QA triage calibration)
+7. `sast_benchmark/io/layout.py` + `pipeline/suites/layout.py` — canonical output paths + suite/case manifests
+8. `pipeline/analysis/runner.py` + `pipeline/analysis/framework/*` — stage engine for per-case analysis
+9. `pipeline/analysis/qa_calibration_runbook/` + `pipeline/analysis/suite_triage_*` — suite-scoped triage calibration (legacy wrapper: `pipeline/analysis/qa/qa_calibration_runbook.py`)
+10. `pipeline/analysis/suite_report/` — suite report builder (legacy wrapper: `pipeline/analysis/suite/suite_report.py`)
+11. `pipeline/scoring/gt_scorer.py` + `pipeline/scoring/gt_markers.py` — GT matching + scoring primitives
+12. `tools/scan_semgrep.py` → `tools/semgrep/*` — representative scanner adapter pattern
 
 
 ---

@@ -62,7 +62,7 @@ Optional (when using `--gt-tolerance-sweep` or `--gt-tolerance-auto`):
 The filesystem-first validator lives at:
 
 
-- `pipeline/analysis/qa_calibration_runbook.py`
+- `pipeline/analysis/qa_calibration_runbook/` (legacy wrapper: `pipeline/analysis/qa/qa_calibration_runbook.py`)
 
 ---
 
