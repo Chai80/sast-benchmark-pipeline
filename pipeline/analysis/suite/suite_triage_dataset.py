@@ -39,8 +39,11 @@ from pipeline.analysis.io.write_artifacts import write_csv, write_json
 
 # Import the triage_features schema contract if available.
 # This keeps the dataset stable and DB/ETL friendly.
+#
+# Prefer importing from the compute layer to avoid pulling in stage registration
+# side effects.
 try:
-    from pipeline.analysis.stages.triage_features import (  # type: ignore
+    from pipeline.analysis.compute.triage_features import (  # type: ignore
         TRIAGE_FEATURES_FIELDNAMES,
         TRIAGE_FEATURES_SCHEMA_VERSION,
     )

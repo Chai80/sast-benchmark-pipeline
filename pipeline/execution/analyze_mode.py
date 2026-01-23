@@ -217,7 +217,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
     out_path = Path(req.out) if req.out else (default_out_dir / "latest_hotspots_by_file.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    from pipeline.analysis.stages.overview import analyze_latest_hotspots_for_repo, print_text_report
+    from pipeline.analysis.compute.overview import analyze_latest_hotspots_for_repo, print_text_report
 
     try:
         report = analyze_latest_hotspots_for_repo(
