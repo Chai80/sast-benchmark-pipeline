@@ -19,6 +19,7 @@ from pipeline.suites.suite_definition import SuiteAnalysisDefaults, SuiteCase, S
 from pipeline.suites.suite_py_loader import load_suite_py
 from pipeline.suites.suite_resolver import ResolvedSuiteRun, SuiteInputProvenance, resolve_suite_run
 
+from .gt_tolerance_runbook import run_gt_tolerance_policy_runbook
 from .materialize import (
     _build_suite_from_sources,
     _build_suite_interactively,
@@ -546,12 +547,7 @@ def build_suite_artifacts(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun) 
     qa_mode = ctx.flags.qa_mode
 
     suite_id = resolved_run.suite_id
-    suite_root = resolved_run.suite_root
     suite_dir = resolved_run.suite_dir
-
-    scanners = list(ctx.scanners)
-    tolerance = int(ctx.tolerance or 0)
-    analysis_filter = str(ctx.analysis_filter or "")
     skip_analysis = bool(ctx.skip_analysis)
 
     if bool(args.dry_run) or skip_analysis:
@@ -560,132 +556,9 @@ def build_suite_artifacts(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun) 
     stage_rc = 0
 
     # ------------------------------------------------------------------
-    # Optional deterministic GT tolerance sweep (QA calibration).
+    # Optional deterministic GT tolerance sweep + selection (QA calibration).
     # ------------------------------------------------------------------
-    sweep_raw = getattr(args, "gt_tolerance_sweep", None)
-    sweep_auto = bool(getattr(args, "gt_tolerance_auto", False))
-    sweep_min_frac = float(getattr(args, "gt_tolerance_auto_min_fraction", 0.95) or 0.95)
-
-    ctx.gt_sweep.sweep_raw = str(sweep_raw) if sweep_raw is not None else None
-    ctx.gt_sweep.auto_enabled = bool(sweep_auto)
-    ctx.gt_sweep.auto_min_fraction = float(sweep_min_frac)
-
-    if qa_mode and (sweep_raw or sweep_auto):
-        # Mark as requested immediately so later manifests can record intent,
-        # even if the sweep fails early.
-        ctx.gt_sweep.enabled = True
-        ctx.gt_sweep.report_csv = str((suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").resolve())
-        ctx.gt_sweep.payload_json = str((suite_dir / "analysis" / "gt_tolerance_sweep.json").resolve())
-
-        try:
-            from pipeline.analysis.suite.gt_tolerance_sweep import (
-                disable_suite_calibration,
-                parse_gt_tolerance_candidates,
-                run_gt_tolerance_sweep,
-                select_gt_tolerance_auto,
-            )
-
-            candidates = parse_gt_tolerance_candidates(sweep_raw)
-            ctx.gt_sweep.candidates = list(candidates)
-
-            sweep_payload = run_gt_tolerance_sweep(
-                pipeline=ctx.pipeline,
-                suite_root=suite_root,
-                suite_id=suite_id,
-                suite_dir=suite_dir,
-                cases=[rc.suite_case.case for rc in resolved_run.cases],
-                tools=scanners,
-                tolerance=int(tolerance),
-                gt_source=str(getattr(args, "gt_source", "auto")),
-                analysis_filter=str(analysis_filter),
-                exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
-                include_harness=bool(getattr(args, "include_harness", False)),
-                candidates=candidates,
-            )
-
-            # Record the emitted report path (should match the canonical path).
-            ctx.gt_sweep.report_csv = str(sweep_payload.get("out_report_csv") or ctx.gt_sweep.report_csv)
-
-            # Persist sweep payload for later selection/manifest writing.
-            ctx.gt_sweep.payload = sweep_payload
-
-            if sweep_auto:
-                sel = select_gt_tolerance_auto(
-                    sweep_payload.get("rows") or [],
-                    min_fraction=sweep_min_frac,
-                )
-                chosen = int(sel.get("selected_gt_tolerance", int(getattr(args, "gt_tolerance", 0))))
-
-                # Record decision (we write the selection file later so the QA checklist
-                # can enforce it regardless of auto vs explicit selection).
-                ctx.gt_sweep.selection = dict(sel)
-                ctx.gt_sweep.selection_warnings = [str(w) for w in (sel.get("warnings") or []) if str(w).strip()]
-
-                print(f"\n✅ GT tolerance auto-selected: {chosen}")
-                if ctx.gt_sweep.selection_warnings:
-                    for w in ctx.gt_sweep.selection_warnings:
-                        print(f"  ⚠️  {w}")
-
-                # Make downstream steps (final build + re-analyze pass) use the chosen tolerance.
-                try:
-                    setattr(args, "gt_tolerance", chosen)
-                except Exception:
-                    pass
-            else:
-                # Explicit tolerance path: still record for CI reproducibility.
-                ctx.gt_sweep.selection = {
-                    "schema_version": "gt_tolerance_selection_v1",
-                    "selected_gt_tolerance": int(getattr(args, "gt_tolerance", 0) or 0),
-                    "mode": "explicit",
-                    "warnings": [],
-                }
-                print("\nℹ️  GT tolerance sweep complete (no auto selection; continuing with --gt-tolerance)")
-
-            # After the sweep, rebuild canonical suite calibration artifacts once
-            # for the effective tolerance (explicit or auto-selected).
-            eff_tol = int(getattr(args, "gt_tolerance", 0))
-            print(f"\n🔁 Finalizing suite calibration build for gt_tolerance={eff_tol}")
-
-            # Ensure per-case analysis uses baseline ordering for triage_rank.
-            disable_suite_calibration(suite_dir)
-
-            # Re-analyze all cases once with the chosen tolerance (skip suite aggregation
-            # inside each analyze call; we'll build suite artifacts once below).
-            for j, rc2 in enumerate(resolved_run.cases, start=1):
-                c2 = rc2.suite_case.case
-                print("\n" + "-" * 72)
-                print(f"🔁 Analyze (finalize) {j}/{len(resolved_run.cases)}: {c2.case_id}")
-
-                case_dir = (suite_dir / "cases" / safe_name(c2.case_id)).resolve()
-                try:
-                    areq = AnalyzeRequest(
-                        metric="suite",
-                        case=c2,
-                        suite_root=suite_root,
-                        suite_id=suite_id,
-                        case_path=str(case_dir),
-                        tools=tuple(scanners),
-                        tolerance=int(tolerance),
-                        gt_tolerance=int(eff_tol),
-                        gt_source=str(getattr(args, "gt_source", "auto")),
-                        analysis_filter=str(analysis_filter),
-                        exclude_prefixes=getattr(args, "exclude_prefixes", ()) or (),
-                        include_harness=bool(getattr(args, "include_harness", False)),
-                        skip_suite_aggregate=True,
-                    )
-                    rc_code2 = int(ctx.pipeline.analyze(areq))
-                except Exception as e:
-                    print(f"  ❌ analyze finalize failed for {c2.case_id}: {e}")
-                    rc_code2 = 2
-
-                stage_rc = max(stage_rc, rc_code2)
-
-        except Exception as e:
-            print(f"\n❌ GT tolerance sweep failed: {e}")
-            # In QA mode, requested sweeps are first-class; fail the run (but keep going
-            # to emit whatever artifacts we can).
-            stage_rc = max(stage_rc, 2)
-            ctx.gt_sweep.selection_warnings = list(ctx.gt_sweep.selection_warnings or []) + [f"sweep_failed: {e}"]
+    stage_rc = run_gt_tolerance_policy_runbook(ctx, resolved_run, overall=stage_rc)
 
     # ------------------------------------------------------------------
     # Suite-level aggregation: triage dataset + calibration (+ optional eval).
@@ -854,49 +727,6 @@ def post_run_aggregation_and_qa(ctx: SuiteRunContext, resolved_run: ResolvedSuit
                 print(f"  Marginal: {ev.get('out_tool_marginal_csv')}")
         except Exception as e:
             print(f"\n⚠️  Failed to build suite triage_eval (QA): {e}")
-
-        # Write GT tolerance selection/policy artifact for CI reproducibility.
-        try:
-            from pipeline.analysis.suite.gt_tolerance_sweep import write_gt_tolerance_selection
-
-            eff_tol = int(getattr(args, "gt_tolerance", 0) or 0)
-
-            selection = dict(ctx.gt_sweep.selection or {}) if isinstance(ctx.gt_sweep.selection, dict) else {}
-            if not selection:
-                selection = {
-                    "schema_version": "gt_tolerance_selection_v1",
-                    "selected_gt_tolerance": int(eff_tol),
-                    "mode": "explicit",
-                    "warnings": [],
-                }
-
-            # Always update to the effective tolerance at the time of writing.
-            selection["selected_gt_tolerance"] = int(eff_tol)
-
-            # Record the policy inputs that influence selection (small + stable).
-            selection.setdefault("policy", {})
-            selection["policy"].update(
-                {
-                    "initial_gt_tolerance": int(ctx.gt_tolerance_initial),
-                    "effective_gt_tolerance": int(eff_tol),
-                    "sweep_raw": str(ctx.gt_sweep.sweep_raw) if ctx.gt_sweep.sweep_raw is not None else None,
-                    "sweep_candidates": [int(x) for x in (ctx.gt_sweep.candidates or [])] if bool(ctx.gt_sweep.enabled) else [],
-                    "auto_enabled": bool(ctx.gt_sweep.auto_enabled),
-                    "auto_min_fraction": float(ctx.gt_sweep.auto_min_fraction) if bool(ctx.gt_sweep.auto_enabled) else None,
-                    "gt_source": str(getattr(args, "gt_source", "auto")),
-                }
-            )
-
-            out_sel = write_gt_tolerance_selection(
-                suite_dir=suite_dir,
-                selection=selection,
-                sweep_payload=ctx.gt_sweep.payload,
-            )
-            ctx.gt_sweep.selection_path = str(out_sel)
-            print(f"\n🧾 Wrote GT tolerance selection: {out_sel}")
-        except Exception as e:
-            print(f"\n❌ Failed to write GT tolerance selection file: {e}")
-            overall = max(overall, 2)
 
         # Validate suite artifacts (filesystem-first).
         checks: List[object] = []
