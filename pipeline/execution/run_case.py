@@ -2,415 +2,43 @@
 
 Case execution entrypoint.
 
-This module contains the implementation previously located in
-``pipeline.orchestrator.run_tools``.
+This module is intentionally small: it coordinates the pure planner
+(:mod:`pipeline.execution.plan`) with the side-effecting adapters:
 
-Why this exists
----------------
-``pipeline/orchestrator.py`` was growing into a large "composition root" that
-mixed multiple concerns (running tools vs running analysis). Splitting the
-implementation into focused modules keeps behavior the same while making the
-"where do I look?" story clearer.
+* :mod:`pipeline.execution.runner` – subprocess execution
+* :mod:`pipeline.execution.record` – filesystem receipts/manifests
+
+The public API remains stable for backwards compatibility:
+
+* ``RunRequest`` (alias)
+* ``run_tools(req)``
+* ``_maybe_run_analysis(...)`` (tests import this)
 """
 
 from __future__ import annotations
 
-import json
 import os
-import shutil
-import subprocess
-from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from pipeline.core import (
-    ROOT_DIR as REPO_ROOT,
-    build_scan_command,
-    filter_scanners_for_track,
-)
-from pipeline.suites.manifests import (
-    update_latest_pointer,
-    update_suite_artifacts,
-    write_case_manifest,
-)
-from pipeline.suites.layout import (
-    SuitePaths,
-    discover_latest_run_dir,
-    discover_repo_dir,
-    ensure_suite_dirs,
-    get_suite_paths,
-    new_suite_id,
-)
-from pipeline.models import CaseSpec
-from pipeline.scanners import SCANNERS, SUPPORTED_SCANNERS, ScannerRunContext
-from tools.io import write_json
-from sast_benchmark.gt.catalog import materialize_case_gt_catalog
+from pipeline.core import ROOT_DIR as REPO_ROOT
+from pipeline.scanners import SUPPORTED_SCANNERS
+from pipeline.suites.layout import SuitePaths
+
+from . import plan, record, runner
+from .model import RunCaseRequest, now_iso
+
+
+# Backwards-compatible alias.
+RunRequest = RunCaseRequest
 
 
 ENV_PATH: Path = REPO_ROOT / ".env"
 
 
-# ---------------------------------------------------------------------------
-# Small helpers
-# ---------------------------------------------------------------------------
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _load_json_if_exists(path: Path) -> Optional[Dict[str, Any]]:
-    if not path.exists() or not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
-
-
-def _run_one(cmd: List[str], *, dry_run: bool, quiet: bool) -> int:
-    print("  Command :", " ".join(cmd))
-    if dry_run:
-        print("  (dry-run: not executing)")
-        return 0
-
-    env = os.environ.copy()
-    env.setdefault("PYTHONUNBUFFERED", "1")
-
-    if quiet:
-        result = subprocess.run(
-            cmd,
-            env=env,
-            cwd=str(REPO_ROOT),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    else:
-        result = subprocess.run(cmd, env=env, cwd=str(REPO_ROOT))
-
-    return int(result.returncode)
-
-
 def _require_env(var: str) -> None:
     if not os.getenv(var):
         raise SystemExit(f"Missing {var}. Put it in {ENV_PATH} (or export it in your shell).")
-
-
-def _detect_git_branch(repo_path: Optional[str]) -> Optional[str]:
-    """Best-effort detect current git branch name for a local repo checkout."""
-    if not repo_path:
-        return None
-    try:
-        out = subprocess.check_output(
-            ["git", "-C", str(repo_path), "rev-parse", "--abbrev-ref", "HEAD"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=20,
-        ).strip()
-        if not out or out == "HEAD":
-            return None
-        return out
-    except Exception:
-        return None
-
-
-def _detect_git_commit(repo_path: Optional[str]) -> Optional[str]:
-    """Best-effort detect current git commit SHA for a local repo checkout."""
-    if not repo_path:
-        return None
-    try:
-        out = subprocess.check_output(
-            ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=20,
-        ).strip()
-        return out or None
-    except Exception:
-        return None
-
-
-def _capture_optional_benchmark_yaml(
-    repo_path: Optional[str],
-    case_dir: Path,
-    *,
-    warnings: Optional[List[str]] = None,
-) -> None:
-    """Materialize GT inputs into <case_dir>/gt for suite reproducibility.
-
-    Why this exists
-    ---------------
-    Suites can author GT in different ways:
-      - benchmark/gt_catalog.yaml (pre-built YAML catalog)
-      - in-code markers (DURINN_GT or GT:<ID>_START/_END)
-
-    During suite execution we capture/compile a *canonical* GT artifact under the
-    suite layout so analysis does **not** need to re-open the original repo
-    checkout (avoids circular dependencies and "spaghetti" GT logic).
-
-    Deterministic precedence
-    ------------------------
-    1) Copy benchmark/gt_catalog.yaml if present (canonical ingest; no discovery)
-    2) Else, compile gt_catalog.yaml from in-repo GT markers (best-effort)
-
-    benchmark/suite_sets.yaml is also copied into <case_dir>/gt when present.
-
-    Best-effort: never blocks scans; errors are appended to warnings.
-    """
-
-    if not repo_path:
-        return
-    try:
-        repo_root = Path(str(repo_path))
-        if not repo_root.exists() or not repo_root.is_dir():
-            return
-        gt_dir = Path(case_dir) / "gt"
-        materialize_case_gt_catalog(repo_root, gt_dir, warnings=warnings)
-    except Exception as e:
-        if warnings is not None:
-            warnings.append(f"gt_materialize_failed: {e}")
-        return
-
-def _merge_dicts(a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    if a:
-        out.update(a)
-    if b:
-        out.update(b)
-    return out
-
-
-def _write_config_receipt_json(
-    run_dir: Path,
-    *,
-    suite_id: str,
-    case_id: str,
-    tool: str,
-    repo_name: str,
-    profile: str,
-    command: str,
-    exit_code: int,
-    started: Optional[str] = None,
-    finished: Optional[str] = None,
-) -> None:
-    """Write run_dir/config_receipt.json.
-
-    This is a lightweight, tool-agnostic "run receipt" intended to make
-    configuration an explicit, comparable input to benchmarking.
-
-    Notes
-    -----
-    - The `profile` field is a *label* (e.g. "default", "strict") that
-      describes the intended scanner configuration for this run.
-    - Tool-specific configuration details should be captured in metadata.json
-      (and any adjacent config artifacts copied into the run directory).
-    """
-
-    run_id = run_dir.name
-
-    metadata_file = "metadata.json" if (run_dir / "metadata.json").exists() else None
-
-    data: Dict[str, Any] = {
-        "schema_version": 1,
-        "tool": tool,
-        "profile": profile,
-        "suite_id": suite_id,
-        "case_id": case_id,
-        "run_id": run_id,
-        "repo_name": repo_name,
-        "recorded_at": _now_iso(),
-        "command": command,
-        "started": started,
-        "finished": finished,
-        "exit_code": int(exit_code),
-        "artifacts": {
-            "metadata": metadata_file,
-            # Optional: if you have exported a rules inventory for this tool
-            # (CSV/PDF/etc), copy it into the run directory and record the
-            # relative path here.
-            "rules_inventory": None,
-        },
-        "notes": [
-            "Records configuration intent (profile) for reproducible comparisons.",
-            "Does not imply different scanners share identical rule implementations.",
-        ],
-    }
-
-    write_json(run_dir / "config_receipt.json", data)
-
-
-def _write_run_json(
-    run_dir: Path,
-    *,
-    suite_id: str,
-    case_id: str,
-    tool: str,
-    repo_name: str,
-    exit_code: int,
-    command: str,
-    profile: str = "default",
-    started: Optional[str] = None,
-    finished: Optional[str] = None,
-) -> None:
-    """Write run_dir/run.json (DB-ingestion friendly pointer file)."""
-
-    run_id = run_dir.name
-
-    def _pick_first(candidates: list[str]) -> Optional[str]:
-        for name in candidates:
-            p = run_dir / name
-            if p.exists() and p.is_file():
-                return name
-        return None
-
-    normalized_name = _pick_first(["normalized.json", f"{repo_name}.normalized.json"])
-    raw_name = _pick_first(["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"])
-    metadata_name = _pick_first(["metadata.json"])
-    config_receipt_name = _pick_first(["config_receipt.json"])
-    logs_dir = run_dir / "logs"
-    logs_dir_name = "logs" if logs_dir.exists() and logs_dir.is_dir() else None
-
-    data: Dict[str, Any] = {
-        "suite_id": suite_id,
-        "case_id": case_id,
-        "tool": tool,
-        "profile": profile,
-        "run_id": run_id,
-        "started": started,
-        "finished": finished,
-        "exit_code": int(exit_code),
-        "command": command,
-        "artifacts": {
-            "normalized": normalized_name,
-            "raw": raw_name,
-            "metadata": metadata_name,
-            "config_receipt": config_receipt_name,
-            "logs_dir": logs_dir_name,
-        },
-    }
-
-    write_json(run_dir / "run.json", data)
-
-
-# ---------------------------------------------------------------------------
-# Requests
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class RunRequest:
-    invocation_mode: str  # "scan" | "benchmark"
-    case: CaseSpec
-    repo_id: str
-
-    scanners: Sequence[str]
-
-    # suite writing
-    suite_root: Path
-
-    # configuration labeling (recorded in run receipts; does not change tool settings)
-    profile: str = "default"
-
-    suite_id: Optional[str] = None
-    use_suite: bool = True
-
-    # execution
-    dry_run: bool = False
-    quiet: bool = False
-
-    # post-processing
-    skip_analysis: bool = False
-    tolerance: int = 3
-    gt_tolerance: int = 0
-    gt_source: str = "auto"
-    analysis_filter: str = "security"
-
-    # scope filtering (analysis only)
-    exclude_prefixes: Sequence[str] = ()
-    include_harness: bool = False
-
-    # tool overrides
-    sonar_project_key: Optional[str] = None
-    aikido_git_ref: Optional[str] = None
-
-    # manifest provenance
-    argv: Optional[Sequence[str]] = None
-    python_executable: Optional[str] = None
-
-
-# ---------------------------------------------------------------------------
-# Coordinator helpers (keep run_tools() readable)
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class GitContext:
-    """Best-effort git context for the scanned repo checkout."""
-
-    branch: Optional[str]
-    commit: Optional[str]
-
-
-@dataclass(frozen=True)
-class ToolExecution:
-    cmd: List[str]
-    exit_code: int
-    started: str
-    finished: str
-
-    @property
-    def command_str(self) -> str:
-        return " ".join(self.cmd)
-
-
-def _get_case_track(req: RunRequest) -> Optional[str]:
-    """Return the case track label if present (best-effort)."""
-
-    try:
-        track = getattr(req.case, "track", None) or (req.case.tags or {}).get("track")
-        return str(track) if track else None
-    except Exception:
-        return None
-
-
-def _apply_track_filter(scanners: List[str], case_track: Optional[str]) -> tuple[List[str], List[str]]:
-    """Filter scanners based on case track and print UX warnings.
-
-    Returns (scanners_used, scanners_skipped).
-    """
-
-    if not case_track:
-        return scanners, []
-
-    filtered, skipped = filter_scanners_for_track(scanners, str(case_track))
-    if skipped:
-        # Keep this in warnings so it shows up in case.json.
-        # (We also print it for interactive UX.)
-        print(f"  ⚠️  skipping scanners not in track={case_track!r}: {', '.join(skipped)}")
-
-    if filtered:
-        return list(filtered), list(skipped)
-
-    # If nothing matches, keep the original list (don't silently do nothing).
-    print(f"  ⚠️  no scanners matched track={case_track!r}; running requested scanners")
-    return scanners, list(skipped)
-
-
-def _compute_suite_paths_and_init(req: RunRequest, *, case_warnings: List[str]) -> Optional[SuitePaths]:
-    if not req.use_suite:
-        return None
-
-    sid = str(req.suite_id) if req.suite_id else new_suite_id()
-    suite_paths = get_suite_paths(case_id=req.case.case_id, suite_id=sid, suite_root=req.suite_root)
-    ensure_suite_dirs(suite_paths)
-    update_latest_pointer(suite_paths)
-
-    # Optional: capture suite GT YAML into the case folder for reproducibility
-    _capture_optional_benchmark_yaml(req.case.repo.repo_path, suite_paths.case_dir, warnings=case_warnings)
-
-    return suite_paths
 
 
 def _print_invocation_header(req: RunRequest, *, scanners: Sequence[str], suite_paths: Optional[SuitePaths]) -> None:
@@ -430,207 +58,6 @@ def _print_invocation_header(req: RunRequest, *, scanners: Sequence[str], suite_
         print(f"  Case dir : {suite_paths.case_dir}")
 
 
-def _capture_git_context(req: RunRequest, *, case_warnings: List[str]) -> GitContext:
-    """Capture git branch/commit for the scanned repo and record mismatches."""
-
-    actual_branch = _detect_git_branch(req.case.repo.repo_path)
-    actual_commit = _detect_git_commit(req.case.repo.repo_path)
-
-    # Record obvious mismatches immediately (still non-fatal).
-    if req.case.branch and actual_branch and req.case.branch != actual_branch:
-        case_warnings.append(
-            f"case_context_branch_mismatch: expected={req.case.branch} actual={actual_branch}"
-        )
-    if req.case.branch and not actual_branch:
-        case_warnings.append(f"case_context_branch_unknown: expected={req.case.branch} actual=None")
-    if req.case.commit and actual_commit and req.case.commit != actual_commit:
-        case_warnings.append(
-            f"case_context_commit_mismatch: expected={req.case.commit} actual={actual_commit}"
-        )
-    if req.case.commit and not actual_commit:
-        case_warnings.append(f"case_context_commit_unknown: expected={req.case.commit} actual=None")
-
-    return GitContext(branch=actual_branch, commit=actual_commit)
-
-
-def _compute_extra_args(
-    *,
-    scanner: str,
-    req: RunRequest,
-    suite_paths: Optional[SuitePaths],
-    git_ctx: GitContext,
-) -> Dict[str, Any]:
-    extra_args: Dict[str, Any] = {}
-
-    # Scanner-specific quirks (env requirements + derived args) are centralized
-    # in pipeline.scanners as pure hooks.
-    info = SCANNERS.get(scanner)
-    if info is not None:
-        for var in getattr(info, "required_env", ()):
-            _require_env(str(var))
-
-        builder = getattr(info, "extra_args_builder", None)
-        if builder is not None:
-            ctx = ScannerRunContext(git_branch=git_ctx.branch, git_commit=git_ctx.commit)
-            built = builder(req, ctx) or {}
-            if not isinstance(built, dict):
-                raise SystemExit(f"Invalid extra_args_builder for {scanner!r}: expected dict, got {type(built)}")
-            extra_args = _merge_dicts(extra_args, built)
-
-    # Small UX: show derived project-key when present (primarily Sonar).
-    if "project-key" in extra_args:
-        print(f"  Sonar project key : {extra_args.get('project-key')}")
-
-    # Suite output rooting (all scanners share --output-root)
-    if suite_paths is not None:
-        extra_args = _merge_dicts(extra_args, {"output-root": str(suite_paths.tool_runs_dir / scanner)})
-
-    return extra_args
-
-
-def _execute_scanner(*, cmd: List[str], req: RunRequest) -> ToolExecution:
-    tool_started = _now_iso()
-    code = _run_one(cmd, dry_run=req.dry_run, quiet=req.quiet)
-    tool_finished = _now_iso()
-    return ToolExecution(cmd=cmd, exit_code=int(code), started=tool_started, finished=tool_finished)
-
-
-def _record_tool_run_manifest(
-    *,
-    scanner: str,
-    suite_paths: SuitePaths,
-    req: RunRequest,
-    execution: ToolExecution,
-    case_warnings: List[str],
-    tool_runs_manifest: Dict[str, Any],
-) -> None:
-    """Best-effort discovery of tool outputs + run.json writing."""
-
-    tool_out_root = suite_paths.tool_runs_dir / scanner
-
-    # Discover the tool run root (layout v2: <output_root>/<run_id>/... or v1: <output_root>/<repo>/<run_id>/...)
-    run_root_dir = discover_repo_dir(tool_out_root, prefer=req.case.runs_repo_name)
-    run_dir = discover_latest_run_dir(run_root_dir) if run_root_dir else None
-    metadata = _load_json_if_exists((run_dir / "metadata.json") if run_dir else Path("/nonexistent"))
-
-    # Prefer the scanner-captured local checkout path for downstream analysis/GT extraction.
-    scanned_repo_dir = None
-    if isinstance(metadata, dict):
-        scanned_repo_dir = metadata.get("repo_path") or metadata.get("repo_local_path")
-    if not scanned_repo_dir:
-        scanned_repo_dir = req.case.repo.repo_path
-
-    # Defensive check: repo_dir should never point at the tool output root.
-    # If it does, GT marker extraction and diagnostics will break.
-    try:
-        if scanned_repo_dir:
-            srd = Path(str(scanned_repo_dir)).resolve()
-            out_root = tool_out_root.resolve()
-            if srd == out_root or out_root in srd.parents:
-                case_warnings.append(f"repo_dir_suspicious:{scanner}:repo_dir_points_into_output_root:{srd}")
-    except Exception:
-        pass
-
-    config_receipt_path = None
-    if run_dir:
-        try:
-            _write_config_receipt_json(
-                run_dir,
-                suite_id=suite_paths.suite_id,
-                case_id=suite_paths.case_id,
-                tool=scanner,
-                repo_name=req.case.runs_repo_name,
-                profile=str(req.profile),
-                exit_code=execution.exit_code,
-                command=execution.command_str,
-                started=execution.started,
-                finished=execution.finished,
-            )
-            config_receipt_path = str(run_dir / "config_receipt.json")
-        except Exception as e:
-            case_warnings.append(f"write_config_receipt_failed:{scanner}:{run_dir}: {e}")
-
-        try:
-            _write_run_json(
-                run_dir,
-                suite_id=suite_paths.suite_id,
-                case_id=suite_paths.case_id,
-                tool=scanner,
-                repo_name=req.case.runs_repo_name,
-                exit_code=execution.exit_code,
-                command=execution.command_str,
-                profile=str(req.profile),
-                started=execution.started,
-                finished=execution.finished,
-            )
-        except Exception as e:
-            case_warnings.append(f"write_run_json_failed:{scanner}:{run_dir}: {e}")
-
-    run_json_path = str(run_dir / "run.json") if run_dir else None
-
-    tool_runs_manifest[scanner] = {
-        "exit_code": execution.exit_code,
-        "command": execution.command_str,
-        "started": execution.started,
-        "finished": execution.finished,
-        "output_root": str(tool_out_root),
-        "run_root": str(run_root_dir) if run_root_dir else None,
-        "repo_dir": str(scanned_repo_dir) if scanned_repo_dir else None,
-        "run_id": run_dir.name if run_dir else None,
-        "run_dir": str(run_dir) if run_dir else None,
-        "run_json": run_json_path,
-        "profile": str(req.profile),
-        "config_receipt": config_receipt_path,
-        "metadata": metadata,
-    }
-
-
-def _backfill_case_repo_context(
-    *,
-    req: RunRequest,
-    tool_runs_manifest: Dict[str, Any],
-    git_ctx: GitContext,
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Prefer repo context from tool metadata, fallback to CLI/git."""
-
-    # Backfill scanned repo context from tool metadata for runs where the CLI did not receive --repo-path.
-    # This is critical for GT marker extraction and context diagnostics.
-    case_repo_path = req.case.repo.repo_path
-    case_repo_commit = git_ctx.commit
-    case_repo_branch = git_ctx.branch
-
-    for _tool, info in tool_runs_manifest.items():
-        meta = (info or {}).get("metadata")
-        if not isinstance(meta, dict):
-            continue
-        if not case_repo_path:
-            rp = meta.get("repo_path") or meta.get("repo_local_path")
-            if rp:
-                case_repo_path = rp
-        if not case_repo_commit and meta.get("repo_commit"):
-            case_repo_commit = meta.get("repo_commit")
-        if not case_repo_branch and meta.get("repo_branch"):
-            case_repo_branch = meta.get("repo_branch")
-
-    # If we discovered a repo path but branch/commit are still missing, try git.
-    if case_repo_path and (not case_repo_commit or not case_repo_branch):
-        try:
-            from pathlib import Path as _Path
-
-            from tools.core import get_git_branch as _get_git_branch
-            from tools.core import get_git_commit as _get_git_commit
-
-            _p = _Path(case_repo_path)
-            if not case_repo_commit:
-                case_repo_commit = _get_git_commit(_p)
-            if not case_repo_branch:
-                case_repo_branch = _get_git_branch(_p)
-        except Exception:
-            pass
-
-    return case_repo_path, case_repo_branch, case_repo_commit
-
-
 def _maybe_run_analysis(
     *,
     req: RunRequest,
@@ -638,87 +65,14 @@ def _maybe_run_analysis(
     scanners: Sequence[str],
     case_warnings: List[str],
 ) -> Optional[Dict[str, Any]]:
-    """Run analysis suite (benchmark mode only)."""
+    """Backwards-compatible wrapper (tests import this symbol)."""
 
-    # Auto-analysis (only makes sense when bundling)
-    if req.invocation_mode != "benchmark" or req.skip_analysis:
-        return None
-
-    print("\n----------------------------------------")
-    print("▶ analysis suite")
-
-    from pipeline.analysis.io.discovery import find_latest_normalized_json
-
-    available_tools: List[str] = []
-    for tool in scanners:
-        try:
-            find_latest_normalized_json(
-                runs_dir=suite_paths.tool_runs_dir,
-                tool=tool,
-                repo_name=req.case.runs_repo_name,
-            )
-            available_tools.append(tool)
-        except FileNotFoundError:
-            msg = f"missing_normalized_json:{tool}"
-            case_warnings.append(msg)
-            print(f"  ⚠️  missing normalized JSON for {tool}; skipping it in analysis")
-
-    if not available_tools:
-        print("  ⚠️  no tool outputs found; skipping analysis")
-        return None
-
-    # If this suite has an effective GT tolerance recorded (QA calibration),
-    # prefer it to keep benchmark/analyze outputs deterministic.
-    effective_gt_tolerance = int(getattr(req, 'gt_tolerance', 0) or 0)
-    try:
-        from pipeline.analysis.io.gt_tolerance_policy import resolve_effective_gt_tolerance
-
-        pol = resolve_effective_gt_tolerance(
-            suite_dir=suite_paths.suite_dir,
-            requested=int(getattr(req, 'gt_tolerance', 0) or 0),
-        )
-
-        effective_gt_tolerance = int(pol.get('effective_gt_tolerance') or effective_gt_tolerance)
-        src = str(pol.get('source') or '')
-
-        # Record only when the policy *changes* the effective value.
-        if src in {'selection_json', 'suite_json'} and effective_gt_tolerance != int(getattr(req, 'gt_tolerance', 0) or 0):
-            msg = (
-                f"gt_tolerance overridden by {src}: requested={int(getattr(req, 'gt_tolerance', 0) or 0)} "
-                f"effective={effective_gt_tolerance}"
-            )
-            case_warnings.append(msg)
-            print(f"  ℹ️  {msg}")
-
-        for w in (pol.get('warnings') or []):
-            if str(w).strip():
-                print(f"  ⚠️  {w}")
-    except Exception:
-        # Best-effort only.
-        pass
-
-    from pipeline.analysis.analyze_suite import run_suite
-
-    analysis_summary = run_suite(
-        repo_name=req.case.runs_repo_name,
-        tools=available_tools,
-        runs_dir=suite_paths.tool_runs_dir,
-        out_dir=suite_paths.analysis_dir,
-        tolerance=int(req.tolerance),
-        gt_tolerance=int(effective_gt_tolerance),
-        gt_source=str(req.gt_source),
-        mode=str(req.analysis_filter),
-        exclude_prefixes=req.exclude_prefixes,
-        include_harness=bool(req.include_harness),
-        formats=["json", "csv"],
+    return record.maybe_run_analysis(
+        req=req,
+        suite_paths=suite_paths,
+        scanners=scanners,
+        case_warnings=case_warnings,
     )
-    print(f"  ✅ analysis complete: {suite_paths.analysis_dir}")
-    return analysis_summary
-
-
-# ---------------------------------------------------------------------------
-# Public entrypoint
-# ---------------------------------------------------------------------------
 
 
 def run_tools(req: RunRequest) -> int:
@@ -733,35 +87,42 @@ def run_tools(req: RunRequest) -> int:
     if not scanners_requested:
         raise SystemExit("No valid scanners specified.")
 
-    scanners_requested = list(scanners_requested)
-
     if req.invocation_mode not in ("scan", "benchmark"):
         raise SystemExit(f"Invalid invocation_mode: {req.invocation_mode}")
+
+    scanners_requested = list(scanners_requested)
 
     # Collected non-fatal issues for this case run.
     case_warnings: List[str] = []
 
     # Optional track enforcement (useful when mixing SAST/SCA/IaC case sets).
-    # If a case declares a track, only run scanners that claim to support it.
-    # Unknown tracks do not filter scanners (best-effort).
-    case_track = _get_case_track(req)
-    scanners, skipped_by_track = _apply_track_filter(list(scanners_requested), case_track)
+    case_track = plan.get_case_track(req.case)
+    scanners, skipped_by_track, notes = plan.apply_track_filter(scanners_requested, case_track)
+    for msg in notes:
+        print(f"  {msg}")
     if skipped_by_track:
         case_warnings.append(
             f"scanners_skipped_by_track: track={case_track} skipped={','.join(skipped_by_track)}"
         )
 
     # Suite handling (directory layout + optional GT capture)
-    suite_paths = _compute_suite_paths_and_init(req, case_warnings=case_warnings)
+    suite_paths = record.init_suite_paths(req, case_warnings=case_warnings)
 
     # Human-friendly header
     _print_invocation_header(req, scanners=scanners, suite_paths=suite_paths)
 
-    started = _now_iso()
+    started = now_iso()
 
     # Capture git context early so the case manifest can be trusted even if
     # downstream tools write zero findings.
-    git_ctx = _capture_git_context(req, case_warnings=case_warnings)
+    actual_branch = runner.detect_git_branch(req.case.repo.repo_path)
+    actual_commit = runner.detect_git_commit(req.case.repo.repo_path)
+    git_ctx, git_warnings = plan.evaluate_git_context(
+        case=req.case,
+        actual_branch=actual_branch,
+        actual_commit=actual_commit,
+    )
+    case_warnings.extend(git_warnings)
 
     tool_runs_manifest: Dict[str, Any] = {}
     overall = 0
@@ -770,35 +131,36 @@ def run_tools(req: RunRequest) -> int:
     # Scan loop
     # -------------------------------------------------------------------
 
-    for scanner in scanners:
+    for scanner_key in scanners:
         if req.invocation_mode == "benchmark":
             print("\n----------------------------------------")
-            print(f"▶ {scanner}")
+            print(f"▶ {scanner_key}")
 
-        extra_args = _compute_extra_args(
-            scanner=scanner,
+        # Preflight env vars declared by the scanner integration.
+        for var in plan.required_env_vars(scanner_key):
+            _require_env(var)
+
+        extra_args = plan.build_scanner_extra_args(
+            scanner=scanner_key,
             req=req,
             suite_paths=suite_paths,
             git_ctx=git_ctx,
         )
 
-        cmd = build_scan_command(
-            scanner,
-            repo_url=req.case.repo.repo_url,
-            repo_path=req.case.repo.repo_path,
-            extra_args=extra_args,
-            python_executable=req.python_executable,
-        )
+        # Small UX: show derived project-key when present (primarily Sonar).
+        if "project-key" in extra_args:
+            print(f"  Sonar project key : {extra_args.get('project-key')}")
 
-        execution = _execute_scanner(cmd=cmd, req=req)
+        invocation = plan.build_scan_invocation(scanner=scanner_key, req=req, extra_args=extra_args)
+        execution = runner.run_invocation(invocation, dry_run=req.dry_run, quiet=req.quiet)
 
         if execution.exit_code != 0:
             overall = execution.exit_code
 
         # Record run info (best-effort) when using suites
         if suite_paths is not None:
-            _record_tool_run_manifest(
-                scanner=scanner,
+            record.record_tool_run_manifest(
+                scanner=scanner_key,
                 suite_paths=suite_paths,
                 req=req,
                 execution=execution,
@@ -810,11 +172,18 @@ def run_tools(req: RunRequest) -> int:
     # Post-processing: backfill repo context and write manifests
     # -------------------------------------------------------------------
 
-    case_repo_path, case_repo_branch, case_repo_commit = _backfill_case_repo_context(
+    case_repo_path, case_repo_branch, case_repo_commit, probe_repo_path = plan.backfill_case_repo_context(
         req=req,
         tool_runs_manifest=tool_runs_manifest,
         git_ctx=git_ctx,
     )
+
+    # If we discovered a repo path but branch/commit are still missing, try git.
+    if probe_repo_path:
+        if not case_repo_commit:
+            case_repo_commit = runner.detect_git_commit(probe_repo_path)
+        if not case_repo_branch:
+            case_repo_branch = runner.detect_git_branch(probe_repo_path)
 
     analysis_summary: Optional[Dict[str, Any]] = None
     manifest: Optional[Dict[str, Any]] = None
@@ -822,7 +191,7 @@ def run_tools(req: RunRequest) -> int:
     # Write a *pre-analysis* case manifest so analysis stages (diagnostics + GT
     # marker scoring) can read case.json reliably.
     if suite_paths is not None:
-        manifest = write_case_manifest(
+        manifest = record.write_case_manifest_file(
             paths=suite_paths,
             invocation_mode=req.invocation_mode,
             argv=req.argv,
@@ -855,12 +224,11 @@ def run_tools(req: RunRequest) -> int:
             case_warnings=case_warnings,
         )
 
-    finished = _now_iso()
+    finished = now_iso()
 
     # Final case manifest + suite artifacts
     if suite_paths is not None:
-        # Final case manifest + suite-level indexes
-        manifest = write_case_manifest(
+        manifest = record.write_case_manifest_file(
             paths=suite_paths,
             invocation_mode=req.invocation_mode,
             argv=req.argv,
@@ -886,7 +254,7 @@ def run_tools(req: RunRequest) -> int:
             errors=[],
         )
 
-        update_suite_artifacts(suite_paths, manifest)
+        record.update_suite_indexes(suite_paths, manifest)
 
         print("\n📦 Case complete")
         print(f"  Suite id : {suite_paths.suite_id}")
