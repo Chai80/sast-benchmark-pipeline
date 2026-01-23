@@ -410,44 +410,31 @@ def _suite_plan_scanners(suite_dir: Path) -> List[str]:
     return sorted(set([str(x).strip() for x in scanners if str(x).strip()]))
 
 
-def validate_calibration_suite_artifacts(
-    suite_dir: str | Path,
+def _check_exists(
+    name: str,
+    path: Path,
     *,
-    require_scored_queue: bool = True,
-    expect_calibration: bool = True,
-    expect_gt_tolerance_sweep: bool = False,
-    expect_gt_tolerance_selection: bool = False,
-) -> List[QACheck]:
-    """Validate suite-level artifacts for the triage calibration workflow.
+    required: bool = True,
+    missing_detail: str = "missing",
+    ok_detail_if_not_required: str = "",
+) -> QACheck:
+    """Create a simple existence check.
 
-    Returns a list of checks. Use :func:`all_ok` to decide pass/fail.
-
-    Parameters
-    ----------
-    suite_dir:
-        Suite directory like runs/suites/<suite_id> (or a resolved LATEST).
-    require_scored_queue:
-        If True, require at least one non-empty triage_score_v1 in a per-case
-        triage_queue.csv. This is the strongest filesystem signal that calibration
-        weights were actually applied (i.e., you ran the *second analyze pass*).
-
-        Set this to False only if you intentionally skipped re-analyzing cases.
-    expect_calibration:
-        If True, require calibration artifacts and that triage_eval includes the
-        calibrated strategy. For non-scored suites (no GT / no calibration), set
-        this to False to relax calibration-specific checks.
+    We keep this helper intentionally small: it removes repeated boilerplate
+    without hiding behavior.
     """
 
-    suite_dir = Path(suite_dir).resolve()
-    out: List[QACheck] = []
+    p = Path(path)
+    if not required:
+        return QACheck(name=name, ok=True, path=str(p), detail=str(ok_detail_if_not_required))
 
-    analysis_dir = suite_dir / "analysis"
-    tables_dir = analysis_dir / "_tables"
+    ok = p.exists()
+    return QACheck(name=name, ok=ok, path=str(p), detail="" if ok else str(missing_detail))
 
-    # --- Scanner config receipts (scientific reproducibility) ------------
-    # In benchmarking, "tool output" depends on configuration (rules/profiles).
-    # We require config receipts so suite-to-suite diffs can attribute drift to
-    # configuration/profile changes.
+
+def _checks_scanner_receipts(suite_dir: Path) -> List[QACheck]:
+    """Validate scanner receipts (profiles + config receipts) for reproducibility."""
+
     expected_scanners = _suite_plan_scanners(suite_dir)
     sc = summarize_scanner_config(suite_dir, scanners=expected_scanners)
 
@@ -472,222 +459,228 @@ def validate_calibration_suite_artifacts(
     if warnings_list:
         detail_parts.append("; ".join([str(w) for w in warnings_list if str(w).strip()]))
 
-    out.append(
+    return [
         QACheck(
-            name="profile recorded + config receipts exist",
+            name="profile recorded + config receipts exist", 
             ok=bool(ok_profile and ok_receipts),
             warn=bool(warn_profile or (warnings_list and ok_profile and ok_receipts)),
             path=str(suite_dir / "cases"),
             detail="; ".join([p for p in detail_parts if str(p).strip()]),
         )
-    )
+    ]
 
-    # --- GT tolerance artifacts (optional, QA-driven) ----------------------
-    # These are produced by the GT tolerance sweep/auto-selection flow.
-    # They are only required when the caller explicitly expects them.
 
-    sel_json = analysis_dir / "gt_tolerance_selection.json"
+def _checks_gt_tolerance_selection(
+    analysis_dir: Path,
+    *,
+    expect_gt_tolerance_selection: bool,
+) -> tuple[list[QACheck], Optional[int]]:
+    """Validate the GT tolerance selection artifact (optional, QA-driven)."""
+
+    if not expect_gt_tolerance_selection:
+        return [], None
+
+    sel_json = Path(analysis_dir) / "gt_tolerance_selection.json"
+    checks: List[QACheck] = []
     selected_gt_tolerance: Optional[int] = None
-    if expect_gt_tolerance_selection:
-        out.append(
+
+    checks.append(_check_exists("analysis/gt_tolerance_selection.json exists", sel_json))
+
+    if not sel_json.exists():
+        return checks, None
+
+    try:
+        payload = _read_json(sel_json)
+    except Exception as e:  # pragma: no cover
+        checks.append(
             QACheck(
-                name="analysis/gt_tolerance_selection.json exists",
-                ok=sel_json.exists(),
+                name="analysis/gt_tolerance_selection.json parses",
+                ok=False,
                 path=str(sel_json),
-                detail="" if sel_json.exists() else "missing",
+                detail=str(e),
             )
         )
+        return checks, None
 
-        if sel_json.exists():
-            try:
-                payload = _read_json(sel_json)
-            except Exception as e:  # pragma: no cover
-                out.append(
-                    QACheck(
-                        name="analysis/gt_tolerance_selection.json parses",
-                        ok=False,
-                        path=str(sel_json),
-                        detail=str(e),
-                    )
-                )
-            else:
-                sel_val = payload.get("selected_gt_tolerance") if isinstance(payload, dict) else None
-                ok_val = False
-                try:
-                    int(sel_val)
-                    ok_val = True
-                except Exception:
-                    ok_val = False
+    sel_val = payload.get("selected_gt_tolerance") if isinstance(payload, dict) else None
+    ok_val = False
+    try:
+        selected_gt_tolerance = int(sel_val)  # type: ignore[arg-type]
+        ok_val = True
+    except Exception:
+        selected_gt_tolerance = None
+        ok_val = False
 
-                if ok_val:
-                    try:
-                        selected_gt_tolerance = int(sel_val)  # type: ignore[arg-type]
-                    except Exception:
-                        selected_gt_tolerance = None
-
-                out.append(
-                    QACheck(
-                        name="gt_tolerance_selection records selected_gt_tolerance",
-                        ok=ok_val,
-                        path=str(sel_json),
-                        detail="" if ok_val else f"selected_gt_tolerance={sel_val!r}",
-                    )
-                )
-
-                # Surface any selection warnings (non-fatal) directly in the checklist.
-                # This is important for CI: ambiguous GT matching should be visible
-                # without manually opening JSON artifacts.
-                warnings_list: List[str] = []
-                if isinstance(payload, dict):
-                    # The writer nests the strategy output under selection{}.
-                    sel_obj = payload.get("selection")
-                    if isinstance(sel_obj, dict):
-                        raw_warn = sel_obj.get("warnings")
-                        if isinstance(raw_warn, list):
-                            warnings_list = [str(w) for w in raw_warn if str(w).strip()]
-                    # Backward compatibility: some older payloads may store warnings at the top level.
-                    if not warnings_list:
-                        raw_warn2 = payload.get("warnings")
-                        if isinstance(raw_warn2, list):
-                            warnings_list = [str(w) for w in raw_warn2 if str(w).strip()]
-
-                out.append(
-                    QACheck(
-                        name="gt_tolerance_selection warnings",
-                        ok=True,
-                        warn=bool(warnings_list),
-                        path=str(sel_json),
-                        detail="; ".join(warnings_list) if warnings_list else "",
-                    )
-                )
-
-    sweep_report = tables_dir / "gt_tolerance_sweep_report.csv"
-    sweep_json = analysis_dir / "gt_tolerance_sweep.json"
-    if expect_gt_tolerance_sweep:
-        out.append(
-            QACheck(
-                name="analysis/_tables/gt_tolerance_sweep_report.csv exists",
-                ok=sweep_report.exists(),
-                path=str(sweep_report),
-                detail="" if sweep_report.exists() else "missing",
-            )
-        )
-        out.append(
-            QACheck(
-                name="analysis/gt_tolerance_sweep.json exists",
-                ok=sweep_json.exists(),
-                path=str(sweep_json),
-                detail="" if sweep_json.exists() else "missing",
-            )
-        )
-
-
-        # The sweep report is only trustworthy if the underlying per-case analyze
-        # calls succeeded for each candidate tolerance. In QA mode, we treat any
-        # non-zero analysis_rc in the sweep payload as a failure.
-        if sweep_json.exists():
-            try:
-                payload = _read_json(sweep_json)
-            except Exception as e:
-                out.append(
-                    QACheck(
-                        name="analysis/gt_tolerance_sweep.json parses",
-                        ok=False,
-                        path=str(sweep_json),
-                        detail=str(e),
-                    )
-                )
-            else:
-                rows = payload.get("rows") if isinstance(payload, dict) else None
-                if not isinstance(rows, list):
-                    out.append(
-                        QACheck(
-                            name="gt_tolerance_sweep has analysis_rc=0 for all candidates",
-                            ok=False,
-                            path=str(sweep_json),
-                            detail="missing or invalid rows[] in sweep payload",
-                        )
-                    )
-                else:
-                    bad: List[str] = []
-                    for r in rows:
-                        if not isinstance(r, dict):
-                            continue
-                        t = _to_int(r.get("gt_tolerance"), 0)
-                        rc = _to_int(r.get("analysis_rc"), 0)
-                        if rc != 0:
-                            bad.append(f"{t}:{rc}")
-
-                    ok_rc = len(bad) == 0
-                    out.append(
-                        QACheck(
-                            name="gt_tolerance_sweep has analysis_rc=0 for all candidates",
-                            ok=ok_rc,
-                            path=str(sweep_json),
-                            detail="" if ok_rc else f"non-zero analysis_rc for tolerances: {', '.join(bad)}",
-                        )
-                    )
-
-    # --- Expected suite-level artifacts ---------------------------------
-    triage_dataset = tables_dir / "triage_dataset.csv"
-    out.append(
+    checks.append(
         QACheck(
-            name="analysis/_tables/triage_dataset.csv exists",
-            ok=triage_dataset.exists(),
-            path=str(triage_dataset),
-            detail="" if triage_dataset.exists() else "missing",
+            name="gt_tolerance_selection records selected_gt_tolerance",
+            ok=ok_val,
+            path=str(sel_json),
+            detail="" if ok_val else f"selected_gt_tolerance={sel_val!r}",
         )
     )
 
-    # --- GT ambiguity safety -------------------------------------------
-    # High gt_tolerance values can create ambiguous GT matches:
-    # - many-to-one: a single cluster overlaps multiple GT IDs
-    # - one-to-many: a single GT ID overlaps multiple clusters
-    # These are *warnings* (non-fatal) but should be visible in the checklist.
-    if triage_dataset.exists():
-        try:
-            amb = _compute_gt_ambiguity_stats(triage_dataset)
-        except Exception as e:  # pragma: no cover
-            out.append(
-                QACheck(
-                    name="GT ambiguity stats computed",
-                    ok=False,
-                    path=str(triage_dataset),
-                    detail=str(e),
-                )
-            )
-        else:
-            warn_amb = (int(amb.get("clusters_multi_gt", 0)) > 0) or (int(amb.get("gt_ids_multi_cluster", 0)) > 0)
+    # Surface any selection warnings (non-fatal) directly in the checklist.
+    warnings_list: List[str] = []
+    if isinstance(payload, dict):
+        sel_obj = payload.get("selection")
+        if isinstance(sel_obj, dict):
+            raw_warn = sel_obj.get("warnings")
+            if isinstance(raw_warn, list):
+                warnings_list = [str(w) for w in raw_warn if str(w).strip()]
+        if not warnings_list:
+            raw_warn2 = payload.get("warnings")
+            if isinstance(raw_warn2, list):
+                warnings_list = [str(w) for w in raw_warn2 if str(w).strip()]
 
-            tol_suffix = f" (gt_tolerance={selected_gt_tolerance})" if selected_gt_tolerance is not None else ""
-            detail = (
-                f"many_to_one_clusters={int(amb.get('clusters_multi_gt', 0))}; "
-                f"one_to_many_gt_ids={int(amb.get('gt_ids_multi_cluster', 0))}; "
-                f"max_gt_ids_per_cluster={int(amb.get('max_gt_ids_per_cluster', 0))}; "
-                f"max_clusters_per_gt_id={int(amb.get('max_clusters_per_gt_id', 0))}"
-            )
-
-            out.append(
-                QACheck(
-                    name=f"GT ambiguity warnings (many-to-one / one-to-many){tol_suffix}",
-                    ok=True,
-                    warn=bool(warn_amb),
-                    path=str(triage_dataset),
-                    detail=detail if warn_amb else "",
-                )
-            )
-
-    triage_cal_json = analysis_dir / "triage_calibration.json"
-    out.append(
+    checks.append(
         QACheck(
-            name="analysis/triage_calibration.json exists",
-            ok=(triage_cal_json.exists() if expect_calibration else True),
-            path=str(triage_cal_json),
-            detail=(
-                ""
-                if (triage_cal_json.exists() and expect_calibration)
-                else ("missing" if expect_calibration else "skipped (non-scored mode)")
-            ),
+            name="gt_tolerance_selection warnings",
+            ok=True,
+            warn=bool(warnings_list),
+            path=str(sel_json),
+            detail="; ".join(warnings_list) if warnings_list else "",
+        )
+    )
+
+    return checks, selected_gt_tolerance
+
+
+def _checks_gt_tolerance_sweep(
+    analysis_dir: Path,
+    tables_dir: Path,
+    *,
+    expect_gt_tolerance_sweep: bool,
+) -> List[QACheck]:
+    """Validate GT tolerance sweep artifacts and that each candidate analyzed cleanly."""
+
+    if not expect_gt_tolerance_sweep:
+        return []
+
+    sweep_report = Path(tables_dir) / "gt_tolerance_sweep_report.csv"
+    sweep_json = Path(analysis_dir) / "gt_tolerance_sweep.json"
+
+    checks: List[QACheck] = []
+    checks.append(_check_exists("analysis/_tables/gt_tolerance_sweep_report.csv exists", sweep_report))
+    checks.append(_check_exists("analysis/gt_tolerance_sweep.json exists", sweep_json))
+
+    if not sweep_json.exists():
+        return checks
+
+    try:
+        payload = _read_json(sweep_json)
+    except Exception as e:
+        checks.append(
+            QACheck(
+                name="analysis/gt_tolerance_sweep.json parses",
+                ok=False,
+                path=str(sweep_json),
+                detail=str(e),
+            )
+        )
+        return checks
+
+    rows = payload.get("rows") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        checks.append(
+            QACheck(
+                name="gt_tolerance_sweep has analysis_rc=0 for all candidates",
+                ok=False,
+                path=str(sweep_json),
+                detail="missing or invalid rows[] in sweep payload",
+            )
+        )
+        return checks
+
+    bad: List[str] = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        t = _to_int(r.get("gt_tolerance"), 0)
+        rc = _to_int(r.get("analysis_rc"), 0)
+        if rc != 0:
+            bad.append(f"{t}:{rc}")
+
+    ok_rc = len(bad) == 0
+    checks.append(
+        QACheck(
+            name="gt_tolerance_sweep has analysis_rc=0 for all candidates",
+            ok=ok_rc,
+            path=str(sweep_json),
+            detail="" if ok_rc else f"non-zero analysis_rc for tolerances: {', '.join(bad)}",
+        )
+    )
+
+    return checks
+
+
+def _checks_gt_ambiguity(
+    triage_dataset: Path,
+    *,
+    selected_gt_tolerance: Optional[int],
+) -> List[QACheck]:
+    """Surface GT ambiguity counters as non-fatal warnings."""
+
+    triage_dataset = Path(triage_dataset)
+    if not triage_dataset.exists():
+        return []
+
+    checks: List[QACheck] = []
+
+    try:
+        amb = _compute_gt_ambiguity_stats(triage_dataset)
+    except Exception as e:  # pragma: no cover
+        checks.append(
+            QACheck(
+                name="GT ambiguity stats computed",
+                ok=False,
+                path=str(triage_dataset),
+                detail=str(e),
+            )
+        )
+        return checks
+
+    warn_amb = (int(amb.get("clusters_multi_gt", 0)) > 0) or (int(amb.get("gt_ids_multi_cluster", 0)) > 0)
+
+    tol_suffix = f" (gt_tolerance={selected_gt_tolerance})" if selected_gt_tolerance is not None else ""
+    detail = (
+        f"many_to_one_clusters={int(amb.get('clusters_multi_gt', 0))}; "
+        f"one_to_many_gt_ids={int(amb.get('gt_ids_multi_cluster', 0))}; "
+        f"max_gt_ids_per_cluster={int(amb.get('max_gt_ids_per_cluster', 0))}; "
+        f"max_clusters_per_gt_id={int(amb.get('max_clusters_per_gt_id', 0))}"
+    )
+
+    checks.append(
+        QACheck(
+            name=f"GT ambiguity warnings (many-to-one / one-to-many){tol_suffix}",
+            ok=True,
+            warn=bool(warn_amb),
+            path=str(triage_dataset),
+            detail=detail if warn_amb else "",
+        )
+    )
+    return checks
+
+
+def _checks_calibration_artifacts(
+    analysis_dir: Path,
+    tables_dir: Path,
+    *,
+    expect_calibration: bool,
+) -> List[QACheck]:
+    """Validate suite-level calibration outputs."""
+
+    checks: List[QACheck] = []
+
+    triage_cal_json = Path(analysis_dir) / "triage_calibration.json"
+    triage_cal_report = Path(tables_dir) / "triage_calibration_report.csv"
+
+    checks.append(
+        _check_exists(
+            "analysis/triage_calibration.json exists",
+            triage_cal_json,
+            required=bool(expect_calibration),
+            ok_detail_if_not_required="skipped (non-scored mode)",
         )
     )
 
@@ -695,7 +688,7 @@ def validate_calibration_suite_artifacts(
         try:
             cal_data = json.loads(triage_cal_json.read_text(encoding="utf-8"))
         except Exception as e:
-            out.append(
+            checks.append(
                 QACheck(
                     name="analysis/triage_calibration.json parses",
                     ok=False,
@@ -704,9 +697,9 @@ def validate_calibration_suite_artifacts(
                 )
             )
         else:
-            included_cases = cal_data.get("included_cases")
+            included_cases = cal_data.get("included_cases") if isinstance(cal_data, dict) else None
             ok_inc = isinstance(included_cases, list) and len(included_cases) > 0
-            out.append(
+            checks.append(
                 QACheck(
                     name="triage_calibration includes >=1 GT-supported case",
                     ok=ok_inc,
@@ -719,23 +712,28 @@ def validate_calibration_suite_artifacts(
                 )
             )
 
-    triage_cal_report = tables_dir / "triage_calibration_report.csv"
-    out.append(
-        QACheck(
-            name="analysis/_tables/triage_calibration_report.csv exists",
-            ok=(triage_cal_report.exists() if expect_calibration else True),
-            path=str(triage_cal_report),
-            detail=(
-                ""
-                if (triage_cal_report.exists() and expect_calibration)
-                else ("missing" if expect_calibration else "skipped (non-scored mode)")
-            ),
+    checks.append(
+        _check_exists(
+            "analysis/_tables/triage_calibration_report.csv exists",
+            triage_cal_report,
+            required=bool(expect_calibration),
+            ok_detail_if_not_required="skipped (non-scored mode)",
         )
     )
 
-    # --- triage_queue existence + schema check --------------------------
-    # We validate across *all* cases in the suite (deterministic order)
-    # so schema drift does not go unnoticed.
+    return checks
+
+
+def _checks_triage_queue(
+    suite_dir: Path,
+    *,
+    require_scored_queue: bool,
+) -> List[QACheck]:
+    """Validate per-case triage_queue.csv files and (optionally) that they are scored."""
+
+    suite_dir = Path(suite_dir)
+    checks: List[QACheck] = []
+
     queue_by_case: Dict[str, Path] = {}
     missing_queue_cases: List[str] = []
     for case_dir in _case_dirs(suite_dir):
@@ -746,7 +744,7 @@ def validate_calibration_suite_artifacts(
         else:
             queue_by_case[cid] = p
 
-    out.append(
+    checks.append(
         QACheck(
             name="per-case triage_queue.csv exists",
             ok=(len(missing_queue_cases) == 0 and len(queue_by_case) > 0),
@@ -754,7 +752,9 @@ def validate_calibration_suite_artifacts(
                 ""
                 if (len(missing_queue_cases) == 0 and len(queue_by_case) > 0)
                 else (
-                    "no triage_queue.csv found" if not queue_by_case else f"missing for cases: {sorted(missing_queue_cases)}"
+                    "no triage_queue.csv found"
+                    if not queue_by_case
+                    else f"missing for cases: {sorted(missing_queue_cases)}"
                 )
             ),
             path=str(suite_dir / "cases"),
@@ -762,67 +762,8 @@ def validate_calibration_suite_artifacts(
     )
 
     # If no queues exist, we cannot validate schema.
-    if queue_by_case:
-        missing_col_cases: List[str] = []
-        read_errors: List[str] = []
-        for cid in sorted(queue_by_case.keys()):
-            p = queue_by_case[cid]
-            try:
-                header = _read_csv_header(p)
-                if "triage_score_v1" not in header:
-                    missing_col_cases.append(cid)
-            except Exception as e:
-                read_errors.append(f"{cid}: {e}")
-
-        ok_schema = (not missing_col_cases) and (not read_errors)
-        detail_parts: List[str] = []
-        if missing_col_cases:
-            detail_parts.append(f"missing triage_score_v1 for cases: {sorted(missing_col_cases)}")
-        if read_errors:
-            detail_parts.append(f"CSV read errors: {read_errors}")
-
-        out.append(
-            QACheck(
-                name="triage_queue.csv contains column triage_score_v1",
-                ok=ok_schema,
-                detail="; ".join(detail_parts),
-                path=str(suite_dir / "cases"),
-            )
-        )
-
-        # End-to-end signal: at least one triage_queue row should have a scored value
-        # once calibration has been built and the suite re-analyzed.
-        if require_scored_queue:
-            any_scored = False
-            for cid in sorted(queue_by_case.keys()):
-                p = queue_by_case[cid]
-                try:
-                    if _csv_has_any_nonempty_value(p, column="triage_score_v1"):
-                        any_scored = True
-                        break
-                except Exception:
-                    continue
-
-            out.append(
-                QACheck(
-                    name="triage_queue.csv has non-empty triage_score_v1",
-                    ok=bool(any_scored),
-                    detail="" if any_scored else "all triage_score_v1 values are empty (calibration likely not applied)",
-                    path=str(suite_dir / "cases"),
-                )
-            )
-        else:
-            out.append(
-                QACheck(
-                    name="triage_queue.csv has non-empty triage_score_v1",
-                    ok=True,
-                    detail="skipped (no reanalyze)",
-                    path=str(suite_dir / "cases"),
-                )
-            )
-    else:
-        # Preserve the legacy check name for compatibility with downstream tooling.
-        out.append(
+    if not queue_by_case:
+        checks.append(
             QACheck(
                 name="triage_queue.csv contains column triage_score_v1",
                 ok=False,
@@ -830,78 +771,111 @@ def validate_calibration_suite_artifacts(
                 path=str(suite_dir / "cases"),
             )
         )
+        return checks
 
-    # --- triage_eval strategy check -------------------------------------
+    missing_col_cases: List[str] = []
+    read_errors: List[str] = []
+    for cid in sorted(queue_by_case.keys()):
+        p = queue_by_case[cid]
+        try:
+            header = _read_csv_header(p)
+            if "triage_score_v1" not in header:
+                missing_col_cases.append(cid)
+        except Exception as e:
+            read_errors.append(f"{cid}: {e}")
+
+    ok_schema = (not missing_col_cases) and (not read_errors)
+    detail_parts: List[str] = []
+    if missing_col_cases:
+        detail_parts.append(f"missing triage_score_v1 for cases: {sorted(missing_col_cases)}")
+    if read_errors:
+        detail_parts.append(f"CSV read errors: {read_errors}")
+
+    checks.append(
+        QACheck(
+            name="triage_queue.csv contains column triage_score_v1",
+            ok=ok_schema,
+            detail="; ".join(detail_parts),
+            path=str(suite_dir / "cases"),
+        )
+    )
+
+    if not require_scored_queue:
+        checks.append(
+            QACheck(
+                name="triage_queue.csv has non-empty triage_score_v1",
+                ok=True,
+                detail="skipped (no reanalyze)",
+                path=str(suite_dir / "cases"),
+            )
+        )
+        return checks
+
+    any_scored = False
+    for cid in sorted(queue_by_case.keys()):
+        p = queue_by_case[cid]
+        try:
+            if _csv_has_any_nonempty_value(p, column="triage_score_v1"):
+                any_scored = True
+                break
+        except Exception:
+            continue
+
+    checks.append(
+        QACheck(
+            name="triage_queue.csv has non-empty triage_score_v1",
+            ok=bool(any_scored),
+            detail="" if any_scored else "all triage_score_v1 values are empty (calibration likely not applied)",
+            path=str(suite_dir / "cases"),
+        )
+    )
+
+    return checks
+
+
+def _checks_triage_eval(tables_dir: Path, *, expect_calibration: bool) -> List[QACheck]:
+    """Validate triage_eval strategy outputs and tool utility/marginal tables."""
+
+    tables_dir = Path(tables_dir)
     eval_summary = tables_dir / "triage_eval_summary.json"
 
-    # Tool contribution / marginal value outputs are emitted by suite_triage_eval.
-    # They help answer two pragmatic questions:
-    #  - "Which tools cover unique GT?" (triage_tool_utility.csv)
-    #  - "What happens if we remove tool X?" (triage_tool_marginal.csv)
     tool_utility_csv = tables_dir / "triage_tool_utility.csv"
     tool_marginal_csv = tables_dir / "triage_tool_marginal.csv"
 
     if not expect_calibration:
-        out.append(
+        return [
             QACheck(
                 name="triage_eval_summary includes strategy calibrated",
                 ok=True,
                 detail="skipped (non-scored mode)",
                 path=str(eval_summary),
-            )
-        )
-
-        out.append(
+            ),
             QACheck(
                 name="triage_eval_summary includes strategy calibrated_global",
                 ok=True,
                 detail="skipped (non-scored mode)",
                 path=str(eval_summary),
-            )
-        )
-
-        # These are only meaningful for scored suites. Keep the checklist
-        # stable by explicitly marking them as skipped in non-scored mode.
-        out.append(
+            ),
             QACheck(
                 name="analysis/_tables/triage_tool_utility.csv exists",
                 ok=True,
                 detail="skipped (non-scored mode)",
                 path=str(tool_utility_csv),
-            )
-        )
-        out.append(
+            ),
             QACheck(
                 name="analysis/_tables/triage_tool_marginal.csv exists",
                 ok=True,
                 detail="skipped (non-scored mode)",
                 path=str(tool_marginal_csv),
-            )
-        )
-        return out
+            ),
+        ]
 
-    # In scored/calibrated runs, these two files are expected outputs.
-    # If they are missing, it usually means suite_triage_eval did not run
-    # or wrote to an unexpected location.
-    out.append(
-        QACheck(
-            name="analysis/_tables/triage_tool_utility.csv exists",
-            ok=tool_utility_csv.exists(),
-            path=str(tool_utility_csv),
-            detail="" if tool_utility_csv.exists() else "missing",
-        )
-    )
-    out.append(
-        QACheck(
-            name="analysis/_tables/triage_tool_marginal.csv exists",
-            ok=tool_marginal_csv.exists(),
-            path=str(tool_marginal_csv),
-            detail="" if tool_marginal_csv.exists() else "missing",
-        )
-    )
+    checks: List[QACheck] = []
+    checks.append(_check_exists("analysis/_tables/triage_tool_utility.csv exists", tool_utility_csv))
+    checks.append(_check_exists("analysis/_tables/triage_tool_marginal.csv exists", tool_marginal_csv))
 
     if not eval_summary.exists():
-        out.append(
+        checks.append(
             QACheck(
                 name="triage_eval_summary includes strategy calibrated_global",
                 ok=False,
@@ -909,7 +883,7 @@ def validate_calibration_suite_artifacts(
                 path=str(eval_summary),
             )
         )
-        out.append(
+        checks.append(
             QACheck(
                 name="triage_eval_summary includes strategy calibrated",
                 ok=False,
@@ -917,48 +891,106 @@ def validate_calibration_suite_artifacts(
                 path=str(eval_summary),
             )
         )
-    else:
-        try:
-            payload = _read_json(eval_summary)
-            strategies = payload.get("strategies") if isinstance(payload, dict) else None
-            strategies_list = list(strategies) if isinstance(strategies, list) else []
-            ok_calibrated = "calibrated" in strategies_list
-            ok_global = "calibrated_global" in strategies_list
-            detail_calibrated = "" if ok_calibrated else f"strategies={strategies_list}"
-            detail_global = "" if ok_global else f"strategies={strategies_list}"
-            out.append(
-                QACheck(
-                    name="triage_eval_summary includes strategy calibrated",
-                    ok=ok_calibrated,
-                    detail=detail_calibrated,
-                    path=str(eval_summary),
-                )
-            )
-            out.append(
-                QACheck(
-                    name="triage_eval_summary includes strategy calibrated_global",
-                    ok=ok_global,
-                    detail=detail_global,
-                    path=str(eval_summary),
-                )
-            )
-        except Exception as e:
-            out.append(
-                QACheck(
-                    name="triage_eval_summary includes strategy calibrated",
-                    ok=False,
-                    detail=f"failed to read/parse JSON: {e}",
-                    path=str(eval_summary),
-                )
-            )
+        return checks
 
-            out.append(
-                QACheck(
-                    name="triage_eval_summary includes strategy calibrated_global",
-                    ok=False,
-                    detail=f"failed to read/parse JSON: {e}",
-                    path=str(eval_summary),
-                )
-            )
+    try:
+        payload = _read_json(eval_summary)
+        strategies = payload.get("strategies") if isinstance(payload, dict) else None
+        strategies_list = list(strategies) if isinstance(strategies, list) else []
+        ok_calibrated = "calibrated" in strategies_list
+        ok_global = "calibrated_global" in strategies_list
+        detail_calibrated = "" if ok_calibrated else f"strategies={strategies_list}"
+        detail_global = "" if ok_global else f"strategies={strategies_list}"
 
-    return out
+        checks.append(
+            QACheck(
+                name="triage_eval_summary includes strategy calibrated",
+                ok=ok_calibrated,
+                detail=detail_calibrated,
+                path=str(eval_summary),
+            )
+        )
+        checks.append(
+            QACheck(
+                name="triage_eval_summary includes strategy calibrated_global",
+                ok=ok_global,
+                detail=detail_global,
+                path=str(eval_summary),
+            )
+        )
+        return checks
+    except Exception as e:
+        checks.append(
+            QACheck(
+                name="triage_eval_summary includes strategy calibrated",
+                ok=False,
+                detail=f"failed to read/parse JSON: {e}",
+                path=str(eval_summary),
+            )
+        )
+
+        checks.append(
+            QACheck(
+                name="triage_eval_summary includes strategy calibrated_global",
+                ok=False,
+                detail=f"failed to read/parse JSON: {e}",
+                path=str(eval_summary),
+            )
+        )
+        return checks
+
+
+def validate_calibration_suite_artifacts(
+    suite_dir: str | Path,
+    *,
+    require_scored_queue: bool = True,
+    expect_calibration: bool = True,
+    expect_gt_tolerance_sweep: bool = False,
+    expect_gt_tolerance_selection: bool = False,
+) -> List[QACheck]:
+    """Validate suite-level artifacts for the triage calibration workflow.
+
+    This is intentionally filesystem-first: it validates that expected artifacts
+    were produced under runs/suites/<suite_id>/analysis/.
+
+    Returns a list of checks. Use :func:`all_ok` to decide pass/fail.
+    """
+
+    suite_dir = Path(suite_dir).resolve()
+    analysis_dir = suite_dir / "analysis"
+    tables_dir = analysis_dir / "_tables"
+
+    triage_dataset = tables_dir / "triage_dataset.csv"
+
+    checks: List[QACheck] = []
+
+    # 1) Reproducibility receipts (profiles/config)
+    checks.extend(_checks_scanner_receipts(suite_dir))
+
+    # 2) Optional GT tolerance artifacts (QA-driven)
+    sel_checks, selected_gt_tolerance = _checks_gt_tolerance_selection(
+        analysis_dir,
+        expect_gt_tolerance_selection=bool(expect_gt_tolerance_selection),
+    )
+    checks.extend(sel_checks)
+    checks.extend(
+        _checks_gt_tolerance_sweep(
+            analysis_dir,
+            tables_dir,
+            expect_gt_tolerance_sweep=bool(expect_gt_tolerance_sweep),
+        )
+    )
+
+    # 3) Required suite artifacts
+    checks.append(_check_exists("analysis/_tables/triage_dataset.csv exists", triage_dataset))
+    checks.extend(_checks_gt_ambiguity(triage_dataset, selected_gt_tolerance=selected_gt_tolerance))
+    checks.extend(_checks_calibration_artifacts(analysis_dir, tables_dir, expect_calibration=bool(expect_calibration)))
+
+    # 4) Per-case triage queue checks (schema + scored signal)
+    checks.extend(_checks_triage_queue(suite_dir, require_scored_queue=bool(require_scored_queue)))
+
+    # 5) triage_eval (strategies + tool utility/marginal)
+    checks.extend(_checks_triage_eval(tables_dir, expect_calibration=bool(expect_calibration)))
+
+    return checks
+
