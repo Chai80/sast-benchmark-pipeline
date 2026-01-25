@@ -11,6 +11,7 @@ rendered for humans and serialized for CI.
 from dataclasses import dataclass
 from typing import Sequence
 
+
 QA_CHECKLIST_SCHEMA_V1 = "qa_checklist_v1"
 
 # Canonical filenames for deterministic CI scraping.
@@ -30,6 +31,20 @@ class QACheck:
     path: str = ""
     detail: str = ""
     warn: bool = False
+
+
+@dataclass(frozen=True)
+class CalibrationSuiteValidationOptions:
+    """Toggle-able expectations for calibration suite validation.
+
+    These flags exist primarily so the CLI runbook and tests can describe
+    whether the suite is expected to contain calibration/scored artifacts.
+    """
+
+    require_scored_queue: bool = True
+    expect_calibration: bool = True
+    expect_gt_tolerance_sweep: bool = False
+    expect_gt_tolerance_selection: bool = False
 
 
 def all_ok(checks: Sequence[QACheck]) -> bool:

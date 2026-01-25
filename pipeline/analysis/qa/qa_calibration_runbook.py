@@ -15,6 +15,7 @@ from pipeline.analysis.qa_calibration_runbook import (
     QA_CHECKLIST_JSON_FILENAME,
     QA_CHECKLIST_MD_FILENAME,
     QA_CHECKLIST_TXT_LEGACY_FILENAME,
+    CalibrationSuiteValidationOptions,
     QACheck,
     all_ok,
     checklist_to_dict,
@@ -38,4 +39,5 @@ __all__ = [
     "QA_CHECKLIST_JSON_FILENAME",
     "QA_CHECKLIST_MD_FILENAME",
     "QA_CHECKLIST_TXT_LEGACY_FILENAME",
+    "CalibrationSuiteValidationOptions",
 ]

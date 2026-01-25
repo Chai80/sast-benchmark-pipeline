@@ -20,6 +20,7 @@ from .model import (
     QA_CHECKLIST_MD_FILENAME,
     QA_CHECKLIST_TXT_LEGACY_FILENAME,
     QACheck,
+    CalibrationSuiteValidationOptions,
     all_ok,
 )
 from .render_md import render_checklist, render_checklist_markdown
@@ -28,6 +29,7 @@ from .checks import print_checklist, validate_calibration_suite_artifacts
 
 __all__ = [
     "QACheck",
+    "CalibrationSuiteValidationOptions",
     "all_ok",
     "render_checklist",
     "render_checklist_markdown",
