@@ -355,130 +355,156 @@ def _case_has_gt(suite_dir: Path, case_id: str) -> bool:
     return p.exists() and p.is_file()
 
 
-def _stable_unique(items: Iterable[str]) -> List[str]:
-    seen: set[str] = set()
-    out: List[str] = []
-    for x in items:
-        s = str(x).strip()
-        if not s or s in seen:
-            continue
-        seen.add(s)
-        out.append(s)
-    return out
+@dataclass
+class _CalibrationCounts:
+    """Internal accumulator state for calibration stats."""
+
+    tp: Dict[str, int]
+    fp: Dict[str, int]
+
+    tp_by_owasp: Dict[str, Dict[str, int]]
+    fp_by_owasp: Dict[str, Dict[str, int]]
+
+    support_clusters_by_owasp: Dict[str, int]
+    support_cases_by_owasp: Dict[str, set[str]]
+    overlap_sum_by_owasp: Dict[str, int]
+
+    per_case_clusters: Dict[str, int]
+    per_case_overlap_sum: Dict[str, int]
 
 
-def build_triage_calibration(
+def _new_calibration_counts() -> _CalibrationCounts:
+    return _CalibrationCounts(
+        tp={},
+        fp={},
+        tp_by_owasp=defaultdict(lambda: defaultdict(int)),
+        fp_by_owasp=defaultdict(lambda: defaultdict(int)),
+        support_clusters_by_owasp=defaultdict(int),
+        support_cases_by_owasp=defaultdict(set),
+        overlap_sum_by_owasp=defaultdict(int),
+        per_case_clusters={},
+        per_case_overlap_sum={},
+    )
+
+
+def _partition_cases_by_gt(
     *,
     suite_dir: Path,
-    suite_id: Optional[str] = None,
-    params: Optional[CalibrationParamsV1] = None,
-    dataset_relpath: str = "analysis/_tables/triage_dataset.csv",
-    out_dirname: str = "analysis",
-    write_report_csv: bool = True,
-) -> Dict[str, Any]:
-    """Build suite-level triage calibration JSON.
+    case_ids: Sequence[str],
+) -> Tuple[List[str], List[str], set[str]]:
+    """Split case_ids into (included_cases, excluded_cases_no_gt, included_set)."""
 
-    Returns a JSON-serializable summary dict (also written to disk).
-    """
-
-    suite_dir = Path(suite_dir).resolve()
-    if not suite_dir.exists() or not suite_dir.is_dir():
-        raise FileNotFoundError(f"suite_dir not found: {suite_dir}")
-
-    sid = str(suite_id) if suite_id else suite_dir.name
-    params = params or CalibrationParamsV1()
-
-    dataset_csv = suite_dir / dataset_relpath
-    if not dataset_csv.exists():
-        raise FileNotFoundError(f"triage_dataset.csv not found: {dataset_csv}")
-
-    rows = _load_csv_rows(dataset_csv)
-
-    # Determine which cases have GT artifacts.
-    case_ids = sorted({str(r.get("case_id") or "").strip() for r in rows if str(r.get("case_id") or "").strip()})
     included_cases: List[str] = []
     excluded_cases_no_gt: List[str] = []
+
     for cid in case_ids:
         if _case_has_gt(suite_dir, cid):
-            included_cases.append(cid)
+            included_cases.append(str(cid))
         else:
-            excluded_cases_no_gt.append(cid)
+            excluded_cases_no_gt.append(str(cid))
 
     included_set = set(included_cases)
+    return included_cases, excluded_cases_no_gt, included_set
 
-    # Tool counts among included cases only.
-    tp: Dict[str, int] = {}
-    fp: Dict[str, int] = {}
 
-    # Per-OWASP tool stats among included cases.
-    # key: owasp_id -> per-tool tp/fp
-    tp_by_owasp: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    fp_by_owasp: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    support_clusters_by_owasp: Dict[str, int] = defaultdict(int)
-    support_cases_by_owasp: Dict[str, set[str]] = defaultdict(set)
-    overlap_sum_by_owasp: Dict[str, int] = defaultdict(int)
+def _accumulate_calibration_counts(
+    *,
+    rows: Sequence[Mapping[str, Any]],
+    included_set: set[str],
+) -> _CalibrationCounts:
+    """Accumulate TP/FP counts and per-slice support for included cases."""
 
-    # Suspicious cases: has GT + has clusters + 0 overlaps.
-    per_case_clusters: Dict[str, int] = {}
-    per_case_overlap_sum: Dict[str, int] = {}
+    counts = _new_calibration_counts()
 
     for r in rows:
         cid = str(r.get("case_id") or "").strip()
         if not cid or cid not in included_set:
             continue
 
-        per_case_clusters[cid] = per_case_clusters.get(cid, 0) + 1
+        counts.per_case_clusters[cid] = counts.per_case_clusters.get(cid, 0) + 1
         ov = _to_int(r.get("gt_overlap"), default=0)
-        per_case_overlap_sum[cid] = per_case_overlap_sum.get(cid, 0) + ov
+        counts.per_case_overlap_sum[cid] = counts.per_case_overlap_sum.get(cid, 0) + ov
 
         tools = _parse_tools_any(r.get("tools_json") or r.get("tools") or "")
         for t in tools:
             if ov == 1:
-                tp[t] = tp.get(t, 0) + 1
+                counts.tp[t] = counts.tp.get(t, 0) + 1
             else:
-                fp[t] = fp.get(t, 0) + 1
+                counts.fp[t] = counts.fp.get(t, 0) + 1
 
-        # Per-OWASP slice
         oid = _normalize_owasp_id(r.get("owasp_id"))
         if oid:
-            support_clusters_by_owasp[oid] += 1
-            support_cases_by_owasp[oid].add(cid)
-            overlap_sum_by_owasp[oid] += int(ov)
+            counts.support_clusters_by_owasp[oid] += 1
+            counts.support_cases_by_owasp[oid].add(cid)
+            counts.overlap_sum_by_owasp[oid] += int(ov)
             for t in tools:
                 if ov == 1:
-                    tp_by_owasp[oid][t] += 1
+                    counts.tp_by_owasp[oid][t] += 1
                 else:
-                    fp_by_owasp[oid][t] += 1
+                    counts.fp_by_owasp[oid][t] += 1
 
-    suspicious_cases: List[Dict[str, Any]] = []
+    return counts
+
+
+def _build_suspicious_cases(
+    *,
+    included_cases: Sequence[str],
+    per_case_clusters: Mapping[str, int],
+    per_case_overlap_sum: Mapping[str, int],
+) -> List[Dict[str, Any]]:
+    """Cases with GT + clusters but zero overlaps (audit warning)."""
+
+    out: List[Dict[str, Any]] = []
     for cid in included_cases:
-        n = per_case_clusters.get(cid, 0)
-        ov_sum = per_case_overlap_sum.get(cid, 0)
+        n = int(per_case_clusters.get(cid, 0) or 0)
+        ov_sum = int(per_case_overlap_sum.get(cid, 0) or 0)
         if n > 0 and ov_sum == 0:
-            suspicious_cases.append({"case_id": cid, "cluster_count": int(n), "gt_overlap_sum": int(ov_sum)})
+            out.append({"case_id": str(cid), "cluster_count": int(n), "gt_overlap_sum": int(ov_sum)})
+    return out
 
-    # Stable tool ordering.
+
+def _compute_tool_stats(
+    *,
+    tp: Mapping[str, int],
+    fp: Mapping[str, int],
+    params: CalibrationParamsV1,
+) -> List[Dict[str, Any]]:
+    """Compute tool stat rows in stable tool ordering."""
+
     tools_all = sorted(set(list(tp.keys()) + list(fp.keys())))
+    out: List[Dict[str, Any]] = []
 
-    tool_stats_global: List[Dict[str, Any]] = []
     for t in tools_all:
-        t_tp = int(tp.get(t, 0))
-        t_fp = int(fp.get(t, 0))
+        t_tp = int(tp.get(t, 0) or 0)
+        t_fp = int(fp.get(t, 0) or 0)
         p = smoothed_precision(t_tp, t_fp, alpha=params.alpha, beta=params.beta)
         w = log_odds(p, p_min=params.p_min, p_max=params.p_max)
-
-        tool_stats_global.append(
+        out.append(
             {
-                "tool": t,
-                "tp": t_tp,
-                "fp": t_fp,
+                "tool": str(t),
+                "tp": int(t_tp),
+                "fp": int(t_fp),
                 "p_smoothed": _round6(p),
                 "weight": _round6(w),
             }
         )
 
-    # Per-OWASP tool stats (deterministic key and list ordering).
-    tool_stats_by_owasp: Dict[str, Any] = {}
+    return out
+
+
+def _build_tool_stats_by_owasp(
+    *,
+    params: CalibrationParamsV1,
+    tp_by_owasp: Mapping[str, Mapping[str, int]],
+    fp_by_owasp: Mapping[str, Mapping[str, int]],
+    support_clusters_by_owasp: Mapping[str, int],
+    support_cases_by_owasp: Mapping[str, set[str]],
+    overlap_sum_by_owasp: Mapping[str, int],
+) -> Dict[str, Any]:
+    """Build per-OWASP tool stats slices (deterministic key + list ordering)."""
+
+    out: Dict[str, Any] = {}
+
     for n in range(1, 11):
         oid = f"A{n:02d}"
         if oid not in support_clusters_by_owasp:
@@ -486,38 +512,28 @@ def build_triage_calibration(
 
         tp_slice = tp_by_owasp.get(oid) or {}
         fp_slice = fp_by_owasp.get(oid) or {}
-        tools_slice = sorted(set(list(tp_slice.keys()) + list(fp_slice.keys())))
 
-        stats: List[Dict[str, Any]] = []
-        for t in tools_slice:
-            t_tp = int(tp_slice.get(t, 0))
-            t_fp = int(fp_slice.get(t, 0))
-            p = smoothed_precision(t_tp, t_fp, alpha=params.alpha, beta=params.beta)
-            w = log_odds(p, p_min=params.p_min, p_max=params.p_max)
-            stats.append(
-                {
-                    "tool": t,
-                    "tp": t_tp,
-                    "fp": t_fp,
-                    "p_smoothed": _round6(p),
-                    "weight": _round6(w),
-                }
-            )
+        stats = _compute_tool_stats(tp=tp_slice, fp=fp_slice, params=params)
 
-        tool_stats_by_owasp[oid] = {
+        out[oid] = {
             "support": {
-                "clusters": int(support_clusters_by_owasp.get(oid, 0)),
+                "clusters": int(support_clusters_by_owasp.get(oid, 0) or 0),
                 "cases": int(len(support_cases_by_owasp.get(oid) or set())),
-                "gt_positive_clusters": int(overlap_sum_by_owasp.get(oid, 0)),
+                "gt_positive_clusters": int(overlap_sum_by_owasp.get(oid, 0) or 0),
             },
             "tool_stats": stats,
         }
 
+    return out
 
-    # Flatten per-OWASP tool stats into a single CSV report.
-    #
-    # This report is audit-friendly: it includes per-slice support and explicitly
-    # marks when a category would fall back to global weights due to low support.
+
+def _flatten_report_by_owasp_rows(
+    *,
+    tool_stats_by_owasp: Mapping[str, Any],
+    params: CalibrationParamsV1,
+) -> List[Dict[str, Any]]:
+    """Flatten per-OWASP tool stats into an audit-friendly CSV report."""
+
     report_by_owasp_rows: List[Dict[str, Any]] = []
     min_support = int(params.min_support_by_owasp)
 
@@ -557,16 +573,108 @@ def build_triage_calibration(
                 }
             )
 
+    return report_by_owasp_rows
+
+
+def _write_best_effort_calibration_log(
+    *,
+    out_log: Path,
+    sid: str,
+    dataset_csv: Path,
+    out_json: Path,
+    included_cases: Sequence[str],
+    excluded_cases_no_gt: Sequence[str],
+    tool_stats_global: Sequence[Mapping[str, Any]],
+    suspicious_cases: Sequence[Mapping[str, Any]],
+    generated_at: str,
+) -> None:
+    """Best-effort log: surface suspicious cases explicitly."""
+
+    try:
+        lines: List[str] = []
+        lines.append(f"[{generated_at}] triage_calibration build")
+        lines.append(f"suite_id              : {sid}")
+        lines.append(f"dataset_csv           : {dataset_csv}")
+        lines.append(f"included_cases        : {len(list(included_cases))}")
+        lines.append(f"excluded_cases_no_gt  : {len(list(excluded_cases_no_gt))}")
+        lines.append(f"tools                 : {len(list(tool_stats_global))}")
+        lines.append(f"out_json              : {out_json}")
+        if suspicious_cases:
+            lines.append("")
+            lines.append(f"suspicious_cases ({len(list(suspicious_cases))}):")
+            for sc in suspicious_cases:
+                lines.append(
+                    f"  - {sc.get('case_id')}: clusters={sc.get('cluster_count')} overlap_sum={sc.get('gt_overlap_sum')}"
+                )
+        out_log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
+def build_triage_calibration(
+    *,
+    suite_dir: Path,
+    suite_id: Optional[str] = None,
+    params: Optional[CalibrationParamsV1] = None,
+    dataset_relpath: str = "analysis/_tables/triage_dataset.csv",
+    out_dirname: str = "analysis",
+    write_report_csv: bool = True,
+) -> Dict[str, Any]:
+    """Build suite-level triage calibration JSON.
+
+    Returns a JSON-serializable summary dict (also written to disk).
+    """
+
+    suite_dir = Path(suite_dir).resolve()
+    if not suite_dir.exists() or not suite_dir.is_dir():
+        raise FileNotFoundError(f"suite_dir not found: {suite_dir}")
+
+    sid = str(suite_id) if suite_id else suite_dir.name
+    params = params or CalibrationParamsV1()
+
+    dataset_csv = suite_dir / dataset_relpath
+    if not dataset_csv.exists():
+        raise FileNotFoundError(f"triage_dataset.csv not found: {dataset_csv}")
+
+    rows = _load_csv_rows(dataset_csv)
+
+    # Determine which cases have GT artifacts.
+    case_ids = sorted({str(r.get("case_id") or "").strip() for r in rows if str(r.get("case_id") or "").strip()})
+    included_cases, excluded_cases_no_gt, included_set = _partition_cases_by_gt(suite_dir=suite_dir, case_ids=case_ids)
+
+    counts = _accumulate_calibration_counts(rows=rows, included_set=included_set)
+
+    suspicious_cases = _build_suspicious_cases(
+        included_cases=included_cases,
+        per_case_clusters=counts.per_case_clusters,
+        per_case_overlap_sum=counts.per_case_overlap_sum,
+    )
+
+    tool_stats_global = _compute_tool_stats(tp=counts.tp, fp=counts.fp, params=params)
+
+    tool_stats_by_owasp = _build_tool_stats_by_owasp(
+        params=params,
+        tp_by_owasp=counts.tp_by_owasp,
+        fp_by_owasp=counts.fp_by_owasp,
+        support_clusters_by_owasp=counts.support_clusters_by_owasp,
+        support_cases_by_owasp=counts.support_cases_by_owasp,
+        overlap_sum_by_owasp=counts.overlap_sum_by_owasp,
+    )
+
+    report_by_owasp_rows = _flatten_report_by_owasp_rows(tool_stats_by_owasp=tool_stats_by_owasp, params=params)
+
     out_dir = suite_dir / out_dirname
     out_json = out_dir / "triage_calibration.json"
     out_report = out_dir / "_tables" / "triage_calibration_report.csv"
     out_report_by_owasp = out_dir / "_tables" / "triage_calibration_report_by_owasp.csv"
     out_log = out_dir / "triage_calibration.log"
 
+    generated_at = _now_iso()
+
     payload: Dict[str, Any] = {
         "schema_version": TRIAGE_CALIBRATION_SCHEMA_VERSION,
         "suite_id": sid,
-        "generated_at": _now_iso(),
+        "generated_at": generated_at,
         "input_dataset": str(dataset_csv.relative_to(suite_dir)).replace("\\", "/"),
         "alpha": float(params.alpha),
         "beta": float(params.beta),
@@ -617,26 +725,17 @@ def build_triage_calibration(
             ],
         )
 
-    # Best-effort log: surface suspicious cases explicitly.
-    try:
-        lines: List[str] = []
-        lines.append(f"[{payload['generated_at']}] triage_calibration build")
-        lines.append(f"suite_id              : {sid}")
-        lines.append(f"dataset_csv           : {dataset_csv}")
-        lines.append(f"included_cases        : {len(included_cases)}")
-        lines.append(f"excluded_cases_no_gt  : {len(excluded_cases_no_gt)}")
-        lines.append(f"tools                 : {len(tool_stats_global)}")
-        lines.append(f"out_json              : {out_json}")
-        if suspicious_cases:
-            lines.append("")
-            lines.append(f"suspicious_cases ({len(suspicious_cases)}):")
-            for sc in suspicious_cases:
-                lines.append(
-                    f"  - {sc.get('case_id')}: clusters={sc.get('cluster_count')} overlap_sum={sc.get('gt_overlap_sum')}"
-                )
-        out_log.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    except Exception:
-        pass
+    _write_best_effort_calibration_log(
+        out_log=out_log,
+        sid=sid,
+        dataset_csv=dataset_csv,
+        out_json=out_json,
+        included_cases=included_cases,
+        excluded_cases_no_gt=excluded_cases_no_gt,
+        tool_stats_global=tool_stats_global,
+        suspicious_cases=suspicious_cases,
+        generated_at=generated_at,
+    )
 
     return {
         "suite_id": sid,
