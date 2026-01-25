@@ -255,7 +255,12 @@ def write_tables_and_summary(
     try:
         from pipeline.analysis.suite.suite_report import write_suite_report
 
-        write_suite_report(suite_dir=suite_dir, suite_id=str(suite_id), out_dir=suite_dir / out_dirname)
+        # The feature package API uses out_dirname, not an out_dir Path.
+        write_suite_report(
+            suite_dir=suite_dir,
+            suite_id=str(suite_id),
+            out_dirname=str(out_dirname),
+        )
     except Exception:
         pass
 
