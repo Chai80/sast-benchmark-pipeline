@@ -17,7 +17,7 @@ import json
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .metrics import _gt_ids_for_row, _load_case_gt_ids, _to_int, _tools_for_row
 
@@ -261,6 +261,289 @@ def _compute_tool_utility(
     return tool_rows, all_tools
 
 
+def _stable_tool_counts_json(counts: Dict[str, int]) -> str:
+    """Deterministic JSON encoding for tool-count dicts."""
+
+    return json.dumps({k: int(v) for k, v in sorted(counts.items())}, sort_keys=True)
+
+
+def _parse_tool_counts_json(raw: str, fallback_tools: Sequence[str]) -> Dict[str, int]:
+    """Parse tool_counts_json, falling back to 1-per-tool from tools list."""
+
+    if raw:
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict):
+                out: Dict[str, int] = {}
+                for k, v in obj.items():
+                    kk = str(k).strip()
+                    if not kk:
+                        continue
+                    out[kk] = _to_int(v, 0)
+                out = {k: int(v) for k, v in out.items() if int(v) > 0}
+                if out:
+                    return out
+        except Exception:
+            pass
+
+    return {t: 1 for t in sorted(set(str(x) for x in fallback_tools if str(x).strip()))}
+
+
+def _drop_tool_from_row(row: Dict[str, str], tool: str) -> Optional[Dict[str, str]]:
+    """Return a shallow-copied row with ``tool`` removed (or None if empty)."""
+
+    tools = _tools_for_row(row)
+    if tool not in tools:
+        return dict(row)
+
+    counts = _parse_tool_counts_json(str(row.get('tool_counts_json') or ''), tools)
+    counts.pop(tool, None)
+    counts = {k: int(v) for k, v in counts.items() if int(v) > 0}
+    if not counts:
+        return None
+
+    rr = dict(row)
+    new_tools = sorted(counts.keys())
+
+    rr['tool_counts_json'] = _stable_tool_counts_json(counts)
+    rr['tools_json'] = json.dumps(new_tools, ensure_ascii=False)
+    rr['tools'] = ','.join(new_tools)
+    rr['tool_count'] = str(int(len(new_tools)))
+    rr['finding_count'] = str(int(sum(int(v) for v in counts.values())))
+
+    # Force re-score under calibrated ranking.
+    if 'triage_score_v1' in rr:
+        rr['triage_score_v1'] = ''
+
+    return rr
+
+
+def _build_marginal_strategies(cal: Optional[Dict[str, Any]]) -> Dict[str, RankFn]:
+    """Strategies used for drop-one marginal value tables."""
+
+    # Local import avoids pulling strategy code into import-time side effects.
+    from .strategies import _rank_agreement, _rank_baseline, _rank_calibrated
+
+    strategies_marginal: Dict[str, RankFn] = {
+        'baseline': (lambda rows: _rank_baseline(rows, use_triage_rank=False)),
+        'agreement': _rank_agreement,
+    }
+
+    if cal:
+
+        def _rank_cal_m(rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal) -> List[Dict[str, str]]:
+            return _rank_calibrated(rows, cal=_cal)
+
+        strategies_marginal['calibrated'] = _rank_cal_m
+
+    return strategies_marginal
+
+
+def _micro_totals_for_rows(
+    *,
+    case_ids: Sequence[str],
+    case_has_gt: Dict[str, bool],
+    case_gt_total: Dict[str, int],
+    k_list: Sequence[int],
+    rows_by_case: Dict[str, List[Dict[str, str]]],
+    rank_fn: RankFn,
+) -> Dict[int, Dict[str, int]]:
+    """Micro totals used for marginal value comparison (precision/coverage/neg)."""
+
+    out: Dict[int, Dict[str, int]] = {
+        int(k): {'tp': 0, 'denom': 0, 'covered': 0, 'gt_total': 0, 'neg': 0} for k in k_list
+    }
+
+    for cid in case_ids:
+        if not case_has_gt.get(cid, False):
+            continue
+        gt_total = int(case_gt_total.get(cid, 0) or 0)
+
+        case_rows = list(rows_by_case.get(cid) or [])
+        ordered = rank_fn(case_rows) if case_rows else []
+
+        for k in k_list:
+            kk = int(k)
+            k_eff = min(kk, len(ordered))
+            top = ordered[:k_eff]
+
+            tp = sum(1 for r in top if _to_int(r.get('gt_overlap'), 0) == 1)
+            neg = sum(1 for r in top if _to_int(r.get('gt_overlap'), 0) == 0)
+
+            covered_ids: Set[str] = set()
+            if gt_total > 0:
+                for r in top:
+                    covered_ids.update(_gt_ids_for_row(r))
+            covered = int(len(covered_ids)) if gt_total > 0 else 0
+
+            out[kk]['tp'] += int(tp)
+            out[kk]['denom'] += int(k_eff)
+            out[kk]['neg'] += int(neg)
+            if gt_total > 0:
+                out[kk]['covered'] += int(covered)
+                out[kk]['gt_total'] += int(gt_total)
+
+    return out
+
+
+def _metrics_from_totals(t: Mapping[str, int]) -> Dict[str, Any]:
+    denom = int(t.get('denom', 0) or 0)
+    gt_total = int(t.get('gt_total', 0) or 0)
+    tp = int(t.get('tp', 0) or 0)
+    covered = int(t.get('covered', 0) or 0)
+    neg = int(t.get('neg', 0) or 0)
+    return {
+        'precision': None if denom == 0 else float(tp) / float(denom),
+        'gt_coverage': None if gt_total == 0 else float(covered) / float(gt_total),
+        'neg_in_topk': int(neg),
+    }
+
+
+def _compute_tool_cluster_counts(
+    *,
+    all_tools: Sequence[str],
+    case_ids: Sequence[str],
+    by_case: Dict[str, List[Dict[str, str]]],
+    case_has_gt: Dict[str, bool],
+) -> Dict[str, Dict[str, int]]:
+    """Counts used to contextualize marginal value rows."""
+
+    # Pre-seed keys so missing tools still appear with zeros.
+    out: Dict[str, Dict[str, int]] = {
+        str(t): {
+            'clusters_with_tool': 0,
+            'clusters_exclusive_total': 0,
+            'clusters_exclusive_pos': 0,
+            'clusters_exclusive_neg': 0,
+        }
+        for t in all_tools
+    }
+
+    for cid in case_ids:
+        if not case_has_gt.get(cid, False):
+            continue
+        for r in (by_case.get(cid) or []):
+            tools = _tools_for_row(r)
+            if not tools:
+                continue
+
+            for t in tools:
+                tt = str(t)
+                if tt not in out:
+                    out[tt] = {
+                        'clusters_with_tool': 0,
+                        'clusters_exclusive_total': 0,
+                        'clusters_exclusive_pos': 0,
+                        'clusters_exclusive_neg': 0,
+                    }
+                out[tt]['clusters_with_tool'] += 1
+
+            if len(tools) == 1:
+                tt = str(tools[0])
+                if tt not in out:
+                    out[tt] = {
+                        'clusters_with_tool': 0,
+                        'clusters_exclusive_total': 0,
+                        'clusters_exclusive_pos': 0,
+                        'clusters_exclusive_neg': 0,
+                    }
+
+                out[tt]['clusters_exclusive_total'] += 1
+                if _to_int(r.get('gt_overlap'), 0) == 1:
+                    out[tt]['clusters_exclusive_pos'] += 1
+                else:
+                    out[tt]['clusters_exclusive_neg'] += 1
+
+    # Normalize types
+    for t, d in out.items():
+        out[t] = {k: int(v) for k, v in d.items()}
+
+    return out
+
+
+def _drop_tool_by_case(
+    *,
+    by_case: Dict[str, List[Dict[str, str]]],
+    tool: str,
+    case_ids: Sequence[str],
+    case_has_gt: Dict[str, bool],
+) -> Dict[str, List[Dict[str, str]]]:
+    """Drop a tool from all case rows (GT-only cases)"""
+
+    dropped_by_case: Dict[str, List[Dict[str, str]]] = {}
+    for cid in case_ids:
+        if not case_has_gt.get(cid, False):
+            continue
+        case_rows = list(by_case.get(cid) or [])
+        new_rows: List[Dict[str, str]] = []
+        for r in case_rows:
+            rr = _drop_tool_from_row(r, tool)
+            if rr is not None:
+                new_rows.append(rr)
+        dropped_by_case[cid] = new_rows
+
+    return dropped_by_case
+
+
+def _build_tool_marginal_rows_for_tool(
+    *,
+    sid: str,
+    tool: str,
+    strategies: Sequence[str],
+    k_list: Sequence[int],
+    full_totals: Dict[str, Dict[int, Dict[str, int]]],
+    drop_totals: Dict[str, Dict[int, Dict[str, int]]],
+    util: Mapping[str, Any],
+    cluster_counts: Mapping[str, int],
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+
+    for strat in strategies:
+        for k in k_list:
+            kk = int(k)
+            full_m = _metrics_from_totals(full_totals.get(strat, {}).get(kk, {}))
+            drop_m = _metrics_from_totals(drop_totals.get(strat, {}).get(kk, {}))
+
+            p_full = full_m.get('precision')
+            p_drop = drop_m.get('precision')
+            c_full = full_m.get('gt_coverage')
+            c_drop = drop_m.get('gt_coverage')
+
+            dp = (float(p_drop) - float(p_full)) if (p_full is not None and p_drop is not None) else None
+            dc = (float(c_drop) - float(c_full)) if (c_full is not None and c_drop is not None) else None
+
+            neg_full = int(full_m.get('neg_in_topk') or 0)
+            neg_drop = int(drop_m.get('neg_in_topk') or 0)
+
+            rows.append(
+                {
+                    'suite_id': sid,
+                    'tool': str(tool),
+                    'strategy': str(strat),
+                    'k': int(kk),
+                    'precision_full': '' if p_full is None else round(float(p_full), 6),
+                    'precision_drop': '' if p_drop is None else round(float(p_drop), 6),
+                    'delta_precision': '' if dp is None else round(float(dp), 6),
+                    'gt_coverage_full': '' if c_full is None else round(float(c_full), 6),
+                    'gt_coverage_drop': '' if c_drop is None else round(float(c_drop), 6),
+                    'delta_gt_coverage': '' if dc is None else round(float(dc), 6),
+                    'neg_in_topk_full': int(neg_full),
+                    'neg_in_topk_drop': int(neg_drop),
+                    'delta_neg_in_topk': int(neg_drop) - int(neg_full),
+                    'gt_ids_covered': int(util.get('gt_ids_covered') or 0),
+                    'unique_gt_ids': int(util.get('unique_gt_ids') or 0),
+                    'neg_clusters': int(util.get('neg_clusters') or 0),
+                    'exclusive_neg_clusters': int(util.get('exclusive_neg_clusters') or 0),
+                    'clusters_with_tool': int(cluster_counts.get('clusters_with_tool') or 0),
+                    'clusters_exclusive_total': int(cluster_counts.get('clusters_exclusive_total') or 0),
+                    'clusters_exclusive_pos': int(cluster_counts.get('clusters_exclusive_pos') or 0),
+                    'clusters_exclusive_neg': int(cluster_counts.get('clusters_exclusive_neg') or 0),
+                }
+            )
+
+    return rows
+
+
 def _compute_tool_marginal_value(
     *,
     sid: str,
@@ -285,219 +568,69 @@ def _compute_tool_marginal_value(
     if not cases_with_gt:
         return []
 
-    from .strategies import _rank_agreement, _rank_baseline, _rank_calibrated
+    tool_utility_by_tool: Dict[str, Dict[str, Any]] = {str(r.get('tool') or ''): dict(r) for r in tool_rows}
 
-    tool_utility_by_tool: Dict[str, Dict[str, Any]] = {str(r.get("tool") or ""): dict(r) for r in tool_rows}
-
-    def _stable_tool_counts_json(counts: Dict[str, int]) -> str:
-        return json.dumps({k: int(v) for k, v in sorted(counts.items())}, sort_keys=True)
-
-    def _parse_tool_counts_json(raw: str, fallback_tools: List[str]) -> Dict[str, int]:
-        if raw:
-            try:
-                obj = json.loads(raw)
-                if isinstance(obj, dict):
-                    out: Dict[str, int] = {}
-                    for k, v in obj.items():
-                        kk = str(k).strip()
-                        if not kk:
-                            continue
-                        out[kk] = _to_int(v, 0)
-                    out = {k: int(v) for k, v in out.items() if int(v) > 0}
-                    if out:
-                        return out
-            except Exception:
-                pass
-        return {t: 1 for t in sorted(set(fallback_tools)) if t}
-
-    def _drop_tool_from_row(row: Dict[str, str], tool: str) -> Optional[Dict[str, str]]:
-        tools = _tools_for_row(row)
-        if tool not in tools:
-            return dict(row)
-
-        counts = _parse_tool_counts_json(str(row.get("tool_counts_json") or ""), tools)
-        counts.pop(tool, None)
-        counts = {k: int(v) for k, v in counts.items() if int(v) > 0}
-        if not counts:
-            return None
-
-        rr = dict(row)
-        new_tools = sorted(counts.keys())
-
-        rr["tool_counts_json"] = _stable_tool_counts_json(counts)
-        rr["tools_json"] = json.dumps(new_tools, ensure_ascii=False)
-        rr["tools"] = ",".join(new_tools)
-        rr["tool_count"] = str(int(len(new_tools)))
-        rr["finding_count"] = str(int(sum(int(v) for v in counts.values())))
-
-        # Force re-score under calibrated ranking.
-        if "triage_score_v1" in rr:
-            rr["triage_score_v1"] = ""
-
-        return rr
-
-    strategies_marginal: Dict[str, RankFn] = {
-        "baseline": (lambda rows: _rank_baseline(rows, use_triage_rank=False)),
-        "agreement": _rank_agreement,
-    }
-    if cal:
-
-        def _rank_cal_m(rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal) -> List[Dict[str, str]]:
-            return _rank_calibrated(rows, cal=_cal)
-
-        strategies_marginal["calibrated"] = _rank_cal_m
-
-    def _micro_totals_for_rows(
-        *,
-        rows_by_case: Dict[str, List[Dict[str, str]]],
-        rank_fn: RankFn,
-    ) -> Dict[int, Dict[str, int]]:
-        out: Dict[int, Dict[str, int]] = {
-            int(k): {"tp": 0, "denom": 0, "covered": 0, "gt_total": 0, "neg": 0} for k in k_list
-        }
-
-        for cid in case_ids:
-            if not case_has_gt.get(cid, False):
-                continue
-            gt_total = int(case_gt_total.get(cid, 0) or 0)
-
-            case_rows = list(rows_by_case.get(cid) or [])
-            ordered = rank_fn(case_rows) if case_rows else []
-
-            for k in k_list:
-                kk = int(k)
-                k_eff = min(kk, len(ordered))
-                top = ordered[:k_eff]
-
-                tp = sum(1 for r in top if _to_int(r.get("gt_overlap"), 0) == 1)
-                neg = sum(1 for r in top if _to_int(r.get("gt_overlap"), 0) == 0)
-
-                covered_ids: Set[str] = set()
-                if gt_total > 0:
-                    for r in top:
-                        covered_ids.update(_gt_ids_for_row(r))
-                covered = int(len(covered_ids)) if gt_total > 0 else 0
-
-                out[kk]["tp"] += int(tp)
-                out[kk]["denom"] += int(k_eff)
-                out[kk]["neg"] += int(neg)
-                if gt_total > 0:
-                    out[kk]["covered"] += int(covered)
-                    out[kk]["gt_total"] += int(gt_total)
-
-        return out
-
-    def _metrics_from_totals(t: Dict[str, int]) -> Dict[str, Any]:
-        denom = int(t.get("denom", 0) or 0)
-        gt_total = int(t.get("gt_total", 0) or 0)
-        tp = int(t.get("tp", 0) or 0)
-        covered = int(t.get("covered", 0) or 0)
-        neg = int(t.get("neg", 0) or 0)
-        return {
-            "precision": None if denom == 0 else float(tp) / float(denom),
-            "gt_coverage": None if gt_total == 0 else float(covered) / float(gt_total),
-            "neg_in_topk": int(neg),
-        }
+    strategies_marginal = _build_marginal_strategies(cal)
 
     full_totals: Dict[str, Dict[int, Dict[str, int]]] = {}
     for strat, rank_fn in strategies_marginal.items():
-        full_totals[strat] = _micro_totals_for_rows(rows_by_case=by_case, rank_fn=rank_fn)
+        full_totals[strat] = _micro_totals_for_rows(
+            case_ids=case_ids,
+            case_has_gt=case_has_gt,
+            case_gt_total=case_gt_total,
+            k_list=k_list,
+            rows_by_case=by_case,
+            rank_fn=rank_fn,
+        )
 
-    tool_cluster_counts: Dict[str, Dict[str, int]] = {}
-    for tool in all_tools:
-        clusters_with_tool = 0
-        excl_total = 0
-        excl_pos = 0
-        excl_neg = 0
-        for cid in case_ids:
-            if not case_has_gt.get(cid, False):
-                continue
-            for r in (by_case.get(cid) or []):
-                tools = _tools_for_row(r)
-                if tool in tools:
-                    clusters_with_tool += 1
-                if len(tools) == 1 and tools and tools[0] == tool:
-                    excl_total += 1
-                    if _to_int(r.get("gt_overlap"), 0) == 1:
-                        excl_pos += 1
-                    else:
-                        excl_neg += 1
-        tool_cluster_counts[tool] = {
-            "clusters_with_tool": int(clusters_with_tool),
-            "clusters_exclusive_total": int(excl_total),
-            "clusters_exclusive_pos": int(excl_pos),
-            "clusters_exclusive_neg": int(excl_neg),
-        }
+    tool_cluster_counts = _compute_tool_cluster_counts(
+        all_tools=all_tools,
+        case_ids=case_ids,
+        by_case=by_case,
+        case_has_gt=case_has_gt,
+    )
 
     tool_marginal_rows: List[Dict[str, Any]] = []
 
     for tool in all_tools:
-        dropped_by_case: Dict[str, List[Dict[str, str]]] = {}
-        for cid, case_rows in by_case.items():
-            if not case_has_gt.get(cid, False):
-                continue
-            new_rows: List[Dict[str, str]] = []
-            for r in case_rows:
-                rr = _drop_tool_from_row(r, tool)
-                if rr is not None:
-                    new_rows.append(rr)
-            dropped_by_case[cid] = new_rows
+        dropped_by_case = _drop_tool_by_case(by_case=by_case, tool=str(tool), case_ids=case_ids, case_has_gt=case_has_gt)
 
         drop_totals: Dict[str, Dict[int, Dict[str, int]]] = {}
         for strat, rank_fn in strategies_marginal.items():
-            drop_totals[strat] = _micro_totals_for_rows(rows_by_case=dropped_by_case, rank_fn=rank_fn)
+            drop_totals[strat] = _micro_totals_for_rows(
+                case_ids=case_ids,
+                case_has_gt=case_has_gt,
+                case_gt_total=case_gt_total,
+                k_list=k_list,
+                rows_by_case=dropped_by_case,
+                rank_fn=rank_fn,
+            )
 
-        util = tool_utility_by_tool.get(tool, {})
-        cc = tool_cluster_counts.get(tool, {})
+        util = tool_utility_by_tool.get(str(tool), {})
+        cc = tool_cluster_counts.get(str(tool), {})
 
-        for strat in strategies_marginal.keys():
-            for k in k_list:
-                kk = int(k)
-                full_m = _metrics_from_totals(full_totals[strat].get(kk, {}))
-                drop_m = _metrics_from_totals(drop_totals[strat].get(kk, {}))
+        tool_marginal_rows.extend(
+            _build_tool_marginal_rows_for_tool(
+                sid=sid,
+                tool=str(tool),
+                strategies=list(strategies_marginal.keys()),
+                k_list=k_list,
+                full_totals=full_totals,
+                drop_totals=drop_totals,
+                util=util,
+                cluster_counts=cc,
+            )
+        )
 
-                p_full = full_m.get("precision")
-                p_drop = drop_m.get("precision")
-                c_full = full_m.get("gt_coverage")
-                c_drop = drop_m.get("gt_coverage")
-
-                dp = (float(p_drop) - float(p_full)) if (p_full is not None and p_drop is not None) else None
-                dc = (float(c_drop) - float(c_full)) if (c_full is not None and c_drop is not None) else None
-
-                tool_marginal_rows.append(
-                    {
-                        "suite_id": sid,
-                        "tool": str(tool),
-                        "strategy": str(strat),
-                        "k": int(kk),
-                        "precision_full": "" if p_full is None else round(float(p_full), 6),
-                        "precision_drop": "" if p_drop is None else round(float(p_drop), 6),
-                        "delta_precision": "" if dp is None else round(float(dp), 6),
-                        "gt_coverage_full": "" if c_full is None else round(float(c_full), 6),
-                        "gt_coverage_drop": "" if c_drop is None else round(float(c_drop), 6),
-                        "delta_gt_coverage": "" if dc is None else round(float(dc), 6),
-                        "neg_in_topk_full": int(full_m.get("neg_in_topk") or 0),
-                        "neg_in_topk_drop": int(drop_m.get("neg_in_topk") or 0),
-                        "delta_neg_in_topk": int(drop_m.get("neg_in_topk") or 0) - int(full_m.get("neg_in_topk") or 0),
-                        "gt_ids_covered": int(util.get("gt_ids_covered") or 0),
-                        "unique_gt_ids": int(util.get("unique_gt_ids") or 0),
-                        "neg_clusters": int(util.get("neg_clusters") or 0),
-                        "exclusive_neg_clusters": int(util.get("exclusive_neg_clusters") or 0),
-                        "clusters_with_tool": int(cc.get("clusters_with_tool") or 0),
-                        "clusters_exclusive_total": int(cc.get("clusters_exclusive_total") or 0),
-                        "clusters_exclusive_pos": int(cc.get("clusters_exclusive_pos") or 0),
-                        "clusters_exclusive_neg": int(cc.get("clusters_exclusive_neg") or 0),
-                    }
-                )
-
-    strat_order = {name: idx for idx, name in enumerate(["baseline", "agreement", "calibrated"], start=1)}
+    strat_order = {name: idx for idx, name in enumerate(['baseline', 'agreement', 'calibrated'], start=1)}
     tool_marginal_rows.sort(
         key=lambda r: (
-            str(r.get("tool") or ""),
-            int(strat_order.get(str(r.get("strategy") or ""), 99)),
-            int(r.get("k") or 0),
+            str(r.get('tool') or ''),
+            int(strat_order.get(str(r.get('strategy') or ''), 99)),
+            int(r.get('k') or 0),
         )
     )
+
     return tool_marginal_rows
 
 
