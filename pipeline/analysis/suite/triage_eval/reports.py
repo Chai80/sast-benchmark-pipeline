@@ -15,15 +15,18 @@ make the compute logic testable without filesystem I/O.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from .compute import compute_triage_eval
 from .io import write_readme, write_tables_and_summary
 from .load import load_strategies, load_triage_dataset, normalize_ks, resolve_case_ids
 from .model import TriageEvalBuildRequest, TriageEvalPaths
 
+
+logger = logging.getLogger(__name__)
 
 def _now_iso() -> str:
     # Keep the raw ISO timestamp (including microseconds) for backwards
@@ -74,9 +77,13 @@ def build_triage_eval(
 
     # Small, human-friendly overview next to the tables (best-effort).
     readme_path: Optional[Path] = None
+    warnings: List[str] = []
     try:
         readme_path = write_readme(out_tables=paths.out_tables, suite_id=sid, ks=k_list)
-    except Exception:
+    except Exception as e:
+        msg = f"Failed to write triage_eval README (best-effort): {e}"
+        warnings.append(msg)
+        logger.warning(msg)
         readme_path = None
 
     # --- Compute (no file I/O) --------------------------------------
@@ -122,26 +129,11 @@ def build_triage_eval(
 
     # --- Write outputs ----------------------------------------------
     write_tables_and_summary(
-        out_by_case_csv=paths.out_by_case_csv,
-        out_tool_csv=paths.out_tool_csv,
-        out_tool_marginal_csv=paths.out_tool_marginal_csv,
-        out_topk_csv=paths.out_topk_csv,
-        out_deltas_by_case_csv=paths.out_deltas_by_case_csv,
-        out_summary_json=paths.out_summary_json,
-        out_log=paths.out_log,
-        by_case_rows=computed.by_case_rows,
-        tool_rows=computed.tool_rows,
-        tool_marginal_rows=computed.tool_marginal_rows,
-        topk_rows=computed.topk_rows,
-        deltas_by_case_rows=computed.deltas_by_case_rows,
+        req=req,
+        paths=paths,
+        computed=computed,
         summary=summary,
-        cases_without_gt=computed.cases_without_gt,
-        cases_no_clusters=computed.cases_no_clusters,
-        cases_with_gt_but_no_clusters=computed.cases_with_gt_but_no_clusters,
-        cases_with_gt_but_no_overlaps=computed.cases_with_gt_but_no_overlaps,
-        out_dirname=req.out_dirname,
-        suite_dir=suite_dir,
-        suite_id=sid,
+        warnings=warnings,
     )
 
     return summary

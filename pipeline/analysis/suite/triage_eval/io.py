@@ -10,10 +10,18 @@ evaluation easier to reason about and easier to test.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Sequence
 
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
+
+from .model import TriageEvalBuildRequest, TriageEvalPaths
+
+if TYPE_CHECKING:
+    from .compute import TriageEvalComputeResult
+
+logger = logging.getLogger(__name__)
 
 
 def write_readme(
@@ -95,28 +103,28 @@ Both are useful:
     return readme_path
 
 
+def _append_best_effort_warning(*, out_log: Path, message: str) -> None:
+    """Append a warning line to the triage-eval build log (best-effort).
+
+    This must never raise.
+    """
+
+    try:
+        out_log = Path(out_log).resolve()
+        out_log.parent.mkdir(parents=True, exist_ok=True)
+        with out_log.open("a", encoding="utf-8") as f:
+            f.write(f"WARNING: {message}\n")
+    except Exception as e:
+        logger.warning("Failed to append warning to %s: %s", str(out_log), e)
+
+
 def write_tables_and_summary(
     *,
-    out_by_case_csv: Path,
-    out_tool_csv: Path,
-    out_tool_marginal_csv: Path,
-    out_topk_csv: Path,
-    out_deltas_by_case_csv: Path,
-    out_summary_json: Path,
-    out_log: Path,
-    by_case_rows: Sequence[Dict[str, Any]],
-    tool_rows: Sequence[Dict[str, Any]],
-    tool_marginal_rows: Sequence[Dict[str, Any]],
-    topk_rows: Sequence[Dict[str, Any]],
-    deltas_by_case_rows: Sequence[Dict[str, Any]],
+    req: TriageEvalBuildRequest,
+    paths: TriageEvalPaths,
+    computed: "TriageEvalComputeResult",
     summary: Dict[str, Any],
-    cases_without_gt: Sequence[str],
-    cases_no_clusters: Sequence[str],
-    cases_with_gt_but_no_clusters: Sequence[str],
-    cases_with_gt_but_no_overlaps: Sequence[str],
-    out_dirname: str,
-    suite_dir: Path,
-    suite_id: str,
+    warnings: Sequence[str] = (),
 ) -> None:
     """Write triage-eval output artifacts.
 
@@ -127,9 +135,13 @@ def write_tables_and_summary(
     - The optional suite report is best-effort and must never fail the eval.
     """
 
+    suite_dir = req.suite_dir_resolved
+    suite_id = req.suite_id_effective
+    out_dirname = req.out_dirname
+
     write_csv(
-        out_by_case_csv,
-        by_case_rows,
+        paths.out_by_case_csv,
+        computed.by_case_rows,
         fieldnames=[
             "suite_id",
             "case_id",
@@ -147,8 +159,8 @@ def write_tables_and_summary(
     )
 
     write_csv(
-        out_tool_csv,
-        tool_rows,
+        paths.out_tool_csv,
+        computed.tool_rows,
         fieldnames=[
             "suite_id",
             "tool",
@@ -159,10 +171,10 @@ def write_tables_and_summary(
         ],
     )
 
-    if tool_marginal_rows:
+    if computed.tool_marginal_rows:
         write_csv(
-            out_tool_marginal_csv,
-            tool_marginal_rows,
+            paths.out_tool_marginal_csv,
+            computed.tool_marginal_rows,
             fieldnames=[
                 "suite_id",
                 "tool",
@@ -189,8 +201,8 @@ def write_tables_and_summary(
         )
 
     write_csv(
-        out_topk_csv,
-        topk_rows,
+        paths.out_topk_csv,
+        computed.topk_rows,
         fieldnames=[
             "suite_id",
             "case_id",
@@ -218,10 +230,10 @@ def write_tables_and_summary(
         ],
     )
 
-    if deltas_by_case_rows:
+    if computed.deltas_by_case_rows:
         write_csv(
-            out_deltas_by_case_csv,
-            deltas_by_case_rows,
+            paths.out_deltas_by_case_csv,
+            computed.deltas_by_case_rows,
             fieldnames=[
                 "suite_id",
                 "case_id",
@@ -239,15 +251,16 @@ def write_tables_and_summary(
             ],
         )
 
-    write_json(out_summary_json, summary)
+    write_json(paths.out_summary_json, summary)
 
     _write_best_effort_log(
-        out_log=out_log,
+        out_log=paths.out_log,
         summary=summary,
-        cases_without_gt=cases_without_gt,
-        cases_no_clusters=cases_no_clusters,
-        cases_with_gt_but_no_clusters=cases_with_gt_but_no_clusters,
-        cases_with_gt_but_no_overlaps=cases_with_gt_but_no_overlaps,
+        cases_without_gt=computed.cases_without_gt,
+        cases_no_clusters=computed.cases_no_clusters,
+        cases_with_gt_but_no_clusters=computed.cases_with_gt_but_no_clusters,
+        cases_with_gt_but_no_overlaps=computed.cases_with_gt_but_no_overlaps,
+        warnings=warnings,
     )
 
     # Best-effort: generate a human-friendly suite report alongside suite-level artifacts.
@@ -261,8 +274,10 @@ def write_tables_and_summary(
             suite_id=str(suite_id),
             out_dirname=str(out_dirname),
         )
-    except Exception:
-        pass
+    except Exception as e:
+        msg = f"Failed to build suite_report (best-effort): {e}"
+        logger.warning(msg)
+        _append_best_effort_warning(out_log=paths.out_log, message=msg)
 
 
 def _write_best_effort_log(
@@ -273,6 +288,7 @@ def _write_best_effort_log(
     cases_no_clusters: Sequence[str],
     cases_with_gt_but_no_clusters: Sequence[str],
     cases_with_gt_but_no_overlaps: Sequence[str],
+    warnings: Sequence[str] = (),
 ) -> None:
     """Write a small build log summarizing missing/empty cases.
 
@@ -303,6 +319,10 @@ def _write_best_effort_log(
             lines.append("")
             lines.append(f"cases_with_gt_but_no_overlaps ({len(cases_with_gt_but_no_overlaps)}):")
             lines.extend([f"  - {c}" for c in cases_with_gt_but_no_overlaps])
+        if warnings:
+            lines.append("")
+            lines.append(f"warnings ({len(warnings)}):")
+            lines.extend([f"  - {w}" for w in warnings])
         out_log.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to write triage_eval log to %s: %s", str(out_log), e)

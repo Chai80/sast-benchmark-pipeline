@@ -158,8 +158,8 @@ def build_suite_artifacts(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun) 
                             mp = ks.get("precision")
                             mc = ks.get("gt_coverage")
                             print(f"  {strat} macro@{k}: precision={mp} coverage={mc}")
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  ⚠️  Failed to print triage_eval macro snapshot: {e}")
         except Exception as e:
             print(f"\n⚠️  Failed to build suite triage_eval: {e}")
 
@@ -478,8 +478,8 @@ def _qa_stage_append_suite_report_checks(
                 detail="" if js_path.exists() else "missing",
             )
         )
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"⚠️  Failed to append suite_report checks (best-effort): {e}")
 
     return checks
 

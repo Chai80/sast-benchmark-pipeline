@@ -33,7 +33,7 @@ from pipeline.suites.bundles import safe_name
 
 if TYPE_CHECKING:
     # Avoid runtime import cycles (runbook.py imports this module).
-    from .runbook import SuiteRunContext
+    from .runbook_steps.model import SuiteRunContext
     from pipeline.suites.suite_resolver import ResolvedSuiteRun
 def _build_selection_payload(ctx: "SuiteRunContext", *, eff_tol: int) -> Dict[str, Any]:
     """Build the selection mapping written to analysis/gt_tolerance_selection.json.
