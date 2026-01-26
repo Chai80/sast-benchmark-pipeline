@@ -75,9 +75,7 @@ class ScannerInfo:
 
     # Optional pure hook to derive additional CLI args.
     # NOTE: RunRequest is imported under TYPE_CHECKING to avoid runtime cycles.
-    extra_args_builder: Optional[
-        Callable[[RunRequest, ScannerRunContext], Dict[str, Any]]
-    ] = None
+    extra_args_builder: Optional[Callable[[RunRequest, ScannerRunContext], Dict[str, Any]]] = None
 
     default: bool = True
 
@@ -115,9 +113,7 @@ def _aikido_extra_args(req: RunRequest, ctx: ScannerRunContext) -> Dict[str, Any
     git_ref = getattr(req, "aikido_git_ref", None)
     if not git_ref:
         try:
-            repo_url = getattr(
-                getattr(getattr(req, "case", None), "repo", None), "repo_url", None
-            )
+            repo_url = getattr(getattr(getattr(req, "case", None), "repo", None), "repo_url", None)
             if repo_url:
                 git_ref = str(repo_url).rstrip("/").replace(".git", "")
         except Exception:
@@ -184,11 +180,7 @@ DEFAULT_SCANNERS_CSV: str = ",".join(DEFAULT_SCANNERS)
 SCANNER_LABELS: Dict[str, str] = {k: info.label for k, info in SCANNERS.items()}
 SCANNER_SCRIPTS: Dict[str, str] = {k: info.script for k, info in SCANNERS.items()}
 
-SCANNER_TARGET_MODES: Dict[str, str] = {
-    k: str(info.target_mode) for k, info in SCANNERS.items()
-}
+SCANNER_TARGET_MODES: Dict[str, str] = {k: str(info.target_mode) for k, info in SCANNERS.items()}
 
 # Keep the legacy shape: Dict[str, set[str]]
-SCANNER_TRACKS: Dict[str, set[str]] = {
-    k: set(info.tracks) for k, info in SCANNERS.items()
-}
+SCANNER_TRACKS: Dict[str, set[str]] = {k: set(info.tracks) for k, info in SCANNERS.items()}

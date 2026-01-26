@@ -41,12 +41,8 @@ def main() -> None:
         default=str(Path(__file__).resolve().parents[2] / "runs"),
         help="Base runs directory (default: <repo_root>/runs)",
     )
-    ap.add_argument(
-        "--out-dir", help="Output directory (default: runs/analysis/<repo-name>/)"
-    )
-    ap.add_argument(
-        "--tools", help=f"Comma-separated tools (default: {DEFAULT_SCANNERS_CSV})"
-    )
+    ap.add_argument("--out-dir", help="Output directory (default: runs/analysis/<repo-name>/)")
+    ap.add_argument("--tools", help=f"Comma-separated tools (default: {DEFAULT_SCANNERS_CSV})")
     ap.add_argument(
         "--tolerance",
         type=int,
@@ -89,9 +85,7 @@ def main() -> None:
     args = ap.parse_args()
     tools = _parse_tools_csv(args.tools) or list(DEFAULT_SCANNERS)
     runs_dir = Path(args.runs_dir)
-    out_dir = (
-        Path(args.out_dir) if args.out_dir else (runs_dir / "analysis" / args.repo_name)
-    )
+    out_dir = Path(args.out_dir) if args.out_dir else (runs_dir / "analysis" / args.repo_name)
     formats = [f.strip() for f in str(args.formats).split(",") if f.strip()]
 
     summary = run_suite(

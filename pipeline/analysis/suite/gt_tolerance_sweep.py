@@ -115,9 +115,7 @@ def parse_gt_tolerance_candidates(raw: Any) -> List[int]:
     return out or list(DEFAULT_GT_TOLERANCE_CANDIDATES)
 
 
-def disable_suite_calibration(
-    suite_dir: Path, *, out_dirname: str = "analysis"
-) -> Optional[Path]:
+def disable_suite_calibration(suite_dir: Path, *, out_dirname: str = "analysis") -> Optional[Path]:
     """Temporarily disable suite-level triage calibration.
 
     Per-case analysis (triage_queue stage) will automatically pick up
@@ -288,17 +286,11 @@ def _compute_dataset_overlap_stats(dataset_csv: Path) -> DatasetOverlapStats:
             if len(uniq) > 1:
                 clusters_multi_gt += 1
             for gid in uniq:
-                gt_id_to_cluster_count[gid] = (
-                    int(gt_id_to_cluster_count.get(gid, 0)) + 1
-                )
+                gt_id_to_cluster_count[gid] = int(gt_id_to_cluster_count.get(gid, 0)) + 1
 
     gt_ids_covered = len(gt_id_to_cluster_count)
-    gt_ids_multi_cluster = sum(
-        1 for _gid, c in gt_id_to_cluster_count.items() if int(c) > 1
-    )
-    max_clusters_per_gt_id = max(
-        [int(c) for c in gt_id_to_cluster_count.values()], default=0
-    )
+    gt_ids_multi_cluster = sum(1 for _gid, c in gt_id_to_cluster_count.items() if int(c) > 1)
+    max_clusters_per_gt_id = max([int(c) for c in gt_id_to_cluster_count.values()], default=0)
 
     rate = (float(pos) / float(total)) if total else 0.0
 
@@ -325,11 +317,7 @@ def _extract_macro_metrics(
 
     out: Dict[str, float] = {}
 
-    macro = (
-        triage_eval_summary.get("macro")
-        if isinstance(triage_eval_summary, dict)
-        else None
-    )
+    macro = triage_eval_summary.get("macro") if isinstance(triage_eval_summary, dict) else None
     if not isinstance(macro, dict):
         return out
 
@@ -344,13 +332,9 @@ def _extract_macro_metrics(
             p = k_obj.get("precision")
             c = k_obj.get("gt_coverage")
             if p is not None:
-                out[f"macro_precision_{strat}_k{k}"] = float(
-                    _safe_float(p, default=0.0)
-                )
+                out[f"macro_precision_{strat}_k{k}"] = float(_safe_float(p, default=0.0))
             if c is not None:
-                out[f"macro_gt_coverage_{strat}_k{k}"] = float(
-                    _safe_float(c, default=0.0)
-                )
+                out[f"macro_gt_coverage_{strat}_k{k}"] = float(_safe_float(c, default=0.0))
 
     # Calibrated vs baseline deltas (only where both exist).
     for k in ks:
@@ -554,9 +538,7 @@ def run_gt_tolerance_sweep(
                             "tp": _safe_int(r.get("tp"), 0),
                             "fp": _safe_int(r.get("fp"), 0),
                             "p_smoothed": _safe_float(r.get("p_smoothed"), 0.0),
-                            "weight": _safe_float(
-                                r.get("weight"), float(weights.get(tool, 0.0))
-                            ),
+                            "weight": _safe_float(r.get("weight"), float(weights.get(tool, 0.0))),
                         }
                     )
             except Exception:
@@ -621,9 +603,7 @@ def run_gt_tolerance_sweep(
 
     # Stable sort by gt_tolerance
     rows_out.sort(key=lambda r: int(r.get("gt_tolerance", 0)))
-    tool_rows_out.sort(
-        key=lambda r: (int(r.get("gt_tolerance", 0)), str(r.get("tool") or ""))
-    )
+    tool_rows_out.sort(key=lambda r: (int(r.get("gt_tolerance", 0)), str(r.get("tool") or "")))
 
     out_report_csv = tables_dir / "gt_tolerance_sweep_report.csv"
     out_tool_csv = tables_dir / "gt_tolerance_sweep_tool_stats.csv"
@@ -788,9 +768,7 @@ def write_gt_tolerance_selection(
     payload: Dict[str, Any] = {
         "schema_version": "gt_tolerance_selection_v1",
         "suite_id": str(suite_dir.name),
-        "selected_gt_tolerance": int(
-            _safe_int(selection.get("selected_gt_tolerance"), 0)
-        ),
+        "selected_gt_tolerance": int(_safe_int(selection.get("selected_gt_tolerance"), 0)),
         "selection": dict(selection),
     }
 

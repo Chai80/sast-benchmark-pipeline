@@ -55,17 +55,11 @@ def test_write_qa_manifest_updates_suite_json_with_gt_tolerance(tmp_path: Path) 
         sweep_candidates=[0, 1, 2, 3, 5, 10],
         auto_enabled=True,
         auto_min_fraction=0.95,
-        selection_path=str(
-            (suite_dir / "analysis" / "gt_tolerance_selection.json").resolve()
-        ),
+        selection_path=str((suite_dir / "analysis" / "gt_tolerance_selection.json").resolve()),
         sweep_report_csv=str(
-            (
-                suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv"
-            ).resolve()
+            (suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").resolve()
         ),
-        sweep_payload_json=str(
-            (suite_dir / "analysis" / "gt_tolerance_sweep.json").resolve()
-        ),
+        sweep_payload_json=str((suite_dir / "analysis" / "gt_tolerance_sweep.json").resolve()),
         selection_warnings=[],
     )
 

@@ -35,9 +35,7 @@ class TestSuiteResolver(unittest.TestCase):
                         )
                     )
                 ],
-                analysis=SuiteAnalysisDefaults(
-                    skip=False, tolerance=3, filter="security"
-                ),
+                analysis=SuiteAnalysisDefaults(skip=False, tolerance=3, filter="security"),
             )
 
             resolved = resolve_suite_run(

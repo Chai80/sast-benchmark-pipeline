@@ -68,18 +68,14 @@ def _capture_optional_benchmark_yaml(
         return
 
 
-def init_suite_paths(
-    req: RunCaseRequest, *, case_warnings: List[str]
-) -> Optional[SuitePaths]:
+def init_suite_paths(req: RunCaseRequest, *, case_warnings: List[str]) -> Optional[SuitePaths]:
     """Create/ensure suite layout and return SuitePaths (or None)."""
 
     if not req.use_suite:
         return None
 
     sid = str(req.suite_id) if req.suite_id else new_suite_id()
-    suite_paths = get_suite_paths(
-        case_id=req.case.case_id, suite_id=sid, suite_root=req.suite_root
-    )
+    suite_paths = get_suite_paths(case_id=req.case.case_id, suite_id=sid, suite_root=req.suite_root)
     ensure_suite_dirs(suite_paths)
     update_latest_pointer(suite_paths)
 
@@ -161,9 +157,7 @@ def write_run_json(
         return None
 
     normalized_name = _pick_first(["normalized.json", f"{repo_name}.normalized.json"])
-    raw_name = _pick_first(
-        ["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"]
-    )
+    raw_name = _pick_first(["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"])
     metadata_name = _pick_first(["metadata.json"])
     config_receipt_name = _pick_first(["config_receipt.json"])
     logs_dir = run_dir / "logs"
@@ -247,9 +241,7 @@ def record_tool_run_manifest(
             )
             config_receipt_path = str(run_dir / "config_receipt.json")
         except Exception as e:
-            case_warnings.append(
-                f"write_config_receipt_failed:{scanner}:{run_dir}: {e}"
-            )
+            case_warnings.append(f"write_config_receipt_failed:{scanner}:{run_dir}: {e}")
 
         try:
             write_run_json(
@@ -396,9 +388,7 @@ def maybe_run_analysis(
             requested=int(getattr(req, "gt_tolerance", 0) or 0),
         )
 
-        effective_gt_tolerance = int(
-            pol.get("effective_gt_tolerance") or effective_gt_tolerance
-        )
+        effective_gt_tolerance = int(pol.get("effective_gt_tolerance") or effective_gt_tolerance)
         src = str(pol.get("source") or "")
 
         # Record only when the policy *changes* the effective value.

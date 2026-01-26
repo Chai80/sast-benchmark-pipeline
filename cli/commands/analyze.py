@@ -21,9 +21,7 @@ def _as_dict(x: Any) -> dict:
     return x if isinstance(x, dict) else {}
 
 
-def _case_spec_from_case_dir(
-    case_dir: Path, *, default_track: Optional[str] = None
-) -> CaseSpec:
+def _case_spec_from_case_dir(case_dir: Path, *, default_track: Optional[str] = None) -> CaseSpec:
     """Best-effort reconstruct a CaseSpec from <case_dir>/case.json.
 
     Analysis is mostly independent of repo identity, but using the recorded
@@ -143,17 +141,13 @@ def run_analyze_suite_all_cases(
 
     metric = str(getattr(args, "metric", "") or "hotspots").strip()
     if metric != "suite":
-        raise SystemExit(
-            f"run_analyze_suite_all_cases requires --metric suite (got: {metric!r})"
-        )
+        raise SystemExit(f"run_analyze_suite_all_cases requires --metric suite (got: {metric!r})")
 
     _maybe_warn_gt_scoring(metric, str(getattr(args, "gt_source", "auto")))
 
     if getattr(args, "analysis_out_dir", None):
         # In multi-case mode, a single output dir is ambiguous and risks collisions.
-        print(
-            "\nWARNING: --analysis-out-dir is ignored when analyzing ALL cases in a suite."
-        )
+        print("\nWARNING: --analysis-out-dir is ignored when analyzing ALL cases in a suite.")
         print("         Outputs will be written to each case's <case_dir>/analysis/.")
 
     if getattr(args, "out", None):
@@ -175,9 +169,7 @@ def run_analyze_suite_all_cases(
         print("\n" + "=" * 72)
         print(f"Analyze case {idx}/{len(case_ids)}: {cid}")
 
-        case_spec = _case_spec_from_case_dir(
-            case_dir, default_track=getattr(args, "track", None)
-        )
+        case_spec = _case_spec_from_case_dir(case_dir, default_track=getattr(args, "track", None))
 
         req = AnalyzeRequest(
             metric="suite",
@@ -216,9 +208,7 @@ def run_analyze_suite_all_cases(
 
     print(f"Per-case outputs: {Path(suite_dir) / 'cases' / '<case_id>' / 'analysis'}")
 
-    print(
-        f"Case tables:     {Path(suite_dir) / 'cases' / '<case_id>' / 'analysis' / '_tables'}"
-    )
+    print(f"Case tables:     {Path(suite_dir) / 'cases' / '<case_id>' / 'analysis' / '_tables'}")
 
     print(f"\nWrote suite case index: {idx_path}")
 

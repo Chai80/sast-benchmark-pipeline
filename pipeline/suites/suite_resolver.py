@@ -279,10 +279,7 @@ def write_suite_manifest(
                 "filter": str(analysis.filter),
                 "gt_required_default": analysis.gt_required_default,
             },
-            "cases": [
-                _case_plan_entry(rc.suite_case, repo_id=rc.repo_id)
-                for rc in resolved_cases
-            ],
+            "cases": [_case_plan_entry(rc.suite_case, repo_id=rc.repo_id) for rc in resolved_cases],
             "provenance": {
                 "suite_file": provenance.suite_file,
                 "cases_from_csv": provenance.cases_from_csv,

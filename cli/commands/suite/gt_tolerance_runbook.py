@@ -110,9 +110,7 @@ def run_gt_tolerance_policy_runbook(
 
     args = ctx.args
 
-    if bool(getattr(args, "dry_run", False)) or bool(
-        getattr(args, "skip_analysis", False)
-    ):
+    if bool(getattr(args, "dry_run", False)) or bool(getattr(args, "skip_analysis", False)):
         return int(overall)
 
     suite_id = resolved_run.suite_id
@@ -128,9 +126,7 @@ def run_gt_tolerance_policy_runbook(
     # ------------------------------------------------------------------
     sweep_raw = getattr(args, "gt_tolerance_sweep", None)
     sweep_auto = bool(getattr(args, "gt_tolerance_auto", False))
-    sweep_min_frac = float(
-        getattr(args, "gt_tolerance_auto_min_fraction", 0.95) or 0.95
-    )
+    sweep_min_frac = float(getattr(args, "gt_tolerance_auto_min_fraction", 0.95) or 0.95)
 
     ctx.gt_sweep.sweep_raw = str(sweep_raw) if sweep_raw is not None else None
     ctx.gt_sweep.auto_enabled = bool(sweep_auto)
@@ -144,9 +140,7 @@ def run_gt_tolerance_policy_runbook(
     if sweep_requested:
         ctx.gt_sweep.enabled = True
         ctx.gt_sweep.report_csv = str(
-            (
-                suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv"
-            ).resolve()
+            (suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").resolve()
         )
         ctx.gt_sweep.payload_json = str(
             (suite_dir / "analysis" / "gt_tolerance_sweep.json").resolve()
@@ -192,9 +186,7 @@ def run_gt_tolerance_policy_runbook(
                     min_fraction=sweep_min_frac,
                 )
                 chosen = int(
-                    sel.get(
-                        "selected_gt_tolerance", int(getattr(args, "gt_tolerance", 0))
-                    )
+                    sel.get("selected_gt_tolerance", int(getattr(args, "gt_tolerance", 0)))
                 )
 
                 ctx.gt_sweep.selection = dict(sel)
@@ -236,9 +228,7 @@ def run_gt_tolerance_policy_runbook(
             for j, rc2 in enumerate(resolved_run.cases, start=1):
                 c2 = rc2.suite_case.case
                 print("\n" + "-" * 72)
-                print(
-                    f"🔁 Analyze (finalize) {j}/{len(resolved_run.cases)}: {c2.case_id}"
-                )
+                print(f"🔁 Analyze (finalize) {j}/{len(resolved_run.cases)}: {c2.case_id}")
 
                 case_dir = (suite_dir / "cases" / safe_name(c2.case_id)).resolve()
                 try:
@@ -253,9 +243,7 @@ def run_gt_tolerance_policy_runbook(
                         gt_tolerance=int(eff_tol),
                         gt_source=str(getattr(args, "gt_source", "auto")),
                         analysis_filter=str(analysis_filter),
-                        exclude_prefixes=tuple(
-                            getattr(args, "exclude_prefixes", ()) or ()
-                        ),
+                        exclude_prefixes=tuple(getattr(args, "exclude_prefixes", ()) or ()),
                         include_harness=bool(getattr(args, "include_harness", False)),
                         skip_suite_aggregate=True,
                     )
@@ -270,9 +258,9 @@ def run_gt_tolerance_policy_runbook(
             print(f"\n❌ GT tolerance sweep failed: {e}")
             # In QA mode, requested sweeps are first-class; fail the run (but keep going).
             overall = max(int(overall), 2)
-            ctx.gt_sweep.selection_warnings = list(
-                ctx.gt_sweep.selection_warnings or []
-            ) + [f"sweep_failed: {e}"]
+            ctx.gt_sweep.selection_warnings = list(ctx.gt_sweep.selection_warnings or []) + [
+                f"sweep_failed: {e}"
+            ]
 
     # ------------------------------------------------------------------
     # 4) Always write the selection artifact in QA mode.

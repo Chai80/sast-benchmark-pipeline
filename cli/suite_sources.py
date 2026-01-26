@@ -63,11 +63,7 @@ def _parse_branches_spec(raw: Optional[str]) -> List[str]:
                 expanded = [t]
         else:
             m_tok = _OWASP_TOKEN_RE.match(t)
-            if (
-                m_tok
-                and 1 <= int(m_tok.group(1)) <= 10
-                and str(t).upper().startswith("A")
-            ):
+            if m_tok and 1 <= int(m_tok.group(1)) <= 10 and str(t).upper().startswith("A"):
                 expanded = [f"A{int(m_tok.group(1)):02d}"]
             else:
                 expanded = [t]
@@ -94,9 +90,7 @@ def _run_git(*, cwd: Path, argv: List[str]) -> None:
         raise SystemExit(msg)
 
 
-def _resolve_branch_token_to_origin_branch(
-    token: str, *, origin_branches: List[str]
-) -> str:
+def _resolve_branch_token_to_origin_branch(token: str, *, origin_branches: List[str]) -> str:
     """Resolve a user token like 'A01' to a real origin branch name.
 
     Rules (in order):
@@ -125,9 +119,7 @@ def _resolve_branch_token_to_origin_branch(
     if m:
         n = int(m.group(1))
         needle = f"a{n:02d}"
-        pat = re.compile(
-            rf"(^|[^0-9a-z]){re.escape(needle)}([^0-9a-z]|$)", re.IGNORECASE
-        )
+        pat = re.compile(rf"(^|[^0-9a-z]){re.escape(needle)}([^0-9a-z]|$)", re.IGNORECASE)
         matches = [b for b in origin_branches if pat.search(b)]
         if len(matches) == 1:
             return matches[0]
@@ -227,11 +219,7 @@ def _resolve_remote_branch_for_token(*, token: str, remote_branches: List[str]) 
 
     if len(matches) == 0:
         hint = ", ".join(remote_branches[:15])
-        more = (
-            ""
-            if len(remote_branches) <= 15
-            else f" ... (+{len(remote_branches) - 15} more)"
-        )
+        more = "" if len(remote_branches) <= 15 else f" ... (+{len(remote_branches) - 15} more)"
         raise SystemExit(
             f"Could not resolve branch token '{t}' to a remote branch under origin/.\n"
             "Hint: pass --branches with exact remote branch names (or a token that uniquely matches).\n"
@@ -265,9 +253,7 @@ def _bootstrap_worktrees_from_repo_url(
     base = root / "_base"
     if not (base / ".git").exists():
         print(f"📥 cloning repo for suite worktrees: {repo_url} -> {base}")
-        p = subprocess.run(
-            ["git", "clone", repo_url, str(base)], capture_output=True, text=True
-        )
+        p = subprocess.run(["git", "clone", repo_url, str(base)], capture_output=True, text=True)
         if p.returncode != 0:
             out = (p.stdout or "") + (p.stderr or "")
             raise SystemExit(f"git clone failed for {repo_url}:\n{out.strip()}")
@@ -293,16 +279,12 @@ def _bootstrap_worktrees_from_repo_url(
             continue
 
         # Resolve token (e.g. 'A01') to an actual remote branch name (possibly verbose).
-        resolved = _resolve_branch_token_to_origin_branch(
-            token, origin_branches=origin_branches
-        )
+        resolved = _resolve_branch_token_to_origin_branch(token, origin_branches=origin_branches)
         origin_ref = f"origin/{resolved}"
 
         # -B makes reruns idempotent: create or reset local branch <token> to point at origin_ref.
         print(f"🌿 worktree add: {token} -> {wt_dir} (from {origin_ref})")
-        _run_git(
-            cwd=base, argv=["worktree", "add", "-B", token, str(wt_dir), origin_ref]
-        )
+        _run_git(cwd=base, argv=["worktree", "add", "-B", token, str(wt_dir), origin_ref])
 
     return root
 

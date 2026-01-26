@@ -39,9 +39,7 @@ class TestScannerRegistry(unittest.TestCase):
 
     def test_scanner_tracks_are_non_empty_and_lowercase(self) -> None:
         for key, tracks in SCANNER_TRACKS.items():
-            self.assertTrue(
-                tracks, f"Scanner {key!r} should declare at least one track"
-            )
+            self.assertTrue(tracks, f"Scanner {key!r} should declare at least one track")
             for t in tracks:
                 self.assertEqual(
                     t, t.lower(), f"Track {t!r} for scanner {key!r} should be lowercase"

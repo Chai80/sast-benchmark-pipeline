@@ -107,14 +107,7 @@ def _normalize_cwe(value: Any) -> Optional[str]:
         return f"CWE-{n}" if n > 0 else None
 
     # handle "cwe:79" or "79"
-    s2 = (
-        s.lower()
-        .replace("cwe:", "")
-        .replace("cwe", "")
-        .replace("-", "")
-        .replace("_", "")
-        .strip()
-    )
+    s2 = s.lower().replace("cwe:", "").replace("cwe", "").replace("-", "").replace("_", "").strip()
     if s2.isdigit():
         n = int(s2)
         return f"CWE-{n}" if n > 0 else None
@@ -185,10 +178,7 @@ def _extract_owasp_codes_from_tags(tags: Sequence[str], year: str) -> List[str]:
         mentions_2017 = "2017" in low
         mentions_2021 = "2021" in low
         is_owaspish = (
-            ("owasp" in low)
-            or ("top10" in low)
-            or ("top 10" in low)
-            or ("owasptop10" in low)
+            ("owasp" in low) or ("top10" in low) or ("top 10" in low) or ("owasptop10" in low)
         )
 
         if year == "2017":
@@ -282,25 +272,13 @@ def _derive_owasp_from_cwe_ids(
         if not isinstance(entry, dict):
             continue
 
-        v17 = (
-            entry.get("owasp_top_10_2017")
-            or entry.get("owasp_2017")
-            or entry.get("owasp2017")
-        )
-        v21 = (
-            entry.get("owasp_top_10_2021")
-            or entry.get("owasp_2021")
-            or entry.get("owasp2021")
-        )
+        v17 = entry.get("owasp_top_10_2017") or entry.get("owasp_2017") or entry.get("owasp2017")
+        v21 = entry.get("owasp_top_10_2021") or entry.get("owasp_2021") or entry.get("owasp2021")
 
         _extend_codes(o17, v17)
         _extend_codes(o21, v21)
-    o17n = _dedupe_preserve_order(
-        [c for c in (_normalize_owasp_code(x, "2017") for x in o17) if c]
-    )
-    o21n = _dedupe_preserve_order(
-        [c for c in (_normalize_owasp_code(x, "2021") for x in o21) if c]
-    )
+    o17n = _dedupe_preserve_order([c for c in (_normalize_owasp_code(x, "2017") for x in o17) if c])
+    o21n = _dedupe_preserve_order([c for c in (_normalize_owasp_code(x, "2021") for x in o21) if c])
 
     return _build_owasp_block(o17n, "2017"), _build_owasp_block(o21n, "2021")
 
@@ -348,9 +326,7 @@ def resolve_owasp_and_cwe(
 
     # Derive from CWE first.
     # This is our *canonical* view because it's tool-agnostic.
-    derived_2017, derived_2021 = _derive_owasp_from_cwe_ids(
-        norm_cwe_ids, cwe_to_owasp_map
-    )
+    derived_2017, derived_2021 = _derive_owasp_from_cwe_ids(norm_cwe_ids, cwe_to_owasp_map)
 
     # ----------------------------
     # OWASP Top 10 2017
@@ -362,9 +338,7 @@ def resolve_owasp_and_cwe(
     owasp2017_vendor: Optional[Dict[str, Any]] = None
     if allow_2017_from_tags:
         codes_2017 = _extract_owasp_codes_from_tags(tags or [], "2017")
-        owasp2017_vendor = (
-            _build_owasp_block(codes_2017, "2017") if codes_2017 else None
-        )
+        owasp2017_vendor = _build_owasp_block(codes_2017, "2017") if codes_2017 else None
 
     # Backwards compatible "resolved" view:
     # historically we preferred CWE-derived 2017 (if available), otherwise tags.
@@ -380,9 +354,7 @@ def resolve_owasp_and_cwe(
     # IMPORTANT: Vendor view should NOT fall back to CWE derivation.
     # (Otherwise it becomes a blended view and is not comparable across tools.)
     codes_2021_tags = _extract_owasp_codes_from_tags(tags or [], "2021")
-    owasp2021_vendor = (
-        _build_owasp_block(codes_2021_tags, "2021") if codes_2021_tags else None
-    )
+    owasp2021_vendor = _build_owasp_block(codes_2021_tags, "2021") if codes_2021_tags else None
 
     # If no 2021 tags, use explicit vendor mapping codes (e.g., Snyk offline table).
     if owasp2021_vendor is None and vendor_owasp_2021_codes:

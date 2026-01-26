@@ -29,12 +29,7 @@ def _default_owasp_micro_suite_worktrees_root() -> Optional[Path]:
 def _default_owasp_micro_suite_cases_csv() -> Optional[Path]:
     """Default deterministic case list for the micro-suite QA (if present)."""
 
-    p = (
-        ROOT_DIR
-        / "examples"
-        / "suite_inputs"
-        / "durinn-owasp2021-python-micro-suite_cases.csv"
-    )
+    p = ROOT_DIR / "examples" / "suite_inputs" / "durinn-owasp2021-python-micro-suite_cases.csv"
     return p if p.is_file() else None
 
 

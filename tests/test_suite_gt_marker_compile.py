@@ -64,9 +64,7 @@ class TestSuiteGTMarkerCompilation(unittest.TestCase):
                 suite_id,
             ]
 
-            result = subprocess.run(
-                cmd, cwd=str(REPO_ROOT), text=True, capture_output=True
-            )
+            result = subprocess.run(cmd, cwd=str(REPO_ROOT), text=True, capture_output=True)
 
             if result.returncode != 0:
                 raise AssertionError(

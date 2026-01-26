@@ -56,9 +56,7 @@ def _request_json(
 
     for attempt in range(_HTTP_MAX_RETRIES + 1):
         try:
-            resp = requests.request(
-                method, url, headers=headers, data=data, timeout=timeout
-            )
+            resp = requests.request(method, url, headers=headers, data=data, timeout=timeout)
             last_resp = resp
 
             if resp.status_code == 429 or resp.status_code >= 500:
@@ -145,9 +143,7 @@ def list_code_repos(
     url = f"{API_ROOT}/repositories/code"
     headers = {"Authorization": f"Bearer {token}"}
 
-    ttl = (
-        _CACHE_TTL_SECS_DEFAULT if cache_ttl_seconds is None else int(cache_ttl_seconds)
-    )
+    ttl = _CACHE_TTL_SECS_DEFAULT if cache_ttl_seconds is None else int(cache_ttl_seconds)
     cache_path = Path(cache_dir) / "repositories.code.json" if cache_dir else None
 
     if cache_path is not None:
@@ -172,9 +168,7 @@ def export_all_issues(
     url = f"{API_ROOT}/issues/export"
     headers = {"Authorization": f"Bearer {token}"}
 
-    ttl = (
-        _CACHE_TTL_SECS_DEFAULT if cache_ttl_seconds is None else int(cache_ttl_seconds)
-    )
+    ttl = _CACHE_TTL_SECS_DEFAULT if cache_ttl_seconds is None else int(cache_ttl_seconds)
     cache_path = Path(cache_dir) / "issues.export.json" if cache_dir else None
 
     if cache_path is not None:

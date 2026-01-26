@@ -43,6 +43,4 @@ class TestSuitePathsLayout(unittest.TestCase):
             write_latest_suite_pointer(paths)
             latest_path = suite_root / "LATEST"
             self.assertTrue(latest_path.exists())
-            self.assertEqual(
-                latest_path.read_text(encoding="utf-8").strip(), paths.suite_id
-            )
+            self.assertEqual(latest_path.read_text(encoding="utf-8").strip(), paths.suite_id)

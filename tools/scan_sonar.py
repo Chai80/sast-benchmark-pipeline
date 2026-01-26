@@ -40,21 +40,11 @@ def parse_args() -> argparse.Namespace:
         description="Run SonarCloud scan on a repo and save JSON + metadata + normalized output."
     )
     p.add_argument("--repo-url", required=False, help="Git repo URL to scan.")
-    p.add_argument(
-        "--repo-path", required=False, help="Local repo path to scan (skip clone)."
-    )
-    p.add_argument(
-        "--repos-dir", default="repos", help="Repos base dir. Default: repos."
-    )
-    p.add_argument(
-        "--output-root", default="runs/sonar", help="Output root. Default: runs/sonar."
-    )
-    p.add_argument(
-        "--project-key", default=None, help="Optional SonarCloud project key override."
-    )
-    p.add_argument(
-        "--java-binaries", default="", help="Optional sonar.java.binaries path(s)."
-    )
+    p.add_argument("--repo-path", required=False, help="Local repo path to scan (skip clone).")
+    p.add_argument("--repos-dir", default="repos", help="Repos base dir. Default: repos.")
+    p.add_argument("--output-root", default="runs/sonar", help="Output root. Default: runs/sonar.")
+    p.add_argument("--project-key", default=None, help="Optional SonarCloud project key override.")
+    p.add_argument("--java-binaries", default="", help="Optional sonar.java.binaries path(s).")
     p.add_argument(
         "--skip-scan",
         action="store_true",

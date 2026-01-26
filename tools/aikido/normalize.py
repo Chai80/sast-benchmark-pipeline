@@ -159,9 +159,7 @@ def _coerce_issues_payload(payload: Any) -> List[Dict[str, Any]]:
                     return [x for x in v if isinstance(x, dict)]
 
     # PR gating modes sometimes expose new/existing issue lists.
-    if isinstance(payload.get("new"), list) and isinstance(
-        payload.get("existing"), list
-    ):
+    if isinstance(payload.get("new"), list) and isinstance(payload.get("existing"), list):
         new = [x for x in payload["new"] if isinstance(x, dict)]
         existing = [x for x in payload["existing"] if isinstance(x, dict)]
         return new + existing
@@ -218,11 +216,8 @@ def normalize_aikido_results(
                     "metadata": per_finding_metadata,
                     "finding_id": f"aikido:parse_error:{issue.get('id')}",
                     "rule_id": _extract_rule_id(issue),
-                    "title": _extract_title(issue, issue.get("id"))
-                    or "Aikido issue (parse_error)",
-                    "severity": map_severity(
-                        _extract_raw_severity(issue), tool="aikido"
-                    ),
+                    "title": _extract_title(issue, issue.get("id")) or "Aikido issue (parse_error)",
+                    "severity": map_severity(_extract_raw_severity(issue), tool="aikido"),
                     "issue_type": "VULNERABILITY",
                     "file_path": None,
                     "line_number": None,

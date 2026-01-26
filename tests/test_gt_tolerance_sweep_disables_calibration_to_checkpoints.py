@@ -20,6 +20,4 @@ def test_disable_suite_calibration_moves_into_checkpoints(tmp_path: Path) -> Non
     assert disabled.name == "triage_calibration.disabled.json"
     assert disabled.parent == analysis_dir / "_checkpoints"
 
-    assert (
-        not cal_path.exists()
-    ), "triage_calibration.json should be removed after disable"
+    assert not cal_path.exists(), "triage_calibration.json should be removed after disable"

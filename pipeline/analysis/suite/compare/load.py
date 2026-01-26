@@ -125,9 +125,7 @@ def _load_suite_artifacts(suite_dir: Path) -> Tuple[SuiteArtifacts, List[str]]:
         if not expected_scanners and isinstance(suite_json, Mapping):
             plan = suite_json.get("plan")
             if isinstance(plan, Mapping) and isinstance(plan.get("scanners"), list):
-                expected_scanners = [
-                    str(x).strip() for x in plan.get("scanners") if str(x).strip()
-                ]
+                expected_scanners = [str(x).strip() for x in plan.get("scanners") if str(x).strip()]
     except Exception:
         expected_scanners = []
 
@@ -225,9 +223,7 @@ def _dataset_counts(dataset_csv: Optional[Path]) -> Dict[str, Any]:
         else:
             neg += 1
 
-        tools = _parse_tools_any(
-            str(r.get("tools_json") or ""), str(r.get("tools") or "")
-        )
+        tools = _parse_tools_any(str(r.get("tools_json") or ""), str(r.get("tools") or ""))
         for t in tools:
             tool_cluster_counts[t] = int(tool_cluster_counts.get(t, 0)) + 1
 

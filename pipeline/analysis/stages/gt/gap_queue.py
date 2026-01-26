@@ -71,9 +71,7 @@ def _file_presence_from_normalized(
         for f in findings:
             if not isinstance(f, dict):
                 continue
-            fp = normalize_file_path(
-                str(f.get("file_path") or ""), repo_name=ctx.repo_name
-            )
+            fp = normalize_file_path(str(f.get("file_path") or ""), repo_name=ctx.repo_name)
             if not fp:
                 continue
             if apply_scope_filter and _is_excluded_by_prefix(
@@ -153,12 +151,8 @@ def build_gap_queue(
     gap_summary = {
         "gt_total": int(total_gt_items),
         "gap_total": int(gap_total),
-        "gap_rate": round(float(gap_total) / float(total_gt_items), 6)
-        if total_gt_items
-        else 0.0,
-        "by_reason": {
-            k: int(v) for k, v in sorted(gap_counts.items(), key=lambda kv: kv[0])
-        },
+        "gap_rate": round(float(gap_total) / float(total_gt_items), 6) if total_gt_items else 0.0,
+        "by_reason": {k: int(v) for k, v in sorted(gap_counts.items(), key=lambda kv: kv[0])},
     }
 
     return gap_rows, gap_summary

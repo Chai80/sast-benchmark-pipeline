@@ -43,9 +43,7 @@ def build_suite_report(
     suite_dir = Path(suite_dir).resolve()
     sid = str(suite_id) if suite_id else suite_dir.name
 
-    inputs = load_suite_report_inputs(
-        suite_dir=suite_dir, suite_id=sid, out_dirname=out_dirname
-    )
+    inputs = load_suite_report_inputs(suite_dir=suite_dir, suite_id=sid, out_dirname=out_dirname)
     return build_suite_report_model(inputs)
 
 

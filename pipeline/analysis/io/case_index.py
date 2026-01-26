@@ -67,9 +67,7 @@ def build_case_index(*, suite_dir: Path, case_ids: Sequence[str]) -> Dict[str, A
             # Common analysis artifacts
             "analysis_manifest_json": _exists(analysis_dir / "analysis_manifest.json"),
             "benchmark_pack_json": _exists(analysis_dir / "benchmark_pack.json"),
-            "hotspot_drilldown_pack_json": _exists(
-                analysis_dir / "hotspot_drilldown_pack.json"
-            ),
+            "hotspot_drilldown_pack_json": _exists(analysis_dir / "hotspot_drilldown_pack.json"),
             # Tables (triage)
             "triage_features_csv": _exists_any(
                 [
@@ -81,9 +79,7 @@ def build_case_index(*, suite_dir: Path, case_ids: Sequence[str]) -> Dict[str, A
                 [tables_dir / "triage_queue.csv", analysis_dir / "triage_queue.csv"]
             ),
             # GT artifacts
-            "gt_catalog_yaml": _exists_any(
-                [gt_dir / "gt_catalog.yaml", gt_dir / "gt_catalog.yml"]
-            ),
+            "gt_catalog_yaml": _exists_any([gt_dir / "gt_catalog.yaml", gt_dir / "gt_catalog.yml"]),
             "gt_score_json": _exists(gt_dir / "gt_score.json"),
             "gt_score_csv": _exists(gt_dir / "gt_score.csv"),
         }
@@ -160,9 +156,7 @@ def _render_suite_readme(payload: dict, *, index_path: Path) -> str:
             triage_queue = _yesno(exists.get("triage_queue_csv"))
             manifest = _yesno(exists.get("analysis_manifest_json"))
             gt_catalog = _yesno(exists.get("gt_catalog_yaml"))
-            gt_score = _yesno(
-                bool(exists.get("gt_score_json")) or bool(exists.get("gt_score_csv"))
-            )
+            gt_score = _yesno(bool(exists.get("gt_score_json")) or bool(exists.get("gt_score_csv")))
 
             lines.append(
                 f"- {cid}: triage_features={triage_features} triage_queue={triage_queue} "

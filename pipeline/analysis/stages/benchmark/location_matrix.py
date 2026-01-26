@@ -25,9 +25,7 @@ from ..common.store_keys import StoreKeys
 )
 def stage_location_matrix(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     items = build_location_items(ctx, store)
-    clusters = cluster_locations(
-        items, tolerance=ctx.tolerance, repo_name=ctx.repo_name
-    )
+    clusters = cluster_locations(items, tolerance=ctx.tolerance, repo_name=ctx.repo_name)
     store.put(StoreKeys.LOCATION_CLUSTERS, clusters)
 
     rows = build_location_matrix_rows(clusters, tools=list(ctx.tools))

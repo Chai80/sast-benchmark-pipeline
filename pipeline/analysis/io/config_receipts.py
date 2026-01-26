@@ -100,11 +100,7 @@ def stable_config_signature(receipt: Mapping[str, Any]) -> Dict[str, Any]:
     The goal is to capture "config intent" rather than run metadata.
     """
 
-    artifacts = (
-        receipt.get("artifacts")
-        if isinstance(receipt.get("artifacts"), Mapping)
-        else {}
-    )
+    artifacts = receipt.get("artifacts") if isinstance(receipt.get("artifacts"), Mapping) else {}
 
     return {
         "schema_version": _safe_int(receipt.get("schema_version"), 0),
@@ -114,9 +110,7 @@ def stable_config_signature(receipt: Mapping[str, Any]) -> Dict[str, Any]:
             # If a run exports a rules inventory (CSV/PDF/etc), include the relative
             # path so suites can be compared when inventories change.
             "rules_inventory": (
-                artifacts.get("rules_inventory")
-                if isinstance(artifacts, Mapping)
-                else None
+                artifacts.get("rules_inventory") if isinstance(artifacts, Mapping) else None
             ),
         },
     }
@@ -181,9 +175,7 @@ def normalize_scanner_config(obj: Mapping[str, Any]) -> Dict[str, Any]:
     missing_tools: List[str] = []
     raw_missing = obj.get("missing_tools")
     if isinstance(raw_missing, list):
-        missing_tools = sorted(
-            set([str(x).strip() for x in raw_missing if str(x).strip()])
-        )
+        missing_tools = sorted(set([str(x).strip() for x in raw_missing if str(x).strip()]))
 
     warnings: List[str] = []
     raw_warn = obj.get("warnings")
@@ -317,16 +309,12 @@ def summarize_scanner_config(
 
     multi_sig_tools = sorted([t for t, hs in hashes_by_tool.items() if len(hs) > 1])
     if multi_sig_tools:
-        warnings.append(
-            f"multiple config signatures detected for tools: {multi_sig_tools}"
-        )
+        warnings.append(f"multiple config signatures detected for tools: {multi_sig_tools}")
 
     return {
         "profile": profile,
         "profile_mode": profile_mode,
-        "config_receipt_hashes": {
-            t: hashes_by_tool[t] for t in sorted(hashes_by_tool.keys())
-        },
+        "config_receipt_hashes": {t: hashes_by_tool[t] for t in sorted(hashes_by_tool.keys())},
         "receipts_found": int(len(receipt_paths)),
         "tools_seen": tools_seen,
         "missing_tools": missing_tools,
@@ -359,6 +347,4 @@ def load_scanner_config(
     if s is not None:
         return dict(s)
 
-    return normalize_scanner_config(
-        summarize_scanner_config(suite_dir, scanners=scanners)
-    )
+    return normalize_scanner_config(summarize_scanner_config(suite_dir, scanners=scanners))

@@ -49,9 +49,7 @@ class TestDocsArtifactPaths(unittest.TestCase):
             corpus_parts.append(p.read_text(encoding="utf-8", errors="ignore"))
 
         if missing_files:
-            self.fail(
-                f"Expected documentation files missing from repo: {missing_files}"
-            )
+            self.fail(f"Expected documentation files missing from repo: {missing_files}")
 
         corpus = "\n\n".join(corpus_parts)
 
@@ -73,9 +71,7 @@ class TestDocsArtifactPaths(unittest.TestCase):
             REPO_ROOT / "docs" / "triage_calibration.md",
         ]
         corpus = "\n\n".join(
-            p.read_text(encoding="utf-8", errors="ignore")
-            for p in doc_files
-            if p.exists()
+            p.read_text(encoding="utf-8", errors="ignore") for p in doc_files if p.exists()
         )
 
         bad = [s for s in FORBIDDEN_PATH_STRINGS if s in corpus]

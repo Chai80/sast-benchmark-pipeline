@@ -260,9 +260,7 @@ def run_suite(
     normalized_paths: Dict[str, Path] = {}
     for tool in requested_tools:
         try:
-            p = find_latest_normalized_json(
-                runs_dir=runs_dir, tool=tool, repo_name=repo_name
-            )
+            p = find_latest_normalized_json(runs_dir=runs_dir, tool=tool, repo_name=repo_name)
             normalized_paths[tool] = p
             used_tools.append(tool)
         except FileNotFoundError:
@@ -364,9 +362,7 @@ def run_suite(
             # Non-fatal: the pack remains usable even if the artifacts index is stale.
             pass
 
-    manifest_path = write_analysis_manifest(
-        ctx, stage_results=stage_results, store=store
-    )
+    manifest_path = write_analysis_manifest(ctx, stage_results=stage_results, store=store)
 
     # Compact stage status for the returned summary.
     stages_summary = [

@@ -34,9 +34,7 @@ def load_snyk_vendor_rule_index() -> VendorRuleIndex:
             return [str(x) for x in v if x is not None]
         return []
 
-    def put(
-        idx: VendorRuleIndex, key: str, *, owasp2021: List[str], cwe_ids: List[str]
-    ) -> None:
+    def put(idx: VendorRuleIndex, key: str, *, owasp2021: List[str], cwe_ids: List[str]) -> None:
         if not key:
             return
         if not (owasp2021 or cwe_ids):
@@ -85,13 +83,9 @@ def load_snyk_vendor_rule_index() -> VendorRuleIndex:
                 put(idx, k, owasp2021=[str(x) for x in v if x is not None], cwe_ids=[])
             elif isinstance(v, dict):
                 codes = as_str_list(
-                    v.get("owasp_2021")
-                    or v.get("owasp_top_10_2021")
-                    or v.get("owasp2021")
+                    v.get("owasp_2021") or v.get("owasp_top_10_2021") or v.get("owasp2021")
                 )
-                cwe_ids = as_str_list(
-                    v.get("cwe_ids") or v.get("cwe") or v.get("cweIds")
-                )
+                cwe_ids = as_str_list(v.get("cwe_ids") or v.get("cwe") or v.get("cweIds"))
                 put(idx, k, owasp2021=codes, cwe_ids=cwe_ids)
                 if isinstance(v.get("name"), str) and v.get("name").strip():
                     put(idx, norm_key(v["name"]), owasp2021=codes, cwe_ids=cwe_ids)
@@ -104,13 +98,9 @@ def load_snyk_vendor_rule_index() -> VendorRuleIndex:
                 rid = r.get("id") or r.get("rule_id")
                 name = r.get("name")
                 codes = as_str_list(
-                    r.get("owasp_2021")
-                    or r.get("owasp_top_10_2021")
-                    or r.get("owasp2021")
+                    r.get("owasp_2021") or r.get("owasp_top_10_2021") or r.get("owasp2021")
                 )
-                cwe_ids = as_str_list(
-                    r.get("cwe_ids") or r.get("cwe") or r.get("cweIds")
-                )
+                cwe_ids = as_str_list(r.get("cwe_ids") or r.get("cwe") or r.get("cweIds"))
                 if isinstance(rid, str) and rid.strip():
                     put(idx, rid.strip(), owasp2021=codes, cwe_ids=cwe_ids)
                 if isinstance(name, str) and name.strip():

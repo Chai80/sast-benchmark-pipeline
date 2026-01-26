@@ -16,12 +16,8 @@ class TestTriageQueueContract(unittest.TestCase):
 
         self.assertIsInstance(TRIAGE_QUEUE_FIELDNAMES, list)
         self.assertGreaterEqual(len(TRIAGE_QUEUE_FIELDNAMES), 8)
-        self.assertTrue(
-            all(isinstance(x, str) and x.strip() for x in TRIAGE_QUEUE_FIELDNAMES)
-        )
-        self.assertEqual(
-            len(TRIAGE_QUEUE_FIELDNAMES), len(set(TRIAGE_QUEUE_FIELDNAMES))
-        )
+        self.assertTrue(all(isinstance(x, str) and x.strip() for x in TRIAGE_QUEUE_FIELDNAMES))
+        self.assertEqual(len(TRIAGE_QUEUE_FIELDNAMES), len(set(TRIAGE_QUEUE_FIELDNAMES)))
 
         # Required columns
         for required in [
@@ -59,9 +55,7 @@ class TestTriageQueueContract(unittest.TestCase):
         rank_triage_rows(rows_a, calibrated=False)
         rank_triage_rows(rows_b, calibrated=False)
 
-        self.assertEqual(
-            [r["cluster_id"] for r in rows_a], [r["cluster_id"] for r in rows_b]
-        )
+        self.assertEqual([r["cluster_id"] for r in rows_a], [r["cluster_id"] for r in rows_b])
         self.assertEqual([r["cluster_id"] for r in rows_a], ["a.py:1-1", "a.py:1-2"])
         self.assertEqual([r["rank"] for r in rows_a], [1, 2])
 

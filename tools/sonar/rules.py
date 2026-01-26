@@ -143,9 +143,7 @@ def parse_rule_classification(
                 cwe = s.split(":", 1)[1].strip()
                 if cwe:
                     cwe_ids.append(
-                        f"CWE-{cwe}"
-                        if not cwe.upper().startswith("CWE-")
-                        else cwe.upper()
+                        f"CWE-{cwe}" if not cwe.upper().startswith("CWE-") else cwe.upper()
                     )
                 continue
 

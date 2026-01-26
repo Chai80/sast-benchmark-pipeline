@@ -329,11 +329,7 @@ def _update_suite_json(
 ) -> None:
     paths.suite_dir.mkdir(parents=True, exist_ok=True)
 
-    data = (
-        _load_json(paths.suite_json_path, warn=warn)
-        if paths.suite_json_path.exists()
-        else None
-    )
+    data = _load_json(paths.suite_json_path, warn=warn) if paths.suite_json_path.exists() else None
     if not data:
         now = datetime.now(timezone.utc).isoformat()
         data = {
@@ -408,18 +404,12 @@ def _write_suite_summary(
 
         tool_runs = m.get("tool_runs") or m.get("scans") or {}
         ok = [t for t, v in tool_runs.items() if (v or {}).get("exit_code") == 0]
-        failed = [
-            t
-            for t, v in tool_runs.items()
-            if (v or {}).get("exit_code") not in (0, None)
-        ]
+        failed = [t for t, v in tool_runs.items() if (v or {}).get("exit_code") not in (0, None)]
 
         analysis_ran = bool(m.get("analysis"))
         rel_case = str(case_dir.relative_to(paths.suite_dir))
         triage_csv = case_dir / "analysis" / "triage_queue.csv"
-        rel_triage = (
-            str(triage_csv.relative_to(paths.suite_dir)) if triage_csv.exists() else ""
-        )
+        rel_triage = str(triage_csv.relative_to(paths.suite_dir)) if triage_csv.exists() else ""
 
         rows.append(
             {

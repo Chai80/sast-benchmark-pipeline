@@ -33,9 +33,7 @@ def main(argv: list[str]) -> int:
     try:
         suite_def = load_suite_yaml(src)
     except ModuleNotFoundError as e:
-        print(
-            "PyYAML is required for migration only. Install it with: pip install pyyaml"
-        )
+        print("PyYAML is required for migration only. Install it with: pip install pyyaml")
         print(f"Details: {e}")
         return 2
 

@@ -144,9 +144,7 @@ class SuiteDefinition:
             skip=bool(analysis_raw.get("skip", False)),
             tolerance=int(analysis_raw.get("tolerance", 3)),
             filter=str(analysis_raw.get("filter", "security")),
-            gt_required_default=_coerce_optional_bool(
-                analysis_raw.get("gt_required_default")
-            ),
+            gt_required_default=_coerce_optional_bool(analysis_raw.get("gt_required_default")),
         )
 
         scanners = raw.get("scanners") or raw.get("tools") or []
@@ -169,9 +167,7 @@ class SuiteDefinition:
                 sonar_project_key=(
                     ov_raw.get("sonar_project_key") or c_raw.get("sonar_project_key")
                 ),
-                aikido_git_ref=(
-                    ov_raw.get("aikido_git_ref") or c_raw.get("aikido_git_ref")
-                ),
+                aikido_git_ref=(ov_raw.get("aikido_git_ref") or c_raw.get("aikido_git_ref")),
                 gt_required=_coerce_optional_bool(
                     ov_raw.get("gt_required")
                     if "gt_required" in ov_raw
@@ -191,9 +187,7 @@ class SuiteDefinition:
             # runs_repo_name is a legacy compatibility knob; default to case_id.
             runs_repo_name = str(c_raw.get("runs_repo_name") or case_id)
 
-            tags = (
-                (c_raw.get("tags") or {}) if isinstance(c_raw.get("tags"), dict) else {}
-            )
+            tags = (c_raw.get("tags") or {}) if isinstance(c_raw.get("tags"), dict) else {}
             track = c_raw.get("track") or tags.get("track")
 
             case = CaseSpec(

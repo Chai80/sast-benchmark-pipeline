@@ -36,9 +36,7 @@ def _atomic_write_text(
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
 
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=f"{p.name}.", suffix=".tmp", dir=str(p.parent)
-    )
+    fd, tmp_name = tempfile.mkstemp(prefix=f"{p.name}.", suffix=".tmp", dir=str(p.parent))
     tmp_path = Path(tmp_name)
 
     try:
@@ -78,9 +76,7 @@ def write_json_atomic(
     """Write JSON atomically with stable formatting."""
 
     def _write(f) -> None:
-        json.dump(
-            data, f, indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii
-        )
+        json.dump(data, f, indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii)
         f.write("\n")
 
     _atomic_write_text(Path(path), _write, encoding=encoding)

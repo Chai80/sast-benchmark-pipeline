@@ -329,16 +329,12 @@ def prompt_for_suite(suite_root: Path) -> SuiteChoice:
     if choice == "latestqa":
         if latestqa is None:
             raise SystemExit("LATEST_QA suite is not available.")
-        return SuiteChoice(
-            suite_dir=latestqa, suite_id=latestqa.name, source="latestqa"
-        )
+        return SuiteChoice(suite_dir=latestqa, suite_id=latestqa.name, source="latestqa")
 
     if not suites:
         raise SystemExit(f"No suites found under {suite_root}")
 
-    suite_id = choose_from_menu(
-        "Choose a local suite:", {p.name: p.name for p in suites}
-    )
+    suite_id = choose_from_menu("Choose a local suite:", {p.name: p.name for p in suites})
     sel = suite_root / suite_id
     if not _is_suite_dir(sel):
         raise SystemExit(f"Selected suite is not a valid suite directory: {sel}")

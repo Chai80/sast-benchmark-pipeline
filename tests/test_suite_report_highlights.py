@@ -37,14 +37,10 @@ class TestSuiteReportHighlights(unittest.TestCase):
                 "case_id,strategy,rank,gt_overlap,gt_total,cumulative_gt_covered\n",
                 encoding="utf-8",
             )
-            (suite_dir / "analysis" / "triage_calibration.json").write_text(
-                "{}", encoding="utf-8"
-            )
+            (suite_dir / "analysis" / "triage_calibration.json").write_text("{}", encoding="utf-8")
 
             # QA artifacts (optional, but should show up in "where to click")
-            (suite_dir / "analysis" / "qa_checklist.md").write_text(
-                "# QA\n", encoding="utf-8"
-            )
+            (suite_dir / "analysis" / "qa_checklist.md").write_text("# QA\n", encoding="utf-8")
             (suite_dir / "analysis" / "qa_calibration_checklist.txt").write_text(
                 "PASS\n", encoding="utf-8"
             )

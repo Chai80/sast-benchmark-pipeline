@@ -215,21 +215,15 @@ def _extract_case_provenance(case_manifest: Dict[str, Any]) -> Dict[str, str]:
     repo_expected_commit = str(case_obj.get("expected_commit") or "")
     repo_expected_branch = str(case_obj.get("expected_branch") or "")
     repo_ref = (
-        repo_git_commit
-        or repo_expected_commit
-        or repo_git_branch
-        or repo_expected_branch
-        or ""
+        repo_git_commit or repo_expected_commit or repo_git_branch or repo_expected_branch or ""
     )
 
     case_track = str(
         case_obj.get("track")
         or case_manifest.get("track")
-        or (
-            (case_obj.get("tags") or {})
-            if isinstance(case_obj.get("tags"), dict)
-            else {}
-        ).get("track")
+        or ((case_obj.get("tags") or {}) if isinstance(case_obj.get("tags"), dict) else {}).get(
+            "track"
+        )
         or ""
     )
 
@@ -300,18 +294,10 @@ def _severity_stats(items: Sequence[Dict[str, Any]]) -> tuple[Counter, str, int]
 
 def _unique_counts(items: Sequence[Dict[str, Any]]) -> tuple[int, int, int]:
     unique_rules = len(
-        {
-            str(it.get("rule_id") or "")
-            for it in items
-            if isinstance(it, dict) and it.get("rule_id")
-        }
+        {str(it.get("rule_id") or "") for it in items if isinstance(it, dict) and it.get("rule_id")}
     )
     unique_titles = len(
-        {
-            str(it.get("title") or "")
-            for it in items
-            if isinstance(it, dict) and it.get("title")
-        }
+        {str(it.get("title") or "") for it in items if isinstance(it, dict) and it.get("title")}
     )
     unique_fids = len(
         {
@@ -380,9 +366,7 @@ def _build_triage_feature_row(
 
     items = list(c.get("items") or [])
 
-    tool_counts = Counter(
-        str(it.get("tool") or "") for it in items if isinstance(it, dict)
-    )
+    tool_counts = Counter(str(it.get("tool") or "") for it in items if isinstance(it, dict))
     tool_counts_json = json.dumps(
         {k: int(v) for k, v in sorted(tool_counts.items())}, sort_keys=True
     )
@@ -399,11 +383,7 @@ def _build_triage_feature_row(
     sonar_c = int(tool_counts.get("sonar", 0))
     aikido_c = int(tool_counts.get("aikido", 0))
     other_c = int(
-        sum(
-            v
-            for k, v in tool_counts.items()
-            if k not in ("semgrep", "snyk", "sonar", "aikido")
-        )
+        sum(v for k, v in tool_counts.items() if k not in ("semgrep", "snyk", "sonar", "aikido"))
     )
 
     gt_overlap, gt_ids, gt_sets_list, gt_tracks_list = _gt_overlap_features(
@@ -419,9 +399,7 @@ def _build_triage_feature_row(
         tool_count=tool_count, suite_tool_count=suite_tool_count
     )
 
-    unique_rule_count, unique_title_count, unique_finding_id_count = _unique_counts(
-        items
-    )
+    unique_rule_count, unique_title_count, unique_finding_id_count = _unique_counts(items)
 
     return {
         # IDs
@@ -503,9 +481,7 @@ def build_triage_features_rows(
 
     # Optional provenance from suite manifests.
     case_manifest = _load_case_manifest(ctx)
-    prov = _extract_case_provenance(
-        case_manifest if isinstance(case_manifest, dict) else {}
-    )
+    prov = _extract_case_provenance(case_manifest if isinstance(case_manifest, dict) else {})
 
     # Optional triage rank (if triage_queue already ran)
     triage_rank_by_cluster = _index_triage_ranks(triage_rows)

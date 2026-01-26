@@ -92,9 +92,7 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         gt_source_mode = "none"
 
     if gt_source_mode not in ("auto", "markers", "yaml", "none"):
-        store.add_warning(
-            f"gt_score: unknown gt_source={gt_source_mode!r}; using 'auto'"
-        )
+        store.add_warning(f"gt_score: unknown gt_source={gt_source_mode!r}; using 'auto'")
         gt_source_mode = "auto"
 
     if gt_source_mode == "none":
@@ -151,9 +149,7 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
 
     filtered_out_by_track = 0
     if scoring_track_n:
-        gt_items, filtered_out_by_track = filter_gt_items_by_track(
-            gt_items, scoring_track_n
-        )
+        gt_items, filtered_out_by_track = filter_gt_items_by_track(gt_items, scoring_track_n)
         if not gt_items:
             return {
                 "status": "skipped",
@@ -208,12 +204,8 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         "filtered_out_by_track": int(filtered_out_by_track),
         "total_gt_items": int(total_gt_items),
         "matched_gt_items": int(matched_gt_items),
-        "match_rate": (float(matched_gt_items) / float(total_gt_items))
-        if total_gt_items
-        else 0.0,
-        "per_tool_matched": {
-            str(t): int(per_tool_matched.get(str(t), 0)) for t in tools
-        },
+        "match_rate": (float(matched_gt_items) / float(total_gt_items)) if total_gt_items else 0.0,
+        "per_tool_matched": {str(t): int(per_tool_matched.get(str(t), 0)) for t in tools},
         "per_tool_recall": {k: round(float(v), 6) for k, v in per_tool_recall.items()},
         "by_set": {
             s: {"total": int(by_set_total[s]), "matched": int(by_set_matched[s])}
@@ -226,9 +218,7 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
     }
 
     # --- Gap queue --------------------------------------------------------
-    gap_rows, gap_summary = build_gap_queue(
-        ctx, rows=rows, location_items=location_items
-    )
+    gap_rows, gap_summary = build_gap_queue(ctx, rows=rows, location_items=location_items)
     summary["gap_summary"] = gap_summary
 
     # --- Write outputs ----------------------------------------------------

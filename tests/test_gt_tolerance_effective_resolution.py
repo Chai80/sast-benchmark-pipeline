@@ -18,10 +18,7 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
             (suite_dir / "analysis").mkdir(parents=True, exist_ok=True)
 
             (suite_dir / "suite.json").write_text(
-                json.dumps(
-                    {"plan": {"analysis": {"gt_tolerance_effective": 5}}}, indent=2
-                )
-                + "\n",
+                json.dumps({"plan": {"analysis": {"gt_tolerance_effective": 5}}}, indent=2) + "\n",
                 encoding="utf-8",
             )
 
@@ -47,10 +44,7 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
             suite_dir.mkdir(parents=True, exist_ok=True)
 
             (suite_dir / "suite.json").write_text(
-                json.dumps(
-                    {"plan": {"analysis": {"gt_tolerance_effective": 5}}}, indent=2
-                )
-                + "\n",
+                json.dumps({"plan": {"analysis": {"gt_tolerance_effective": 5}}}, indent=2) + "\n",
                 encoding="utf-8",
             )
 
@@ -87,9 +81,7 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
                 called["gt_tolerance"] = int(gt_tolerance)
                 return {"ok": True, "gt_tolerance": int(gt_tolerance)}
 
-            case = CaseSpec(
-                case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec()
-            )
+            case = CaseSpec(case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec())
 
             req = AnalyzeRequest(
                 metric="suite",
@@ -140,9 +132,7 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
                 called["gt_tolerance"] = int(gt_tolerance)
                 return {"ok": True, "gt_tolerance": int(gt_tolerance)}
 
-            case = CaseSpec(
-                case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec()
-            )
+            case = CaseSpec(case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec())
 
             req = AnalyzeRequest(
                 metric="suite",
@@ -170,9 +160,7 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
             suite_root = root / "runs" / "suites"
 
             # Compute suite paths for a minimal suite layout
-            paths = get_suite_paths(
-                case_id="case1", suite_id="S1", suite_root=suite_root
-            )
+            paths = get_suite_paths(case_id="case1", suite_id="S1", suite_root=suite_root)
             ensure_suite_dirs(paths)
 
             # Suite-level analysis dir is created lazily by the pipeline; make it for the test.
@@ -203,9 +191,7 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
                 called["gt_tolerance"] = int(gt_tolerance)
                 return {"ok": True, "gt_tolerance": int(gt_tolerance)}
 
-            case = CaseSpec(
-                case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec()
-            )
+            case = CaseSpec(case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec())
             req = RunRequest(
                 invocation_mode="benchmark",
                 case=case,

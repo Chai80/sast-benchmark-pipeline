@@ -140,9 +140,7 @@ def _compute_owasp_support(
     return owasp_support, owasp_fallback
 
 
-def _resolve_created_at(
-    *, suite: Dict[str, Any], plan: Dict[str, Any]
-) -> Optional[str]:
+def _resolve_created_at(*, suite: Dict[str, Any], plan: Dict[str, Any]) -> Optional[str]:
     created_at = suite.get("created_at") or suite.get("updated_at")
     if created_at:
         return str(created_at)
@@ -173,9 +171,7 @@ def _build_action_items(
 
     if cases_no_clusters:
         # Try to extract a likely reason from the first case with no clusters.
-        sample = next(
-            (r for r in case_rows if r.case_id in set(cases_no_clusters)), None
-        )
+        sample = next((r for r in case_rows if r.case_id in set(cases_no_clusters)), None)
         if sample:
             m = (
                 _safe_read_json(
@@ -190,9 +186,7 @@ def _build_action_items(
             ctx = m.get("context") if isinstance(m.get("context"), dict) else {}
             include_harness = ctx.get("include_harness")
             exclude_prefixes = (
-                ctx.get("exclude_prefixes")
-                if isinstance(ctx.get("exclude_prefixes"), list)
-                else []
+                ctx.get("exclude_prefixes") if isinstance(ctx.get("exclude_prefixes"), list) else []
             )
             reason_bits: List[str] = []
             if include_harness is False:
@@ -248,9 +242,7 @@ def _build_pointers(
     )[:3]
 
     suite_tables = {
-        "triage_dataset_csv": _existing_rel(
-            out_tables / "triage_dataset.csv", suite_dir=suite_dir
-        ),
+        "triage_dataset_csv": _existing_rel(out_tables / "triage_dataset.csv", suite_dir=suite_dir),
         "triage_eval_summary_json": _existing_rel(
             out_tables / "triage_eval_summary.json", suite_dir=suite_dir
         ),
@@ -269,21 +261,13 @@ def _build_pointers(
         "triage_calibration_report_by_owasp_csv": _existing_rel(
             out_tables / "triage_calibration_report_by_owasp.csv", suite_dir=suite_dir
         ),
-        "triage_eval_log": _existing_rel(
-            analysis_dir / "triage_eval.log", suite_dir=suite_dir
-        ),
-        "qa_checklist_md": _existing_rel(
-            analysis_dir / "qa_checklist.md", suite_dir=suite_dir
-        ),
-        "qa_checklist_json": _existing_rel(
-            analysis_dir / "qa_checklist.json", suite_dir=suite_dir
-        ),
+        "triage_eval_log": _existing_rel(analysis_dir / "triage_eval.log", suite_dir=suite_dir),
+        "qa_checklist_md": _existing_rel(analysis_dir / "qa_checklist.md", suite_dir=suite_dir),
+        "qa_checklist_json": _existing_rel(analysis_dir / "qa_checklist.json", suite_dir=suite_dir),
         "qa_calibration_checklist_txt": _existing_rel(
             analysis_dir / "qa_calibration_checklist.txt", suite_dir=suite_dir
         ),
-        "qa_manifest_json": _existing_rel(
-            analysis_dir / "qa_manifest.json", suite_dir=suite_dir
-        ),
+        "qa_manifest_json": _existing_rel(analysis_dir / "qa_manifest.json", suite_dir=suite_dir),
         "qa_calibration_manifest_json": _existing_rel(
             analysis_dir / "qa_calibration_manifest.json", suite_dir=suite_dir
         ),
@@ -346,9 +330,7 @@ def build_suite_report_model(inputs: SuiteReportInputs) -> Dict[str, Any]:
     )
 
     # Integrity notes (best-effort)
-    integrity = _load_gt_tolerance_integrity(
-        suite_dir=suite_dir, analysis_dir=analysis_dir
-    )
+    integrity = _load_gt_tolerance_integrity(suite_dir=suite_dir, analysis_dir=analysis_dir)
 
     action_items = _build_action_items(
         suite_dir=suite_dir,

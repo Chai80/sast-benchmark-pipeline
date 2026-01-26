@@ -8,9 +8,7 @@ from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
 
 class TestSuiteToolMarginalValue(unittest.TestCase):
-    def _write_csv(
-        self, path: Path, *, header: list[str], rows: list[dict[str, str]]
-    ) -> None:
+    def _write_csv(self, path: Path, *, header: list[str], rows: list[dict[str, str]]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=header)
@@ -25,9 +23,7 @@ class TestSuiteToolMarginalValue(unittest.TestCase):
             "summary": {"total_gt_items": len(gt_ids)},
             "rows": [{"gt_id": gid} for gid in gt_ids],
         }
-        (gt_dir / "gt_score.json").write_text(
-            json.dumps(payload, indent=2), encoding="utf-8"
-        )
+        (gt_dir / "gt_score.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def test_drop_one_marginal_value_table(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -100,9 +96,7 @@ class TestSuiteToolMarginalValue(unittest.TestCase):
             ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id, ks=[1, 2])
 
             out_csv = Path(str(ev.get("out_tool_marginal_csv") or "")).resolve()
-            self.assertTrue(
-                out_csv.exists(), f"expected triage_tool_marginal.csv at {out_csv}"
-            )
+            self.assertTrue(out_csv.exists(), f"expected triage_tool_marginal.csv at {out_csv}")
 
             # Load rows keyed by (tool, strategy, k)
             by_key: dict[tuple[str, str, int], dict[str, str]] = {}

@@ -41,9 +41,7 @@ def _rank_baseline(
     baseline metrics uncontaminated.
     """
     # If at least one row has a positive triage_rank, use it.
-    any_rank = bool(use_triage_rank) and any(
-        _to_int(r.get("triage_rank"), 0) > 0 for r in rows
-    )
+    any_rank = bool(use_triage_rank) and any(_to_int(r.get("triage_rank"), 0) > 0 for r in rows)
     if any_rank:
         return sorted(rows, key=lambda r: _to_int(r.get("triage_rank"), 10**9))
 
@@ -90,9 +88,7 @@ def _load_suite_calibration(
         return None
 
 
-def _rank_calibrated(
-    rows: List[Dict[str, str]], *, cal: Mapping[str, Any]
-) -> List[Dict[str, str]]:
+def _rank_calibrated(rows: List[Dict[str, str]], *, cal: Mapping[str, Any]) -> List[Dict[str, str]]:
     """Calibrated ranking (v1).
 
     Sort primarily by triage_score_v1 desc, then fall back to the legacy
@@ -101,14 +97,10 @@ def _rank_calibrated(
 
     scoring = cal.get("scoring") if isinstance(cal, dict) else None
     agreement_lambda = (
-        float(scoring.get("agreement_lambda", 0.0))
-        if isinstance(scoring, dict)
-        else 0.0
+        float(scoring.get("agreement_lambda", 0.0)) if isinstance(scoring, dict) else 0.0
     )
     min_support_by_owasp = (
-        int(scoring.get("min_support_by_owasp", 10))
-        if isinstance(scoring, dict)
-        else 10
+        int(scoring.get("min_support_by_owasp", 10)) if isinstance(scoring, dict) else 10
     )
     sb = scoring.get("severity_bonus") if isinstance(scoring, dict) else None
     if not isinstance(sb, dict):
@@ -176,14 +168,10 @@ def _rank_calibrated_global(
 
     scoring = cal.get("scoring") if isinstance(cal, dict) else None
     agreement_lambda = (
-        float(scoring.get("agreement_lambda", 0.0))
-        if isinstance(scoring, dict)
-        else 0.0
+        float(scoring.get("agreement_lambda", 0.0)) if isinstance(scoring, dict) else 0.0
     )
     min_support_by_owasp = (
-        int(scoring.get("min_support_by_owasp", 10))
-        if isinstance(scoring, dict)
-        else 10
+        int(scoring.get("min_support_by_owasp", 10)) if isinstance(scoring, dict) else 10
     )
     sb = scoring.get("severity_bonus") if isinstance(scoring, dict) else None
     if not isinstance(sb, dict):
@@ -191,9 +179,7 @@ def _rank_calibrated_global(
     sev_bonus: Dict[str, float] = {str(k).upper(): float(v) for k, v in sb.items()}
 
     # Global weights for the whole suite.
-    weights = tool_weights_for_owasp(
-        cal, owasp_id=None, min_support=min_support_by_owasp
-    )
+    weights = tool_weights_for_owasp(cal, owasp_id=None, min_support=min_support_by_owasp)
 
     scored: List[Dict[str, str]] = []
     for r in rows:

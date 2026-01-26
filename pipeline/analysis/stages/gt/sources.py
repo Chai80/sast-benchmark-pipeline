@@ -149,9 +149,7 @@ def choose_gt_source(
     *,
     gt_dir: Path,
     case_json: Mapping[str, Any],
-) -> Tuple[
-    Optional[str], List[Dict[str, Any]], Optional[Path], Optional[Dict[str, Any]]
-]:
+) -> Tuple[Optional[str], List[Dict[str, Any]], Optional[Path], Optional[Dict[str, Any]]]:
     """Choose + load raw GT items for a case.
 
     Parameters
@@ -269,9 +267,7 @@ def choose_gt_source(
                     "status": "skipped",
                     "reason": "gt_catalog_yaml_error",
                     "gt_source_mode": "auto",
-                    "gt_catalog_path": str(gt_catalog_path)
-                    if gt_catalog_path
-                    else None,
+                    "gt_catalog_path": str(gt_catalog_path) if gt_catalog_path else None,
                     "error": err,
                 },
             )

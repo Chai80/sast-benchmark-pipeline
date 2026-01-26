@@ -79,21 +79,15 @@ class TestSuiteGTYAMLCapture(unittest.TestCase):
             self.assertTrue(gt_dir.exists(), "Expected <case_dir>/gt/ directory")
 
             # Canonical files should be copied.
-            self.assertEqual(
-                gt_yaml, (gt_dir / "gt_catalog.yaml").read_text(encoding="utf-8")
-            )
+            self.assertEqual(gt_yaml, (gt_dir / "gt_catalog.yaml").read_text(encoding="utf-8"))
             self.assertEqual(
                 suite_sets_yaml,
                 (gt_dir / "suite_sets.yaml").read_text(encoding="utf-8"),
             )
 
             # Alternate extensions should NOT be copied.
-            self.assertFalse(
-                (gt_dir / "gt_catalog.yml").exists(), "Should not copy gt_catalog.yml"
-            )
-            self.assertFalse(
-                (gt_dir / "suite_sets.yml").exists(), "Should not copy suite_sets.yml"
-            )
+            self.assertFalse((gt_dir / "gt_catalog.yml").exists(), "Should not copy gt_catalog.yml")
+            self.assertFalse((gt_dir / "suite_sets.yml").exists(), "Should not copy suite_sets.yml")
 
 
 if __name__ == "__main__":

@@ -78,9 +78,7 @@ def run_suite_compare(args, *, suite_root: Path) -> int:
         # Default: non-interactive drift check.
         ref_a, ref_b = "latest", "previous"
 
-    suite_a, suite_b = _resolve_pair(
-        suite_root=suite_root, ref_a=str(ref_a), ref_b=str(ref_b)
-    )
+    suite_a, suite_b = _resolve_pair(suite_root=suite_root, ref_a=str(ref_a), ref_b=str(ref_b))
 
     # Default output: write into suite A (usually 'latest').
     summary = build_suite_compare_report(suite_dir_a=suite_a, suite_dir_b=suite_b)

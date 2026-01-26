@@ -77,11 +77,7 @@ def cluster_locations(
 
         if unknown:
             tools = sorted(
-                {
-                    str(it.get("tool") or "")
-                    for it in unknown
-                    if it.get("tool") is not None
-                }
+                {str(it.get("tool") or "") for it in unknown if it.get("tool") is not None}
             )
             clusters.append(
                 {
@@ -144,11 +140,7 @@ def cluster_locations(
 
         if current is not None:
             tools = sorted(
-                {
-                    str(x.get("tool") or "")
-                    for x in current["items"]
-                    if x.get("tool") is not None
-                }
+                {str(x.get("tool") or "") for x in current["items"] if x.get("tool") is not None}
             )
             cid = f"{fp}:{current['start_line']}-{current['end_line']}"
             clusters.append(

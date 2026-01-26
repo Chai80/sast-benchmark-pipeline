@@ -21,9 +21,7 @@ def coerce_int(v: Any, default: int = 0) -> int:
         return int(default)
 
 
-def normalize_gt_item(
-    raw: Mapping[str, Any], *, repo_name: str
-) -> Optional[Dict[str, Any]]:
+def normalize_gt_item(raw: Mapping[str, Any], *, repo_name: str) -> Optional[Dict[str, Any]]:
     """Normalize a GT row into the internal shape.
 
     Returned dict always contains:
@@ -106,8 +104,6 @@ def filter_gt_items_by_track(
 
     scoring_track_n = str(scoring_track).strip().lower()
     kept: List[Dict[str, Any]] = [
-        it
-        for it in items
-        if str(it.get("track") or "unknown").lower() == scoring_track_n
+        it for it in items if str(it.get("track") or "unknown").lower() == scoring_track_n
     ]
     return kept, len(items) - len(kept)

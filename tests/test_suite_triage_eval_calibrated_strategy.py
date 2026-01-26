@@ -10,9 +10,7 @@ from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
 
 class TestSuiteTriageEvalCalibratedStrategy(unittest.TestCase):
-    def _write_csv(
-        self, path: Path, *, header: list[str], rows: list[dict[str, str]]
-    ) -> None:
+    def _write_csv(self, path: Path, *, header: list[str], rows: list[dict[str, str]]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=header)
@@ -27,9 +25,7 @@ class TestSuiteTriageEvalCalibratedStrategy(unittest.TestCase):
             "summary": {"total_gt_items": len(gt_ids)},
             "rows": [{"gt_id": gid} for gid in gt_ids],
         }
-        (gt_dir / "gt_score.json").write_text(
-            json.dumps(payload, indent=2), encoding="utf-8"
-        )
+        (gt_dir / "gt_score.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def test_calibrated_strategy_breaks_single_tool_ties(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -107,21 +103,15 @@ class TestSuiteTriageEvalCalibratedStrategy(unittest.TestCase):
 
             macro = ev.get("macro") or {}
             # Baseline chooses c_bad (triage_rank=1) -> precision@1=0
-            self.assertAlmostEqual(
-                float(macro["baseline"]["1"]["precision"]), 0.0, places=6
-            )
+            self.assertAlmostEqual(float(macro["baseline"]["1"]["precision"]), 0.0, places=6)
             # Agreement tie-breaks by file_path -> a.py first -> precision@1=0
-            self.assertAlmostEqual(
-                float(macro["agreement"]["1"]["precision"]), 0.0, places=6
-            )
+            self.assertAlmostEqual(float(macro["agreement"]["1"]["precision"]), 0.0, places=6)
             # Calibrated_global uses suite-level global weights (no OWASP segmentation) -> precision@1=1
             self.assertAlmostEqual(
                 float(macro["calibrated_global"]["1"]["precision"]), 1.0, places=6
             )
             # Calibrated learns goodtool weight > noisytool and should pick c_good -> precision@1=1
-            self.assertAlmostEqual(
-                float(macro["calibrated"]["1"]["precision"]), 1.0, places=6
-            )
+            self.assertAlmostEqual(float(macro["calibrated"]["1"]["precision"]), 1.0, places=6)
 
             # New: delta summaries and per-case delta table should exist.
             delta = ev.get("delta_vs_baseline") or {}
@@ -142,9 +132,7 @@ class TestSuiteTriageEvalCalibratedStrategy(unittest.TestCase):
                 deltas_csv.exists(),
                 "Expected triage_eval_deltas_by_case.csv to be written",
             )
-            rows = list(
-                csv.DictReader(deltas_csv.open("r", newline="", encoding="utf-8"))
-            )
+            rows = list(csv.DictReader(deltas_csv.open("r", newline="", encoding="utf-8")))
             # One case, one K, and three non-baseline strategies (agreement + calibrated_global + calibrated).
             by_strat = {
                 r.get("strategy"): r
@@ -153,9 +141,7 @@ class TestSuiteTriageEvalCalibratedStrategy(unittest.TestCase):
             }
             self.assertIn("calibrated", by_strat)
             self.assertIn("calibrated_global", by_strat)
-            self.assertAlmostEqual(
-                float(by_strat["calibrated"]["precision_delta"]), 1.0, places=6
-            )
+            self.assertAlmostEqual(float(by_strat["calibrated"]["precision_delta"]), 1.0, places=6)
             self.assertAlmostEqual(
                 float(by_strat["calibrated_global"]["precision_delta"]), 1.0, places=6
             )

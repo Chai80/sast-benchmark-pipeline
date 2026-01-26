@@ -170,9 +170,7 @@ class FindingNormalized:
     def from_dict(cls, d: Mapping[str, Any]) -> "FindingNormalized":
         """Parse a dict (as emitted in normalized.json) into a dataclass."""
         if not isinstance(d, Mapping):
-            raise TypeError(
-                f"FindingNormalized.from_dict expected mapping, got {type(d)!r}"
-            )
+            raise TypeError(f"FindingNormalized.from_dict expected mapping, got {type(d)!r}")
 
         known_keys = {
             "finding_id",

@@ -65,9 +65,7 @@ def parse_args() -> argparse.Namespace:
         required=False,
         help="Local repository path (required for --mode local).",
     )
-    parser.add_argument(
-        "--repo-url", required=False, help="Optional repo URL (metadata only)."
-    )
+    parser.add_argument("--repo-url", required=False, help="Optional repo URL (metadata only).")
     parser.add_argument(
         "--repositoryname",
         required=False,
@@ -111,9 +109,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Local scanner: do not upload code snippets.",
     )
-    parser.add_argument(
-        "--debug", action="store_true", help="Local scanner: enable debug output."
-    )
+    parser.add_argument("--debug", action="store_true", help="Local scanner: enable debug output.")
     parser.add_argument(
         "--prefer-binary",
         action="store_true",

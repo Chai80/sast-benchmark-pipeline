@@ -32,17 +32,13 @@ def analyze_latest_hotspots_for_repo(
 
     runs_dir = Path(runs_dir)
 
-    file_to_tool_counts: Dict[str, Dict[str, int]] = defaultdict(
-        lambda: defaultdict(int)
-    )
+    file_to_tool_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
     tool_to_files: Dict[str, set[str]] = defaultdict(set)
     tool_to_findings_count: Dict[str, int] = defaultdict(int)
 
     used_tools: List[str] = []
 
-    exclude_prefixes = tuple(
-        [str(p).strip() for p in (exclude_prefixes or ()) if str(p).strip()]
-    )
+    exclude_prefixes = tuple([str(p).strip() for p in (exclude_prefixes or ()) if str(p).strip()])
 
     for tool in tools:
         try:

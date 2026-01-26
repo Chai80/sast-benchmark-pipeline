@@ -22,9 +22,7 @@ class TestSafeIO(unittest.TestCase):
             self.assertIsNone(read_line_content(repo_root, "../outside.txt", 1))
 
             # Absolute path outside should be denied (returns None)
-            self.assertIsNone(
-                read_line_content(repo_root, str(root / "outside.txt"), 1)
-            )
+            self.assertIsNone(read_line_content(repo_root, str(root / "outside.txt"), 1))
 
     def test_write_json_is_atomic_and_cleans_temp(self) -> None:
         with tempfile.TemporaryDirectory() as td:

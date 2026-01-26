@@ -206,9 +206,7 @@ def _append_eval_diff(
         obj_a = eval_a.get(agg) if isinstance(eval_a, dict) else {}
         obj_b = eval_b.get(agg) if isinstance(eval_b, dict) else {}
 
-        strat_keys = sorted(
-            set(list(obj_a.keys()) + list(obj_b.keys())), key=_strategy_order
-        )
+        strat_keys = sorted(set(list(obj_a.keys()) + list(obj_b.keys())), key=_strategy_order)
 
         for strat in strat_keys:
             ka_obj = obj_a.get(strat) if isinstance(obj_a, dict) else {}
@@ -395,9 +393,7 @@ def _build_alerts(
                 ):
                     changed_tools.append(str(t))
             if changed_tools:
-                alerts.append(
-                    f"Scanner config signature changed for tools: {changed_tools}"
-                )
+                alerts.append(f"Scanner config signature changed for tools: {changed_tools}")
     except Exception:
         pass
 
@@ -499,8 +495,7 @@ def build_suite_compare_report(
         if b.eval_summary is None:
             missing.append(f"{b.suite_id}: triage_eval_summary.json")
         raise SystemExit(
-            "Cannot compare suites; missing required eval summary: "
-            + ", ".join(missing)
+            "Cannot compare suites; missing required eval summary: " + ", ".join(missing)
         )
 
     # Extract key inputs.
@@ -543,9 +538,7 @@ def build_suite_compare_report(
         _append_tool_marginal_diff(rows_csv, marg_a=marg_a, marg_b=marg_b)
 
     # --- Alerts ------------------------------------------------------
-    alerts = _build_alerts(
-        a=a, b=b, pol_a=pol_a, pol_b=pol_b, warn_a=warn_a, warn_b=warn_b
-    )
+    alerts = _build_alerts(a=a, b=b, pol_a=pol_a, pol_b=pol_b, warn_a=warn_a, warn_b=warn_b)
     _append_alert_rows(rows_csv, alerts=alerts)
 
     # Stable sort for CSV.
@@ -561,43 +554,23 @@ def build_suite_compare_report(
             "suite_id": a.suite_id,
             "suite_dir": str(a.suite_dir),
             "suite_json_path": str(a.suite_json_path),
-            "qa_manifest_path": ""
-            if a.qa_manifest_path is None
-            else str(a.qa_manifest_path),
-            "eval_summary_path": ""
-            if a.eval_summary_path is None
-            else str(a.eval_summary_path),
+            "qa_manifest_path": "" if a.qa_manifest_path is None else str(a.qa_manifest_path),
+            "eval_summary_path": "" if a.eval_summary_path is None else str(a.eval_summary_path),
             "dataset_csv": "" if a.dataset_csv is None else str(a.dataset_csv),
-            "tool_utility_csv": ""
-            if a.tool_utility_csv is None
-            else str(a.tool_utility_csv),
-            "calibration_json": ""
-            if a.calibration_json is None
-            else str(a.calibration_json),
-            "tool_marginal_csv": ""
-            if a.tool_marginal_csv is None
-            else str(a.tool_marginal_csv),
+            "tool_utility_csv": "" if a.tool_utility_csv is None else str(a.tool_utility_csv),
+            "calibration_json": "" if a.calibration_json is None else str(a.calibration_json),
+            "tool_marginal_csv": "" if a.tool_marginal_csv is None else str(a.tool_marginal_csv),
         },
         "suite_b": {
             "suite_id": b.suite_id,
             "suite_dir": str(b.suite_dir),
             "suite_json_path": str(b.suite_json_path),
-            "qa_manifest_path": ""
-            if b.qa_manifest_path is None
-            else str(b.qa_manifest_path),
-            "eval_summary_path": ""
-            if b.eval_summary_path is None
-            else str(b.eval_summary_path),
+            "qa_manifest_path": "" if b.qa_manifest_path is None else str(b.qa_manifest_path),
+            "eval_summary_path": "" if b.eval_summary_path is None else str(b.eval_summary_path),
             "dataset_csv": "" if b.dataset_csv is None else str(b.dataset_csv),
-            "tool_utility_csv": ""
-            if b.tool_utility_csv is None
-            else str(b.tool_utility_csv),
-            "calibration_json": ""
-            if b.calibration_json is None
-            else str(b.calibration_json),
-            "tool_marginal_csv": ""
-            if b.tool_marginal_csv is None
-            else str(b.tool_marginal_csv),
+            "tool_utility_csv": "" if b.tool_utility_csv is None else str(b.tool_utility_csv),
+            "calibration_json": "" if b.calibration_json is None else str(b.calibration_json),
+            "tool_marginal_csv": "" if b.tool_marginal_csv is None else str(b.tool_marginal_csv),
         },
         "warnings": {
             "suite_a": list(sorted(set(warn_a))),

@@ -85,9 +85,7 @@ REPOS: Dict[str, Dict[str, str]] = {
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Top-level CLI for SAST pipeline (Durinn)."
-    )
+    parser = argparse.ArgumentParser(description="Top-level CLI for SAST pipeline (Durinn).")
 
     parser.add_argument(
         "--mode",
@@ -438,9 +436,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Print commands but do not execute"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="Print commands but do not execute")
     parser.add_argument(
         "--quiet",
         action="store_true",

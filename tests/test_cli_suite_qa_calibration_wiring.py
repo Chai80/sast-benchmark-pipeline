@@ -51,11 +51,7 @@ class FakePipeline:
         # The real pipeline writes a config receipt per tool run.
         # The QA runbook expects these to exist so profile/config becomes a
         # tracked, suite-visible variable.
-        scanners = (
-            getattr(req, "scanners", None)
-            or getattr(req, "scanners_requested", None)
-            or []
-        )
+        scanners = getattr(req, "scanners", None) or getattr(req, "scanners_requested", None) or []
         profile = getattr(req, "profile", None) or "default"
         for tool in [str(t).strip() for t in (scanners or []) if str(t).strip()]:
             tr_dir = case_dir / "tool_runs" / tool / "R1"
@@ -351,9 +347,7 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
 
             suite_dir = suite_root / safe_name(suite_id)
             checklist_path = suite_dir / "analysis" / "qa_calibration_checklist.txt"
-            self.assertTrue(
-                checklist_path.exists(), "Expected checklist file to be written"
-            )
+            self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
             checklist = checklist_path.read_text(encoding="utf-8")
             self.assertIn("Overall: PASS", checklist)
 
@@ -366,30 +360,20 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             )
 
             # The suite-level outputs should also exist.
+            self.assertTrue((suite_dir / "analysis" / "_tables" / "triage_dataset.csv").exists())
+            self.assertTrue((suite_dir / "analysis" / "triage_calibration.json").exists())
             self.assertTrue(
-                (suite_dir / "analysis" / "_tables" / "triage_dataset.csv").exists()
-            )
-            self.assertTrue(
-                (suite_dir / "analysis" / "triage_calibration.json").exists()
-            )
-            self.assertTrue(
-                (
-                    suite_dir / "analysis" / "_tables" / "triage_eval_summary.json"
-                ).exists()
+                (suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").exists()
             )
 
             # Suite classification + pointer: QA calibration runs should be tagged
             # and update runs/suites/LATEST_QA for deterministic selection.
-            suite_json = json.loads(
-                (suite_dir / "suite.json").read_text(encoding="utf-8")
-            )
+            suite_json = json.loads((suite_dir / "suite.json").read_text(encoding="utf-8"))
             self.assertEqual(suite_json.get("suite_kind"), "qa_calibration")
 
             latest_qa = suite_root / "LATEST_QA"
             self.assertTrue(latest_qa.exists(), "Expected LATEST_QA pointer to exist")
-            self.assertEqual(
-                latest_qa.read_text(encoding="utf-8").strip(), safe_name(suite_id)
-            )
+            self.assertEqual(latest_qa.read_text(encoding="utf-8").strip(), safe_name(suite_id))
 
     def test_qa_calibration_checklist_failure_returns_nonzero(self) -> None:
         """If triage_score_v1 is never populated, the QA runbook must FAIL."""
@@ -412,15 +396,11 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             with redirect_stdout(buf):
                 rc = int(run_suite_mode(args, pipeline, repo_registry={}))
 
-            self.assertNotEqual(
-                rc, 0, "Expected non-zero exit code for failed QA checklist"
-            )
+            self.assertNotEqual(rc, 0, "Expected non-zero exit code for failed QA checklist")
 
             suite_dir = suite_root / safe_name(suite_id)
             checklist_path = suite_dir / "analysis" / "qa_calibration_checklist.txt"
-            self.assertTrue(
-                checklist_path.exists(), "Expected checklist file to be written"
-            )
+            self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
             checklist = checklist_path.read_text(encoding="utf-8")
             self.assertIn("Overall: FAIL", checklist)
 
@@ -456,9 +436,7 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
 
             # Sweep artifacts
             self.assertTrue(
-                (
-                    suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv"
-                ).exists(),
+                (suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").exists(),
                 "Expected sweep report CSV",
             )
             self.assertTrue(
@@ -528,29 +506,21 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             with redirect_stdout(buf):
                 rc = int(run_suite_mode(args, pipeline, repo_registry={}))
 
-            self.assertNotEqual(
-                rc, 0, f"Expected non-zero exit code. Output:\n{buf.getvalue()}"
-            )
+            self.assertNotEqual(rc, 0, f"Expected non-zero exit code. Output:\n{buf.getvalue()}")
 
             suite_dir = suite_root / safe_name(suite_id)
 
             checklist_path = suite_dir / "analysis" / "qa_calibration_checklist.txt"
-            self.assertTrue(
-                checklist_path.exists(), "Expected checklist file to be written"
-            )
+            self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
             checklist = checklist_path.read_text(encoding="utf-8")
             self.assertIn("Overall: FAIL", checklist)
             self.assertIn("analysis_rc=0", checklist)
 
             # Sweep artifacts should still be written (the sweep report is useful for debugging).
             self.assertTrue(
-                (
-                    suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv"
-                ).exists()
+                (suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").exists()
             )
-            self.assertTrue(
-                (suite_dir / "analysis" / "gt_tolerance_sweep.json").exists()
-            )
+            self.assertTrue((suite_dir / "analysis" / "gt_tolerance_sweep.json").exists())
 
             # The sweep+finalize+reanalyze flow should still attempt all analyze() calls.
             self.assertEqual(len(pipeline.analyze_calls), 8)
@@ -590,9 +560,7 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
 
             suite_dir = suite_root / safe_name(suite_id)
             checklist_path = suite_dir / "analysis" / "qa_calibration_checklist.txt"
-            self.assertTrue(
-                checklist_path.exists(), "Expected checklist file to be written"
-            )
+            self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
             checklist = checklist_path.read_text(encoding="utf-8")
 
             # Must still pass overall.

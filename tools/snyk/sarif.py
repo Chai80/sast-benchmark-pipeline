@@ -136,9 +136,7 @@ def primary_location(
     repo_path: Path, res: Dict[str, Any]
 ) -> Tuple[Optional[str], Optional[int], Optional[int], Optional[str]]:
     locs = res.get("locations") or []
-    loc0 = (
-        locs[0] if isinstance(locs, list) and locs and isinstance(locs[0], dict) else {}
-    )
+    loc0 = locs[0] if isinstance(locs, list) and locs and isinstance(locs[0], dict) else {}
     phys = loc0.get("physicalLocation") if isinstance(loc0, dict) else None
     phys = phys if isinstance(phys, dict) else {}
     artifact = phys.get("artifactLocation") if isinstance(phys, dict) else None
@@ -153,7 +151,5 @@ def primary_location(
     start = region.get("startLine")
     end = region.get("endLine") or start
 
-    line_content = (
-        read_line_content(repo_path, fp, int(start)) if fp and start else None
-    )
+    line_content = read_line_content(repo_path, fp, int(start)) if fp and start else None
     return fp, int(start) if start else None, int(end) if end else None, line_content

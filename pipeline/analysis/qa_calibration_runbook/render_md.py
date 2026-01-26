@@ -14,17 +14,13 @@ from typing import List, Optional, Sequence
 from .model import QACheck, all_ok
 
 
-def render_checklist(
-    checks: List[QACheck], *, title: str = "QA calibration checklist"
-) -> str:
+def render_checklist(checks: List[QACheck], *, title: str = "QA calibration checklist") -> str:
     """Render a concise PASS/FAIL checklist suitable for CLI output."""
 
     lines: List[str] = []
     lines.append(f"\n🔎 {title}")
     for c in checks:
-        icon = (
-            "❌" if (not c.ok) else ("⚠️" if bool(getattr(c, "warn", False)) else "✅")
-        )
+        icon = "❌" if (not c.ok) else ("⚠️" if bool(getattr(c, "warn", False)) else "✅")
         lines.append(f"{icon} {c.name}")
         # Show details for failures and warnings.
         if (not c.ok) or bool(getattr(c, "warn", False)):

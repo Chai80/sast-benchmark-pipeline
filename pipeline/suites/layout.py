@@ -131,9 +131,7 @@ def get_suite_paths(
     suite_root: Union[str, Path] = "runs/suites",
 ) -> SuitePaths:
     """Compute filesystem paths for one case inside one suite."""
-    bundle = get_bundle_paths(
-        target=case_id, bundle_id=suite_id, bundle_root=suite_root
-    )
+    bundle = get_bundle_paths(target=case_id, bundle_id=suite_id, bundle_root=suite_root)
     return _to_suite_paths(bundle)
 
 
@@ -211,9 +209,7 @@ def resolve_case_dir(
     if not cases_dir.exists() or not cases_dir.is_dir():
         raise FileNotFoundError(f"Cases dir not found: {cases_dir}")
 
-    available: Sequence[str] = sorted(
-        [p.name for p in cases_dir.iterdir() if p.is_dir()]
-    )
+    available: Sequence[str] = sorted([p.name for p in cases_dir.iterdir() if p.is_dir()])
     if not available:
         raise FileNotFoundError(f"No case directories found under: {cases_dir}")
 
@@ -249,9 +245,7 @@ def resolve_case_dir(
     )
 
 
-def discover_repo_dir(
-    output_root: Path, prefer: Optional[str] = None
-) -> Optional[Path]:
+def discover_repo_dir(output_root: Path, prefer: Optional[str] = None) -> Optional[Path]:
     """Backwards-compatible wrapper for :func:`sast_benchmark.io.layout.discover_repo_dir`."""
     return _discover_repo_dir(output_root, prefer)
 

@@ -51,16 +51,12 @@ _EPHEMERAL_CONFIG_KEYS = {
 }
 
 
-def _config_hash(
-    scanner: str, scanner_version: str, extra: Optional[Dict[str, Any]]
-) -> str:
+def _config_hash(scanner: str, scanner_version: str, extra: Optional[Dict[str, Any]]) -> str:
     """Hash stable, config-like fields for provenance.
 
     This intentionally excludes run-specific paths and timings.
     """
-    cfg_extra = {
-        k: v for k, v in (extra or {}).items() if k not in _EPHEMERAL_CONFIG_KEYS
-    }
+    cfg_extra = {k: v for k, v in (extra or {}).items() if k not in _EPHEMERAL_CONFIG_KEYS}
     payload = {
         "scanner": scanner,
         "scanner_version": scanner_version,
@@ -282,15 +278,9 @@ def get_commit_author_info(repo_path: Path, commit: str) -> Dict[str, Optional[s
 
     lines = (res.stdout or "").splitlines()
     return {
-        "commit_author_name": lines[0].strip()
-        if len(lines) > 0 and lines[0].strip()
-        else None,
-        "commit_author_email": lines[1].strip()
-        if len(lines) > 1 and lines[1].strip()
-        else None,
-        "commit_date": lines[2].strip()
-        if len(lines) > 2 and lines[2].strip()
-        else None,
+        "commit_author_name": lines[0].strip() if len(lines) > 0 and lines[0].strip() else None,
+        "commit_author_email": lines[1].strip() if len(lines) > 1 and lines[1].strip() else None,
+        "commit_date": lines[2].strip() if len(lines) > 2 and lines[2].strip() else None,
     }
 
 
@@ -420,9 +410,7 @@ def build_run_metadata(
 # -------------------------
 
 
-def normalize_repo_relative_path(
-    repo_path: Path, tool_path: Optional[str]
-) -> Optional[str]:
+def normalize_repo_relative_path(repo_path: Path, tool_path: Optional[str]) -> Optional[str]:
     """
     Convert tool-reported absolute paths to repo-relative if possible.
     """
@@ -534,9 +522,7 @@ def finalize_normalized_findings(
         if validate:
             problems = FindingNormalized.validate_dict(f)
             if problems:
-                where = (
-                    f"{f.get('file_path') or '<no-file>'}:{f.get('line_number') or '?'}"
-                )
+                where = f"{f.get('file_path') or '<no-file>'}:{f.get('line_number') or '?'}"
                 validation_errors.append(
                     f"normalized finding invalid at {where} (finding_id={f.get('finding_id')!r}): {', '.join(problems)}"
                 )
@@ -559,8 +545,7 @@ def finalize_normalized_findings(
     if validate and validation_errors:
         head = validation_errors[:25]
         msg = "\n".join(
-            ["[WARN] Normalized finding schema issues detected:"]
-            + [f"  - {x}" for x in head]
+            ["[WARN] Normalized finding schema issues detected:"] + [f"  - {x}" for x in head]
         )
         if len(validation_errors) > 25:
             msg += f"\n  ... ({len(validation_errors) - 25} more)"

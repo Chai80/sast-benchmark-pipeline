@@ -65,9 +65,7 @@ def normalize_one_issue_base(
 
     # Sonar issue type is important for filtering CODE_SMELL vs security.
     issue_type_raw = issue.get("type")
-    issue_type = (
-        str(issue_type_raw).upper().strip() if isinstance(issue_type_raw, str) else None
-    )
+    issue_type = str(issue_type_raw).upper().strip() if isinstance(issue_type_raw, str) else None
 
     file_path, line, end_line = extract_location(issue)
 
@@ -120,9 +118,7 @@ def apply_rule_enrichment(
     return finding
 
 
-def build_rule_cache(
-    cfg: SonarConfig, rule_ids: List[str]
-) -> Dict[str, Dict[str, Any]]:
+def build_rule_cache(cfg: SonarConfig, rule_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     cache: Dict[str, Dict[str, Any]] = {}
     for rid in rule_ids:
         raw = fetch_rule_show(cfg, rid)

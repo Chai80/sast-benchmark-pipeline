@@ -78,9 +78,7 @@ def validate_suite_args(ctx: SuiteRunContext) -> Optional[int]:
 
     # QA requires artifacts on disk.
     if args.dry_run:
-        print(
-            "❌ --qa-calibration cannot be used with --dry-run (needs artifacts to validate)."
-        )
+        print("❌ --qa-calibration cannot be used with --dry-run (needs artifacts to validate).")
         return 2
     if args.skip_analysis:
         print(
@@ -98,10 +96,7 @@ def validate_suite_args(ctx: SuiteRunContext) -> Optional[int]:
     # If no explicit suite inputs are provided, fall back to the example
     # OWASP micro-suite inputs if present.
     if not (
-        args.suite_file
-        or args.cases_from
-        or args.worktrees_root
-        or getattr(args, "repo_url", None)
+        args.suite_file or args.cases_from or args.worktrees_root or getattr(args, "repo_url", None)
     ):
         default_wt = _default_owasp_micro_suite_worktrees_root()
         default_csv = _default_owasp_micro_suite_cases_csv()
@@ -126,11 +121,7 @@ def maybe_bootstrap_worktrees(ctx: SuiteRunContext) -> None:
 
     args = ctx.args
 
-    if not (
-        getattr(args, "repo_url", None)
-        and (not args.suite_file)
-        and (not args.cases_from)
-    ):
+    if not (getattr(args, "repo_url", None) and (not args.suite_file) and (not args.cases_from)):
         return
 
     branches = _parse_branches_spec(getattr(args, "branches", None))
@@ -143,9 +134,7 @@ def maybe_bootstrap_worktrees(ctx: SuiteRunContext) -> None:
             "(unless --qa-calibration is set, which derives branches from the QA scope)."
         )
 
-    default_root = (
-        ROOT_DIR / "repos" / "worktrees" / repo_id_from_repo_url(str(args.repo_url))
-    )
+    default_root = ROOT_DIR / "repos" / "worktrees" / repo_id_from_repo_url(str(args.repo_url))
     wt_root = (
         Path(args.worktrees_root).expanduser()
         if getattr(args, "worktrees_root", None)
@@ -253,9 +242,7 @@ def resolve_suite_run_and_dirs(
 
     args = ctx.args
 
-    suite_id = (
-        str(args.suite_id) if args.suite_id else (suite_def.suite_id or new_suite_id())
-    )
+    suite_id = str(args.suite_id) if args.suite_id else (suite_def.suite_id or new_suite_id())
 
     scanners: List[str]
     if args.scanners:
@@ -304,13 +291,9 @@ def resolve_suite_run_and_dirs(
     prov = SuiteInputProvenance(
         suite_file=suite_input_copy,
         cases_from_csv=(Path(args.cases_from).name if args.cases_from else None),
-        worktrees_root=(
-            Path(args.worktrees_root).name if args.worktrees_root else None
-        ),
+        worktrees_root=(Path(args.worktrees_root).name if args.worktrees_root else None),
         built_interactively=bool(
-            (not args.suite_file)
-            and (not args.cases_from)
-            and (not args.worktrees_root)
+            (not args.suite_file) and (not args.cases_from) and (not args.worktrees_root)
         ),
     )
 
@@ -345,9 +328,7 @@ def resolve_suite_run_and_dirs(
     return resolved_run, None
 
 
-def maybe_write_replay_file(
-    ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun
-) -> None:
+def maybe_write_replay_file(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun) -> None:
     """Optionally write a Python replay file for interactively built suites."""
 
     prov = ctx.provenance
@@ -369,9 +350,7 @@ def maybe_write_replay_file(
 
     replay_dir = suite_dir / "replay"
     default_out = replay_dir / "replay_suite.py"
-    raw_out = _prompt_text(
-        "Replay file path (name or path)", default=str(default_out)
-    ).strip()
+    raw_out = _prompt_text("Replay file path (name or path)", default=str(default_out)).strip()
 
     # If the user types a bare name like "Test1" (no slashes), treat it as a filename
     # under suite_dir/replay/. This prevents accidental files being created in the repo root

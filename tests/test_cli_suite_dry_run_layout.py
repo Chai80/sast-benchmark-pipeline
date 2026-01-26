@@ -22,9 +22,7 @@ class TestCLISuiteDryRunLayout(unittest.TestCase):
             for name in ["case-one", "case_two"]:
                 repo_dir = worktrees_root / name
                 repo_dir.mkdir(parents=True, exist_ok=True)
-                (
-                    repo_dir / ".git"
-                ).mkdir()  # marker only; does not need to be a real git repo
+                (repo_dir / ".git").mkdir()  # marker only; does not need to be a real git repo
                 (repo_dir / "README.md").write_text("demo\n", encoding="utf-8")
 
             suite_root = root / "runs" / "suites"
@@ -81,9 +79,7 @@ class TestCLISuiteDryRunLayout(unittest.TestCase):
             for case_id in ["case-one", "case_two"]:
                 case_dir = suite_dir / "cases" / case_id
                 case_json = case_dir / "case.json"
-                self.assertTrue(
-                    case_json.exists(), f"case.json should exist for {case_id}"
-                )
+                self.assertTrue(case_json.exists(), f"case.json should exist for {case_id}")
 
                 data = json.loads(case_json.read_text(encoding="utf-8"))
                 # Basic invariants

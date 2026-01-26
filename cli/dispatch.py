@@ -175,11 +175,7 @@ def dispatch(
                 suite_dir = latest
                 suite_id = latest.name
 
-                src = (
-                    "LATEST"
-                    if (suite_root / "LATEST").exists()
-                    else "lexicographic fallback"
-                )
+                src = "LATEST" if (suite_root / "LATEST").exists() else "lexicographic fallback"
                 print(f"ℹ️  Using suite: {suite_id} (default via {src})")
             else:
                 # Allow explicit --suite-id latest.
@@ -230,15 +226,9 @@ def dispatch(
             track=str(args.track).strip() if args.track else None,
         )
 
-        return int(
-            run_analyze(
-                args, pipeline, case=case, suite_root=suite_root, suite_id=suite_id
-            )
-        )
+        return int(run_analyze(args, pipeline, case=case, suite_root=suite_root, suite_id=suite_id))
 
-    repo_url, repo_path, label, repo_id = resolve_repo(
-        args, repo_registry=repo_registry
-    )
+    repo_url, repo_path, label, repo_id = resolve_repo(args, repo_registry=repo_registry)
 
     # Derive the repo folder name used under runs/<tool>/<repo_name>/
     runs_repo_name = args.runs_repo_name or derive_runs_repo_name(

@@ -20,9 +20,7 @@ def build_tool_profile_rows(
     rows: List[Dict[str, Any]] = []
     for tool, findings in findings_by_tool.items():
         sev = Counter(
-            str(f.get("severity") or "").upper().strip()
-            for f in findings
-            if isinstance(f, dict)
+            str(f.get("severity") or "").upper().strip() for f in findings if isinstance(f, dict)
         )
 
         files = set()
@@ -51,9 +49,7 @@ def build_tool_profile_rows(
                 "medium": int(sev.get("MEDIUM", 0)),
                 "low": int(sev.get("LOW", 0)),
                 "unknown": int(sev.get("", 0)),
-                "types": ",".join([f"{k}:{v}" for k, v in types.most_common()])
-                if types
-                else "",
+                "types": ",".join([f"{k}:{v}" for k, v in types.most_common()]) if types else "",
             }
         )
 

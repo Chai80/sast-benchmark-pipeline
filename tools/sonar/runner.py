@@ -165,9 +165,7 @@ def _build_issues_payload(
     }
 
 
-def _choose_project_key(
-    *, repo_name: str, cfg: SonarConfig, project_key: Optional[str]
-) -> str:
+def _choose_project_key(*, repo_name: str, cfg: SonarConfig, project_key: Optional[str]) -> str:
     """Pick a project key.
 
     If a project_key is explicitly provided, use it.
@@ -226,9 +224,7 @@ def execute(
     repo = acquire_repo(repo_url=repo_url, repo_path=repo_path, repos_dir=repos_dir)
     repo_name = repo.repo_name
 
-    chosen_key = _choose_project_key(
-        repo_name=repo_name, cfg=cfg, project_key=project_key
-    )
+    chosen_key = _choose_project_key(repo_name=repo_name, cfg=cfg, project_key=project_key)
     print(f"Sonar project key: {chosen_key}")
 
     run_id, paths = _prepare_paths(output_root, repo_name)

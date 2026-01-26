@@ -7,9 +7,7 @@ from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
 
 
 class TestSuiteTriageDatasetBuilder(unittest.TestCase):
-    def _write_csv(
-        self, path: Path, *, header: list[str], rows: list[dict[str, str]]
-    ) -> None:
+    def _write_csv(self, path: Path, *, header: list[str], rows: list[dict[str, str]]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=header)
@@ -130,9 +128,7 @@ class TestSuiteTriageDatasetBuilder(unittest.TestCase):
             self.assertIn("case_three", summary.get("empty_cases") or [])
 
             out_csv = Path(str(summary.get("out_csv")))
-            self.assertTrue(
-                out_csv.exists(), "Expected triage_dataset.csv to be written"
-            )
+            self.assertTrue(out_csv.exists(), "Expected triage_dataset.csv to be written")
 
             with out_csv.open("r", newline="", encoding="utf-8") as f:
                 reader = csv.DictReader(f)

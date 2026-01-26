@@ -54,9 +54,7 @@ def run_suite_runbook(
         print("❌ Suite mode requires suite layout (do not use --no-suite).")
         return 2
 
-    ctx = SuiteRunContext.from_args(
-        args=args, pipeline=pipeline, repo_registry=repo_registry
-    )
+    ctx = SuiteRunContext.from_args(args=args, pipeline=pipeline, repo_registry=repo_registry)
 
     early_exit = validate_suite_args(ctx)
     if early_exit is not None:

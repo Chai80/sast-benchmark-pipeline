@@ -94,9 +94,7 @@ class TestQACalibrationRunbook(unittest.TestCase):
                 ],
             )
 
-            (
-                suite_dir / "analysis" / "_tables" / "triage_eval_summary.json"
-            ).write_text(
+            (suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").write_text(
                 json.dumps(
                     {
                         "strategies": [
@@ -165,12 +163,7 @@ class TestQACalibrationRunbook(unittest.TestCase):
 
             # One case triage_queue.csv (schema check)
             self._write_csv(
-                suite_dir
-                / "cases"
-                / "case1"
-                / "analysis"
-                / "_tables"
-                / "triage_queue.csv",
+                suite_dir / "cases" / "case1" / "analysis" / "_tables" / "triage_queue.csv",
                 header=["rank", "triage_score_v1", "file_path"],
                 rows=[{"rank": "1", "triage_score_v1": "0.1", "file_path": "a.py"}],
             )
@@ -201,24 +194,14 @@ class TestQACalibrationRunbook(unittest.TestCase):
             self.assertIn("analysis/triage_calibration.json exists", by_name)
             self.assertFalse(by_name["analysis/triage_calibration.json exists"].ok)
 
-            self.assertIn(
-                "analysis/_tables/triage_calibration_report.csv exists", by_name
-            )
-            self.assertFalse(
-                by_name["analysis/_tables/triage_calibration_report.csv exists"].ok
-            )
+            self.assertIn("analysis/_tables/triage_calibration_report.csv exists", by_name)
+            self.assertFalse(by_name["analysis/_tables/triage_calibration_report.csv exists"].ok)
 
             self.assertIn("triage_eval_summary includes strategy calibrated", by_name)
-            self.assertFalse(
-                by_name["triage_eval_summary includes strategy calibrated"].ok
-            )
+            self.assertFalse(by_name["triage_eval_summary includes strategy calibrated"].ok)
 
-            self.assertIn(
-                "triage_eval_summary includes strategy calibrated_global", by_name
-            )
-            self.assertFalse(
-                by_name["triage_eval_summary includes strategy calibrated_global"].ok
-            )
+            self.assertIn("triage_eval_summary includes strategy calibrated_global", by_name)
+            self.assertFalse(by_name["triage_eval_summary includes strategy calibrated_global"].ok)
 
 
 if __name__ == "__main__":

@@ -105,16 +105,12 @@ def normalize_semgrep_results(
 
         sev_raw = None
         if isinstance(extra, dict):
-            sev_raw = extra.get("severity") or (extra.get("metadata") or {}).get(
-                "severity"
-            )
+            sev_raw = extra.get("severity") or (extra.get("metadata") or {}).get("severity")
         sev = map_semgrep_severity(sev_raw)
 
         loc = extract_location(res, tool="semgrep")
         file_path = (
-            normalize_repo_relative_path(repo_path, loc.file_path)
-            if loc.file_path
-            else None
+            normalize_repo_relative_path(repo_path, loc.file_path) if loc.file_path else None
         )
         line = loc.line_number
         end_line = loc.end_line_number
@@ -140,9 +136,7 @@ def normalize_semgrep_results(
                 cat = first.strip()
         issue_type = cat.upper() if cat else "SECURITY"
 
-        semgrep_owasp_tags = _as_list(meta.get("owasp")) or _as_list(
-            meta.get("owasp_top_10")
-        )
+        semgrep_owasp_tags = _as_list(meta.get("owasp")) or _as_list(meta.get("owasp_top_10"))
         vuln_class_list = _as_list(meta.get("vulnerability_class"))
         vuln_class = str(vuln_class_list[0]) if vuln_class_list else None
 

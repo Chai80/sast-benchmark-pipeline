@@ -59,13 +59,9 @@ class AnalyzeRequest:
     skip_suite_aggregate: bool = False
 
 
-def _effective_exclude_prefixes(
-    req: AnalyzeRequest, *, is_suite_layout: bool
-) -> list[str]:
+def _effective_exclude_prefixes(req: AnalyzeRequest, *, is_suite_layout: bool) -> list[str]:
     """Merge CLI-provided prefixes with suite-layout defaults."""
-    prefixes: list[str] = [
-        str(p).strip() for p in (req.exclude_prefixes or ()) if str(p).strip()
-    ]
+    prefixes: list[str] = [str(p).strip() for p in (req.exclude_prefixes or ()) if str(p).strip()]
 
     # Default suite-layout noise filter: exclude benchmark harness paths unless explicitly included.
     if is_suite_layout and (not req.include_harness):
@@ -108,9 +104,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
         is_suite_layout = True
     else:
         if req.runs_dir is None:
-            raise SystemExit(
-                "Analyze mode requires --suite-id/--case-path OR --runs-dir (legacy)."
-            )
+            raise SystemExit("Analyze mode requires --suite-id/--case-path OR --runs-dir (legacy).")
         runs_dir = Path(req.runs_dir).resolve()
         default_out_dir = runs_dir / "analysis" / req.case.runs_repo_name
         is_suite_layout = False
@@ -118,11 +112,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
     exclude_prefixes = _effective_exclude_prefixes(req, is_suite_layout=is_suite_layout)
 
     if metric == "suite":
-        out_dir = (
-            Path(req.analysis_out_dir).resolve()
-            if req.analysis_out_dir
-            else default_out_dir
-        )
+        out_dir = Path(req.analysis_out_dir).resolve() if req.analysis_out_dir else default_out_dir
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # Suite QA calibration can persist a selected GT tolerance under the suite.
@@ -132,10 +122,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
         if is_suite_layout and (not bool(req.skip_suite_aggregate)):
             try:
                 suite_dir = None
-                if (
-                    case_dir is not None
-                    and getattr(case_dir.parent, "name", None) == "cases"
-                ):
+                if case_dir is not None and getattr(case_dir.parent, "name", None) == "cases":
                     suite_dir = case_dir.parent.parent
 
                 if suite_dir is not None:
@@ -155,9 +142,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
                     if src in {
                         "selection_json",
                         "suite_json",
-                    } and effective_gt_tolerance != int(
-                        getattr(req, "gt_tolerance", 0) or 0
-                    ):
+                    } and effective_gt_tolerance != int(getattr(req, "gt_tolerance", 0) or 0):
                         print(
                             f"\nℹ️  Using suite recorded gt_tolerance_effective={effective_gt_tolerance} (source={src})"
                         )
@@ -205,14 +190,10 @@ def run_analyze(req: AnalyzeRequest) -> int:
                 suite_dir = out_dir.parent.parent.parent  # .../runs/suites/<suite_id>
                 suite_id = suite_dir.name
 
-                ds = build_triage_dataset(
-                    suite_dir=str(suite_dir), suite_id=str(suite_id)
-                )
+                ds = build_triage_dataset(suite_dir=str(suite_dir), suite_id=str(suite_id))
 
                 out_csv = (
-                    ds.get("out_csv")
-                    if isinstance(ds, dict)
-                    else getattr(ds, "out_csv", None)
+                    ds.get("out_csv") if isinstance(ds, dict) else getattr(ds, "out_csv", None)
                 )
                 if out_csv:
                     print(f"\n[triage_dataset] wrote: {out_csv}")
@@ -223,9 +204,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
                         build_triage_calibration,
                     )
 
-                    cal = build_triage_calibration(
-                        suite_dir=str(suite_dir), suite_id=str(suite_id)
-                    )
+                    cal = build_triage_calibration(suite_dir=str(suite_dir), suite_id=str(suite_id))
                     out_json = (
                         cal.get("out_json")
                         if isinstance(cal, dict)
@@ -241,9 +220,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
                         build_triage_eval,
                     )
 
-                    ev = build_triage_eval(
-                        suite_dir=str(suite_dir), suite_id=str(suite_id)
-                    )
+                    ev = build_triage_eval(suite_dir=str(suite_dir), suite_id=str(suite_id))
                     out_summary = (
                         ev.get("out_summary_json")
                         if isinstance(ev, dict)
@@ -260,9 +237,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
         return 0
 
     # metric == hotspots
-    out_path = (
-        Path(req.out) if req.out else (default_out_dir / "latest_hotspots_by_file.json")
-    )
+    out_path = Path(req.out) if req.out else (default_out_dir / "latest_hotspots_by_file.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     from pipeline.analysis.compute.overview import (
@@ -282,9 +257,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
         print("\n⚠️  No normalized runs found for analysis.")
         print("   Expected layout:")
         print("     v2: <runs_dir>/<tool>/<run_id>/normalized.json")
-        print(
-            "     v1: <runs_dir>/<tool>/<repo_name>/<run_id>/<repo_name>.normalized.json"
-        )
+        print("     v1: <runs_dir>/<tool>/<repo_name>/<run_id>/<repo_name>.normalized.json")
         print(f"   runs_dir       : {runs_dir}")
         print(f"   repo_name      : {req.case.runs_repo_name}")
         print(f"   tools          : {', '.join(tools)}")

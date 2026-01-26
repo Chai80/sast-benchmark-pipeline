@@ -27,18 +27,14 @@ from tools.semgrep import execute
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Run Semgrep scan and normalize results.")
     ap.add_argument("--repo-url", required=False, help="Git repo URL to scan.")
-    ap.add_argument(
-        "--repo-path", required=False, help="Local repo path to scan (skip clone)."
-    )
+    ap.add_argument("--repo-path", required=False, help="Local repo path to scan (skip clone).")
     ap.add_argument("--config", default="auto", help="Semgrep config. Default: auto.")
     ap.add_argument(
         "--output-root",
         default="runs/semgrep",
         help="Output root. Default: runs/semgrep.",
     )
-    ap.add_argument(
-        "--repos-dir", default="repos", help="Repos base dir. Default: repos."
-    )
+    ap.add_argument("--repos-dir", default="repos", help="Repos base dir. Default: repos.")
     ap.add_argument(
         "--timeout-seconds",
         type=int,

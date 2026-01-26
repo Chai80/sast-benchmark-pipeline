@@ -45,19 +45,13 @@ def _build_suite_interactively(
 ) -> SuiteDefinition:
     print("\n🧩 Suite mode: run multiple cases under one suite id.")
     print("   - Use this for scanning many repos or many branches/worktrees.")
-    print(
-        "   - Replay files are optional; suite.json/case.json/run.json are always written.\n"
-    )
+    print("   - Replay files are optional; suite.json/case.json/run.json are always written.\n")
 
-    suite_id_in = _prompt_text(
-        "Suite id (press Enter to auto-generate)", default=""
-    ).strip()
+    suite_id_in = _prompt_text("Suite id (press Enter to auto-generate)", default="").strip()
     suite_id = suite_id_in or new_suite_id()
 
     default_scanners_csv = args.scanners or DEFAULT_SCANNERS_CSV
-    scanners_csv = _prompt_text(
-        "Scanners to run (comma-separated)", default=default_scanners_csv
-    )
+    scanners_csv = _prompt_text("Scanners to run (comma-separated)", default=default_scanners_csv)
     scanners = _parse_scanners_str(scanners_csv)
     if not scanners:
         raise SystemExit("No valid scanners selected.")
@@ -103,16 +97,12 @@ def _build_suite_interactively(
                 opts["custom"] = "Enter a custom worktrees folder path"
                 choice = choose_from_menu("Choose a worktrees folder:", opts)
                 if choice == "custom":
-                    entered = _prompt_text(
-                        "Worktrees folder path", default=str(base)
-                    ).strip()
+                    entered = _prompt_text("Worktrees folder path", default=str(base)).strip()
                     root = Path(entered).expanduser().resolve()
                 else:
                     root = (base / choice).resolve()
             else:
-                entered = _prompt_text(
-                    "Worktrees folder path", default=str(base)
-                ).strip()
+                entered = _prompt_text("Worktrees folder path", default=str(base)).strip()
                 root = Path(entered).expanduser().resolve()
 
             discovered = _discover_git_checkouts_under(root)
@@ -166,9 +156,7 @@ def _build_suite_interactively(
             continue
 
         if action == "add_csv":
-            csv_in = _prompt_text(
-                "Cases CSV path", default="inputs/suite_inputs/cases.csv"
-            ).strip()
+            csv_in = _prompt_text("Cases CSV path", default="inputs/suite_inputs/cases.csv").strip()
             csv_path = Path(csv_in).expanduser().resolve()
             loaded = _load_suite_cases_from_csv(csv_path)
             if not loaded:
@@ -208,17 +196,14 @@ def _build_suite_interactively(
 
         proposed = runs_repo_name
         raw_case_id = (
-            _prompt_text("Case id (folder + DB key)", default=proposed).strip()
-            or proposed
+            _prompt_text("Case id (folder + DB key)", default=proposed).strip() or proposed
         )
         case_id = safe_name(raw_case_id)
         if case_id != raw_case_id:
             print(f"  ⚠️  case_id sanitized to: {case_id}")
 
         if case_id in seen_case_ids:
-            print(
-                f"  ❌ case_id '{case_id}' already exists in this suite. Pick a different one."
-            )
+            print(f"  ❌ case_id '{case_id}' already exists in this suite. Pick a different one.")
             continue
 
         seen_case_ids.add(case_id)

@@ -55,9 +55,7 @@ TOOLS_DIR: Path = ROOT_DIR / "tools"
 # centralized in :mod:`pipeline.scanners` to avoid drift across CLI/execution/analysis.
 
 
-def filter_scanners_for_track(
-    scanners: Sequence[str], track: str
-) -> tuple[list[str], list[str]]:
+def filter_scanners_for_track(scanners: Sequence[str], track: str) -> tuple[list[str], list[str]]:
     """Filter a scanner list to only those that support the given track.
 
     Returns (kept, skipped). Unknown tracks are treated as "no filter".

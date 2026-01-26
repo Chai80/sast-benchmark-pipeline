@@ -121,9 +121,7 @@ def choose_git_ref_interactively(repos: Sequence[Dict[str, Any]]) -> str:
     for idx, r in enumerate(repos, start=1):
         print(f"[{idx}] id={r.get('id')} | name={r.get('name')} | url={r.get('url')}")
     while True:
-        choice = input(
-            f"Enter the number of the repo to scan (1-{len(repos)}): "
-        ).strip()
+        choice = input(f"Enter the number of the repo to scan (1-{len(repos)}): ").strip()
         try:
             n = int(choice)
             if 1 <= n <= len(repos):
@@ -366,13 +364,9 @@ def execute_cloud(
     cfg = get_aikido_config()
     cache_dir = _infer_aikido_cache_dir(output_root)
     cache_ttl = int(os.environ.get("AIKIDO_CACHE_TTL_SECS", "3600"))
-    repos = list_code_repos(
-        cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl
-    )
+    repos = list_code_repos(cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl)
     selected_git_ref = git_ref or choose_git_ref_interactively(repos)
-    code_repo_id, repo_obj = find_repo_by_git_ref(
-        repos, selected_git_ref, branch=branch
-    )
+    code_repo_id, repo_obj = find_repo_by_git_ref(repos, selected_git_ref, branch=branch)
 
     derived_repo_name = repo_obj.get("name") or "unknown_repo"
     repo_name = repositoryname or derived_repo_name
@@ -384,9 +378,7 @@ def execute_cloud(
     if not skip_trigger:
         trigger_http_seconds = trigger_aikido_scan(cfg.token, code_repo_id)
 
-    all_issues = export_all_issues(
-        cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl
-    )
+    all_issues = export_all_issues(cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl)
     repo_issues = filter_issues_for_repo(all_issues, code_repo_id)
 
     write_json(paths.raw_results, repo_issues)
@@ -505,9 +497,7 @@ def _run_local_scanner_docker(
 
     if gating_mode == "pr":
         if not head_commit_id:
-            raise SystemExit(
-                "Aikido local scanner PR gating mode requires --head-commit-id."
-            )
+            raise SystemExit("Aikido local scanner PR gating mode requires --head-commit-id.")
         cmd.extend(["--head-commit-id", head_commit_id])
         if base_commit_id:
             cmd.extend(["--base-commit-id", base_commit_id])
@@ -577,9 +567,7 @@ def _run_local_scanner_binary(
 
     if gating_mode == "pr":
         if not head_commit_id:
-            raise SystemExit(
-                "Aikido local scanner PR gating mode requires --head-commit-id."
-            )
+            raise SystemExit("Aikido local scanner PR gating mode requires --head-commit-id.")
         cmd.extend(["--head-commit-id", head_commit_id])
         if base_commit_id:
             cmd.extend(["--base-commit-id", base_commit_id])
@@ -686,12 +674,8 @@ def execute_local(
         )
 
     # Persist logs for debugging.
-    (paths.run_dir / "aikido_local_scanner.stdout.log").write_text(
-        stdout, encoding="utf-8"
-    )
-    (paths.run_dir / "aikido_local_scanner.stderr.log").write_text(
-        stderr, encoding="utf-8"
-    )
+    (paths.run_dir / "aikido_local_scanner.stdout.log").write_text(stdout, encoding="utf-8")
+    (paths.run_dir / "aikido_local_scanner.stderr.log").write_text(stderr, encoding="utf-8")
 
     # If the scanner did not write an output file, surface a helpful error.
     if not paths.raw_results.exists():

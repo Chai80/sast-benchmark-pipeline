@@ -8,9 +8,7 @@ from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibr
 
 
 class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
-    def _write_csv(
-        self, path: Path, *, header: list[str], rows: list[dict[str, str]]
-    ) -> None:
+    def _write_csv(self, path: Path, *, header: list[str], rows: list[dict[str, str]]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=header)
@@ -22,9 +20,7 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
         gt_dir = case_dir / "gt"
         gt_dir.mkdir(parents=True, exist_ok=True)
         payload = {"summary": {"total_gt_items": 1}, "rows": [{"gt_id": "GT-1"}]}
-        (gt_dir / "gt_score.json").write_text(
-            json.dumps(payload, indent=2), encoding="utf-8"
-        )
+        (gt_dir / "gt_score.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def test_builds_calibration_excludes_no_gt_and_sorts_tools(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -98,9 +94,7 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
 
             summary = build_triage_calibration(suite_dir=suite_dir)
             out_json = Path(str(summary.get("out_json")))
-            self.assertTrue(
-                out_json.exists(), "Expected triage_calibration.json to be written"
-            )
+            self.assertTrue(out_json.exists(), "Expected triage_calibration.json to be written")
 
             cal = json.loads(out_json.read_text(encoding="utf-8"))
 
@@ -110,9 +104,7 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
 
             # Suspicious cases should include case_two (GT present but 0 overlaps)
             suspicious = cal.get("suspicious_cases") or []
-            suspicious_ids = [
-                s.get("case_id") for s in suspicious if isinstance(s, dict)
-            ]
+            suspicious_ids = [s.get("case_id") for s in suspicious if isinstance(s, dict)]
             self.assertIn("case_two", suspicious_ids)
 
             # Tool stats: sorted tool list, computed TP/FP and smoothed precision.
@@ -120,36 +112,24 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
             tools = [t.get("tool") for t in tool_stats if isinstance(t, dict)]
             self.assertEqual(tools, sorted(tools))
 
-            by_tool = {
-                t["tool"]: t
-                for t in tool_stats
-                if isinstance(t, dict) and t.get("tool")
-            }
+            by_tool = {t["tool"]: t for t in tool_stats if isinstance(t, dict) and t.get("tool")}
 
             # semgrep: tp=1 fp=1 => p=0.5 => weight ~ 0
             self.assertEqual(int(by_tool["semgrep"]["tp"]), 1)
             self.assertEqual(int(by_tool["semgrep"]["fp"]), 1)
-            self.assertAlmostEqual(
-                float(by_tool["semgrep"]["p_smoothed"]), 0.5, places=6
-            )
+            self.assertAlmostEqual(float(by_tool["semgrep"]["p_smoothed"]), 0.5, places=6)
             self.assertAlmostEqual(float(by_tool["semgrep"]["weight"]), 0.0, places=6)
 
             # snyk: tp=0 fp=1 => p=1/3 => weight=log(0.5)=-0.693147...
             self.assertEqual(int(by_tool["snyk"]["tp"]), 0)
             self.assertEqual(int(by_tool["snyk"]["fp"]), 1)
-            self.assertAlmostEqual(
-                float(by_tool["snyk"]["p_smoothed"]), 1.0 / 3.0, places=6
-            )
-            self.assertAlmostEqual(
-                float(by_tool["snyk"]["weight"]), -0.693147, places=6
-            )
+            self.assertAlmostEqual(float(by_tool["snyk"]["p_smoothed"]), 1.0 / 3.0, places=6)
+            self.assertAlmostEqual(float(by_tool["snyk"]["weight"]), -0.693147, places=6)
 
             # sonar: tp=0 fp=1 => p=1/3
             self.assertEqual(int(by_tool["sonar"]["tp"]), 0)
             self.assertEqual(int(by_tool["sonar"]["fp"]), 1)
-            self.assertAlmostEqual(
-                float(by_tool["sonar"]["p_smoothed"]), 1.0 / 3.0, places=6
-            )
+            self.assertAlmostEqual(float(by_tool["sonar"]["p_smoothed"]), 1.0 / 3.0, places=6)
 
             # Report CSV is optional but enabled by default.
             out_report = Path(str(summary.get("out_report_csv")))
@@ -171,9 +151,7 @@ class TestSuiteTriageCalibrationBuilder(unittest.TestCase):
                 by_owasp_rows,
                 "Expected at least one per-OWASP row when owasp_id is present in dataset",
             )
-            self.assertEqual(
-                sorted({r.get("owasp_id") for r in by_owasp_rows}), ["A01"]
-            )
+            self.assertEqual(sorted({r.get("owasp_id") for r in by_owasp_rows}), ["A01"])
 
             # With only 3 clusters in this slice and default min_support_by_owasp=10, we expect fallback.
             first = by_owasp_rows[0]

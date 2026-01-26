@@ -50,9 +50,7 @@ def load_suite_py(path: str | Path) -> SuiteDefinition:
             break
 
     if candidate is None:
-        raise ValueError(
-            "Suite .py must export SUITE_DEF (SuiteDefinition) or SUITE_RAW (dict)."
-        )
+        raise ValueError("Suite .py must export SUITE_DEF (SuiteDefinition) or SUITE_RAW (dict).")
 
     if isinstance(candidate, SuiteDefinition):
         return candidate
@@ -61,6 +59,5 @@ def load_suite_py(path: str | Path) -> SuiteDefinition:
         return SuiteDefinition.from_dict(candidate)
 
     raise TypeError(
-        f"Unsupported suite export type: {type(candidate)}. "
-        "Expected SuiteDefinition or dict."
+        f"Unsupported suite export type: {type(candidate)}. " "Expected SuiteDefinition or dict."
     )

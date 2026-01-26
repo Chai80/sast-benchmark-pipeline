@@ -154,9 +154,7 @@ def _write_run_json(
         return None
 
     normalized_name = _pick_first(["normalized.json", f"{repo_name}.normalized.json"])
-    raw_name = _pick_first(
-        ["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"]
-    )
+    raw_name = _pick_first(["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"])
     metadata_name = _pick_first(["metadata.json"])
     logs_dir = run_dir / "logs"
     logs_dir_name = "logs" if logs_dir.exists() and logs_dir.is_dir() else None
@@ -294,9 +292,7 @@ def import_legacy_repo_to_suite(
             _copy_tree(run_dir, dest_run_dir, link_mode=link_mode)
         except Exception as e:
             missing.append(str(tool))
-            warnings.append(
-                f"legacy_copy_failed:{tool}:{run_dir} -> {dest_run_dir}: {e}"
-            )
+            warnings.append(f"legacy_copy_failed:{tool}:{run_dir} -> {dest_run_dir}: {e}")
             continue
 
         # Add canonical aliases (normalized.json/raw.json) when missing.

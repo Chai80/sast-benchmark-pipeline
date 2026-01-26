@@ -73,9 +73,7 @@ def collect_suite_rows(suite_dir: Path) -> List[Dict[str, Any]]:
         owasp_id = ctx.get("owasp_id")
         owasp_title = ctx.get("owasp_title")
         if not owasp_id:
-            owasp_id, owasp_title = infer_owasp(
-                str(case_id), out_dir=case_dir / "analysis"
-            )
+            owasp_id, owasp_title = infer_owasp(str(case_id), out_dir=case_dir / "analysis")
 
         summary = pack.get("summary") or {}
         row: Dict[str, Any] = {
@@ -128,9 +126,7 @@ def write_rows_csv(rows: List[Dict[str, Any]], out_path: Path) -> None:
 
 
 def main(argv: List[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(
-        description="Export suite summary CSV from benchmark_pack.json"
-    )
+    ap = argparse.ArgumentParser(description="Export suite summary CSV from benchmark_pack.json")
     ap.add_argument("--suite-dir", required=True, help="Path to runs/suites/<suite_id>")
     ap.add_argument("--out", required=True, help="Output CSV path")
     args = ap.parse_args(argv)

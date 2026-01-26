@@ -373,9 +373,7 @@ def map_severity(raw: Any, *, tool: Optional[str] = None) -> Optional[str]:
 def extract_location(obj: Dict[str, Any], *, tool: str) -> NormalizedLocation:
     """Extract file/line from vendor payloads for a specific tool."""
     if not isinstance(obj, dict):
-        return NormalizedLocation(
-            file_path=None, line_number=None, end_line_number=None
-        )
+        return NormalizedLocation(file_path=None, line_number=None, end_line_number=None)
 
     if tool == "aikido":
         file_path = (
@@ -397,11 +395,7 @@ def extract_location(obj: Dict[str, Any], *, tool: str) -> NormalizedLocation:
         )
 
         # Some exports nest location under a "location" or "source_location" object.
-        loc = (
-            obj.get("location")
-            or obj.get("source_location")
-            or obj.get("sourceLocation")
-        )
+        loc = obj.get("location") or obj.get("source_location") or obj.get("sourceLocation")
         if isinstance(loc, dict):
             file_path = (
                 file_path
@@ -450,21 +444,15 @@ def extract_location(obj: Dict[str, Any], *, tool: str) -> NormalizedLocation:
             loc0 = locs[0]
 
         phys = (loc0 or {}).get("physicalLocation") if isinstance(loc0, dict) else None
-        artifact = (
-            (phys or {}).get("artifactLocation") if isinstance(phys, dict) else None
-        )
+        artifact = (phys or {}).get("artifactLocation") if isinstance(phys, dict) else None
         region = (phys or {}).get("region") if isinstance(phys, dict) else None
 
         file_path = None
         if isinstance(artifact, dict):
             file_path = artifact.get("uri")
 
-        start_line = _coerce_int(
-            region.get("startLine") if isinstance(region, dict) else None
-        )
-        end_line = _coerce_int(
-            region.get("endLine") if isinstance(region, dict) else None
-        )
+        start_line = _coerce_int(region.get("startLine") if isinstance(region, dict) else None)
+        end_line = _coerce_int(region.get("endLine") if isinstance(region, dict) else None)
         return NormalizedLocation(
             file_path=str(file_path) if file_path else None,
             line_number=start_line,
@@ -473,12 +461,8 @@ def extract_location(obj: Dict[str, Any], *, tool: str) -> NormalizedLocation:
 
     # fallback generic
     file_path = obj.get("file_path") or obj.get("file") or obj.get("path")
-    line = _coerce_int(
-        obj.get("line_number") or obj.get("line") or obj.get("start_line")
-    )
-    end_line = _coerce_int(
-        obj.get("end_line_number") or obj.get("end_line") or obj.get("endLine")
-    )
+    line = _coerce_int(obj.get("line_number") or obj.get("line") or obj.get("start_line"))
+    end_line = _coerce_int(obj.get("end_line_number") or obj.get("end_line") or obj.get("endLine"))
     return NormalizedLocation(
         file_path=str(file_path) if file_path else None,
         line_number=line,

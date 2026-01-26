@@ -66,9 +66,7 @@ def normalize_sarif(
 
     sarif = read_json(raw_sarif_path)
     runs = sarif.get("runs") or []
-    run0 = (
-        runs[0] if isinstance(runs, list) and runs and isinstance(runs[0], dict) else {}
-    )
+    run0 = runs[0] if isinstance(runs, list) and runs and isinstance(runs[0], dict) else {}
     rmap = rules_by_id(run0)
     results = run0.get("results") or []
 

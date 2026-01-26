@@ -319,11 +319,7 @@ def triage_score_v1_for_row(row: Mapping[str, Any], cal: Mapping[str, Any]) -> f
 
     max_sev = str(row.get("max_severity") or row.get("severity") or "UNKNOWN")
 
-    min_support = (
-        int(scoring.get("min_support_by_owasp", 10))
-        if isinstance(scoring, dict)
-        else 10
-    )
+    min_support = int(scoring.get("min_support_by_owasp", 10)) if isinstance(scoring, dict) else 10
     weights = tool_weights_for_owasp(
         cal, owasp_id=str(row.get("owasp_id") or ""), min_support=min_support
     )
@@ -557,22 +553,14 @@ def _flatten_report_by_owasp_rows(
         if not isinstance(slice_obj, dict):
             continue
 
-        support = (
-            slice_obj.get("support")
-            if isinstance(slice_obj.get("support"), dict)
-            else {}
-        )
+        support = slice_obj.get("support") if isinstance(slice_obj.get("support"), dict) else {}
         support_clusters = _to_int(support.get("clusters"), default=0)
         support_cases = _to_int(support.get("cases"), default=0)
         gt_positive_clusters = _to_int(support.get("gt_positive_clusters"), default=0)
 
         fallback_to_global = 1 if support_clusters < min_support else 0
 
-        stats = (
-            slice_obj.get("tool_stats")
-            if isinstance(slice_obj.get("tool_stats"), list)
-            else []
-        )
+        stats = slice_obj.get("tool_stats") if isinstance(slice_obj.get("tool_stats"), list) else []
         for row in stats:
             if not isinstance(row, dict):
                 continue
@@ -662,11 +650,7 @@ def build_triage_calibration(
 
     # Determine which cases have GT artifacts.
     case_ids = sorted(
-        {
-            str(r.get("case_id") or "").strip()
-            for r in rows
-            if str(r.get("case_id") or "").strip()
-        }
+        {str(r.get("case_id") or "").strip() for r in rows if str(r.get("case_id") or "").strip()}
     )
     included_cases, excluded_cases_no_gt, included_set = _partition_cases_by_gt(
         suite_dir=suite_dir, case_ids=case_ids

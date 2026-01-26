@@ -68,9 +68,7 @@ def _baseline_sort_key(r: Dict[str, Any]) -> tuple:
     )
 
 
-def rank_triage_rows(
-    rows: List[Dict[str, Any]], *, calibrated: bool
-) -> List[Dict[str, Any]]:
+def rank_triage_rows(rows: List[Dict[str, Any]], *, calibrated: bool) -> List[Dict[str, Any]]:
     """Sort rows deterministically and assign 1-based rank.
 
     Contract:
@@ -81,8 +79,7 @@ def rank_triage_rows(
 
     if calibrated:
         rows.sort(
-            key=lambda r: (-_as_float(r.get("triage_score_v1"), 0.0),)
-            + _baseline_sort_key(r)
+            key=lambda r: (-_as_float(r.get("triage_score_v1"), 0.0),) + _baseline_sort_key(r)
         )
     else:
         rows.sort(key=_baseline_sort_key)
@@ -117,9 +114,7 @@ def _choose_sample_item(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     return best
 
 
-def _suite_dir_from_out_dir(
-    out_dir: Path, *, suite_id: Optional[str]
-) -> Optional[Path]:
+def _suite_dir_from_out_dir(out_dir: Path, *, suite_id: Optional[str]) -> Optional[Path]:
     """Best-effort resolve suite_dir from a per-case analysis out_dir."""
 
     try:
@@ -200,8 +195,8 @@ def build_triage_queue_rows(
     Returns (rows, meta). `meta` is safe to return from the stage.
     """
 
-    cal, cal_weights, agreement_lambda, severity_bonus, _min_support = (
-        _load_calibration_for_case(ctx)
+    cal, cal_weights, agreement_lambda, severity_bonus, _min_support = _load_calibration_for_case(
+        ctx
     )
 
     rows: List[Dict[str, Any]] = []
