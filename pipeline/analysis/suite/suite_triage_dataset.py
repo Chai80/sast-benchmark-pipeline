@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from pipeline.analysis.io.write_artifacts import write_csv, write_json
+from pipeline.analysis.io.write_artifacts import write_csv_table, write_json, write_text
 
 
 # Import the triage_features schema contract if available.
@@ -240,8 +240,7 @@ def build_triage_dataset(
 
             aggregated.append(r)
 
-    # Stable row order for diffs / reproducibility.
-    aggregated.sort(key=lambda r: (str(r.get("case_id") or ""), str(r.get("cluster_id") or "")))
+    # Stable row order for diffs / reproducibility is applied at write time.
 
     out_dir = suite_dir / out_dirname
     out_csv = out_dir / "_tables" / "triage_dataset.csv"
@@ -251,7 +250,12 @@ def build_triage_dataset(
     # Build schema even if there are zero rows so downstream code has a stable file to read.
     fieldnames = _stable_output_fieldnames(observed_fieldnames or (TRIAGE_FEATURES_FIELDNAMES or []))
 
-    write_csv(out_csv, aggregated, fieldnames=fieldnames)
+    write_csv_table(
+        out_csv,
+        aggregated,
+        fieldnames=fieldnames,
+        sort_key=lambda r: (str(r.get("case_id") or ""), str(r.get("cluster_id") or "")),
+    )
 
     summary: Dict[str, Any] = {
         "suite_id": sid,
@@ -301,7 +305,7 @@ def build_triage_dataset(
             for e in schema_mismatch_cases:
                 lines.append(f"  - {e.get('case_id')}: schema_version={e.get('schema_version')}")
 
-        out_log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        write_text(out_log, "\n".join(lines) + "\n")
     except Exception:
         # Best-effort: never prevent the dataset from being written.
         pass

@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Sequence
 
-from pipeline.analysis.io.write_artifacts import write_csv, write_json
+from pipeline.analysis.io.write_artifacts import write_csv, write_json, write_markdown, write_text
 
 from .model import TriageEvalBuildRequest, TriageEvalPaths
 
@@ -99,7 +99,7 @@ Both are useful:
 - triage_eval_deltas_by_case.csv: per-case deltas vs baseline (helps interpret lifts per case)
 """
 
-    readme_path.write_text(content, encoding="utf-8")
+    write_markdown(readme_path, content)
     return readme_path
 
 
@@ -323,6 +323,6 @@ def _write_best_effort_log(
             lines.append("")
             lines.append(f"warnings ({len(warnings)}):")
             lines.extend([f"  - {w}" for w in warnings])
-        out_log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        write_text(out_log, "\n".join(lines) + "\n")
     except Exception as e:
         logger.warning("Failed to write triage_eval log to %s: %s", str(out_log), e)

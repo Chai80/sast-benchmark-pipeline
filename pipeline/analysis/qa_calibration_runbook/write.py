@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from pipeline.analysis.io.write_artifacts import write_json
+from pipeline.analysis.io.write_artifacts import write_json, write_markdown, write_text
 
 from .model import (
     QA_CHECKLIST_SCHEMA_V1,
@@ -121,12 +121,12 @@ def write_qa_checklist_artifacts(
 
     md = render_checklist_markdown(checks, title=title, suite_dir=sd, suite_id=sid)
     out_md = (out_dir / md_filename).resolve()
-    out_md.write_text(md, encoding="utf-8")
+    write_markdown(out_md, md)
 
     # Preserve the existing legacy filename used by tests and scripts.
     txt = render_checklist(list(checks), title=title)
     out_txt = (out_dir / legacy_txt_filename).resolve()
-    out_txt.write_text(txt, encoding="utf-8")
+    write_text(out_txt, txt)
 
     return {
         "out_json": str(out_json),

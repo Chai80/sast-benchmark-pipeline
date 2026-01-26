@@ -19,7 +19,7 @@ The implementation is split into small modules:
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from pipeline.analysis.io.write_artifacts import write_json
+from pipeline.analysis.io.write_artifacts import write_json, write_markdown
 
 from .compute import build_suite_report_model
 from .loaders import load_suite_report_inputs
@@ -69,7 +69,7 @@ def write_suite_report(
     md = render_suite_report_markdown(report)
 
     out_md.parent.mkdir(parents=True, exist_ok=True)
-    out_md.write_text(md, encoding="utf-8")
+    write_markdown(out_md, md)
 
     # Standard JSON writer (stable formatting across pipeline outputs)
     write_json(out_json, report)

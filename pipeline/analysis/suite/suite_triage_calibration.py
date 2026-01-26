@@ -57,7 +57,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from pipeline.analysis.io.write_artifacts import write_csv, write_json
+from pipeline.analysis.io.write_artifacts import write_csv, write_json, write_text
 
 
 TRIAGE_CALIBRATION_SCHEMA_V1: str = "triage_calibration_v1"
@@ -606,7 +606,7 @@ def _write_best_effort_calibration_log(
                 lines.append(
                     f"  - {sc.get('case_id')}: clusters={sc.get('cluster_count')} overlap_sum={sc.get('gt_overlap_sum')}"
                 )
-        out_log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        write_text(out_log, "\n".join(lines) + "\n")
     except Exception:
         pass
 

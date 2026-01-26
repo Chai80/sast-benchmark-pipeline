@@ -183,6 +183,6 @@ def write_case_index_json(suite_dir: Path, *, case_ids: Sequence[str]) -> Path:
     payload = build_case_index(suite_dir=suite_dir, case_ids=case_ids)
     write_json(out_path, payload)
     readme_path = out_dir / "README.txt"
-    readme_path.write_text(_render_suite_readme(payload, index_path=out_path), encoding="utf-8")
+    write_text(readme_path, _render_suite_readme(payload, index_path=out_path))
 
     return out_path

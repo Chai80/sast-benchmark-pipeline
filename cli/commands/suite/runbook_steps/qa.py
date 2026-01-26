@@ -76,6 +76,20 @@ def build_suite_artifacts(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun) 
     # ------------------------------------------------------------------
     # From this point on, the rest of the runbook assumes the *effective*
     # gt_tolerance has been applied (either explicit or auto-selected).
+    _suite_stage_build_triage_dataset(suite_dir=suite_dir, suite_id=suite_id)
+    _suite_stage_build_triage_calibration(suite_dir=suite_dir, suite_id=suite_id)
+
+    # Suite-level evaluation: triage ranking quality + tool utility.
+    # In QA calibration mode, we evaluate after the re-analyze pass.
+    if not qa_mode:
+        _suite_stage_build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
+
+    return int(stage_rc)
+
+
+def _suite_stage_build_triage_dataset(*, suite_dir: Path, suite_id: str) -> None:
+    """Best-effort suite-level triage_dataset aggregation."""
+
     try:
         from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
 
@@ -84,33 +98,37 @@ def build_suite_artifacts(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun) 
         print("\n📦 Suite triage_dataset")
         print(f"  Output : {ds.get('out_csv')}")
         print(f"  Rows   : {ds.get('rows')}")
-
         if ds.get("missing_cases"):
             missing = ds.get("missing_cases") or []
-            print(f"  ⚠️  Missing triage_features.csv for {len(missing)} case(s): " + ", ".join([str(x) for x in missing]))
-
+            print(
+                f"  ⚠️  Missing triage_features.csv for {len(missing)} case(s): "
+                + ", ".join([str(x) for x in missing])
+            )
         if ds.get("empty_cases"):
             empty = ds.get("empty_cases") or []
-            print(f"  ⚠️  Empty triage_features.csv for {len(empty)} case(s): " + ", ".join([str(x) for x in empty]))
-
+            print(
+                f"  ⚠️  Empty triage_features.csv for {len(empty)} case(s): "
+                + ", ".join([str(x) for x in empty])
+            )
         if ds.get("read_errors"):
             errs = ds.get("read_errors") or []
             print(
                 f"  ⚠️  Failed to read triage_features.csv for {len(errs)} case(s). "
                 "See triage_dataset_build.log under suite analysis."
             )
-
         if ds.get("schema_mismatch_cases"):
             mism = ds.get("schema_mismatch_cases") or []
             print(
                 f"  ⚠️  Schema mismatch triage_features.csv for {len(mism)} case(s). "
                 "See triage_dataset_build.log under suite analysis."
             )
-
     except Exception as e:
         print(f"\n⚠️  Failed to build suite triage_dataset: {e}")
 
-    # Suite-level calibration: tool weights for triage tie-breaking.
+
+def _suite_stage_build_triage_calibration(*, suite_dir: Path, suite_id: str) -> None:
+    """Best-effort suite-level triage calibration."""
+
     try:
         from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibration
 
@@ -120,50 +138,49 @@ def build_suite_artifacts(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun) 
         print(f"  Output : {cal.get('out_json')}")
         print(f"  Tools  : {cal.get('tools')}")
         print(f"  Cases  : {len(cal.get('included_cases') or [])} (included w/ GT)")
-
         if cal.get("excluded_cases_no_gt"):
             ex = cal.get("excluded_cases_no_gt") or []
             print(f"  ⚠️  Excluded cases without GT: {len(ex)}")
-
         if cal.get("suspicious_cases"):
             sus = cal.get("suspicious_cases") or []
             print(f"  ⚠️  Suspicious cases (GT present but no overlaps): {len(sus)}")
-
     except Exception as e:
         print(f"\n⚠️  Failed to build suite triage_calibration: {e}")
 
-    # Suite-level evaluation: triage ranking quality + tool utility.
-    # In QA calibration mode, we evaluate after the re-analyze pass.
-    if not qa_mode:
-        try:
-            from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
-            ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
+def _suite_stage_build_triage_eval(*, suite_dir: Path, suite_id: str) -> None:
+    """Best-effort suite-level triage_eval build + compact macro snapshot."""
 
-            print("\n📈 Suite triage_eval")
-            print(f"  Summary : {ev.get('out_summary_json')}")
-            print(f"  By-case : {ev.get('out_by_case_csv')}")
-            print(f"  Tools   : {ev.get('out_tool_utility_csv')}")
+    try:
+        from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
-            if ev.get("out_tool_marginal_csv"):
-                print(f"  Marginal: {ev.get('out_tool_marginal_csv')}")
+        ev = build_triage_eval(suite_dir=suite_dir, suite_id=suite_id)
 
-            # Print a compact macro snapshot for Ks that matter for triage.
-            try:
-                ks_list = ev.get("ks") or [1, 3, 5, 10, 25]
-                for k in ks_list:
-                    for strat in ["baseline", "agreement", "calibrated"]:
-                        ks = ev.get("macro", {}).get(strat, {}).get(str(k))
-                        if ks:
-                            mp = ks.get("precision")
-                            mc = ks.get("gt_coverage")
-                            print(f"  {strat} macro@{k}: precision={mp} coverage={mc}")
-            except Exception as e:
-                print(f"  ⚠️  Failed to print triage_eval macro snapshot: {e}")
-        except Exception as e:
-            print(f"\n⚠️  Failed to build suite triage_eval: {e}")
+        print("\n📈 Suite triage_eval")
+        print(f"  Summary : {ev.get('out_summary_json')}")
+        print(f"  By-case : {ev.get('out_by_case_csv')}")
+        print(f"  Tools   : {ev.get('out_tool_utility_csv')}")
+        if ev.get("out_tool_marginal_csv"):
+            print(f"  Marginal: {ev.get('out_tool_marginal_csv')}")
+        _print_triage_eval_macro_snapshot(ev)
+    except Exception as e:
+        print(f"\n⚠️  Failed to build suite triage_eval: {e}")
 
-    return int(stage_rc)
+
+def _print_triage_eval_macro_snapshot(ev: Dict[str, Any]) -> None:
+    """Print a compact macro snapshot for triage-relevant K values."""
+
+    try:
+        ks_list = ev.get("ks") or [1, 3, 5, 10, 25]
+        for k in ks_list:
+            for strat in ["baseline", "agreement", "calibrated"]:
+                ks = ev.get("macro", {}).get(strat, {}).get(str(k))
+                if ks:
+                    mp = ks.get("precision")
+                    mc = ks.get("gt_coverage")
+                    print(f"  {strat} macro@{k}: precision={mp} coverage={mc}")
+    except Exception as e:
+        print(f"  ⚠️  Failed to print triage_eval macro snapshot: {e}")
 
 
 def post_run_aggregation_and_qa(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun, overall: int) -> int:
