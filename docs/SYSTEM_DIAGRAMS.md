@@ -10,6 +10,8 @@ It is intentionally **filesystem-first**: every run produces a stable set of art
 
 ![System stage dataflow diagram](diagrams/system_stage_dataflow.png)
 
+Source (Graphviz): `diagrams/system_stage_dataflow.dot`
+
 Notes (refactor-aware):
 - Execution engine lives in `pipeline/execution/run_case.py` (coordinator) with helpers in `pipeline/execution/{plan,runner,record}.py`.
 - Suite report builder lives in `pipeline/analysis/suite_report/` (legacy wrapper: `pipeline/analysis/suite/suite_report.py`).
