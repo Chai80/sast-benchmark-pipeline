@@ -40,7 +40,9 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from pipeline.analysis.utils.path_norm import normalize_file_path
 
 
-def _loc_key(file_path: str, line_number: Optional[int], *, repo_name: Optional[str] = None) -> str:
+def _loc_key(
+    file_path: str, line_number: Optional[int], *, repo_name: Optional[str] = None
+) -> str:
     fp = normalize_file_path(file_path or "", repo_name=repo_name)
     ln = int(line_number) if line_number is not None else 0
     return f"{fp}:{ln}"
@@ -61,7 +63,9 @@ def score_locations(
 
     precision = tp / (tp + fp) if (tp + fp) else 0.0
     recall = tp / (tp + fn) if (tp + fn) else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    f1 = (
+        (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    )
 
     return {
         "tp": tp,
@@ -94,9 +98,13 @@ def score_from_files(
     if isinstance(gt, list):
         for row in gt:
             if isinstance(row, dict):
-                ground_truth.append((str(row.get("file_path") or ""), row.get("line_number")))
+                ground_truth.append(
+                    (str(row.get("file_path") or ""), row.get("line_number"))
+                )
 
-    return score_locations(predicted=predicted, ground_truth=ground_truth, repo_name=repo_name)
+    return score_locations(
+        predicted=predicted, ground_truth=ground_truth, repo_name=repo_name
+    )
 
 
 def main(argv: List[str] | None = None) -> None:  # pragma: no cover
@@ -109,10 +117,18 @@ def main(argv: List[str] | None = None) -> None:  # pragma: no cover
     ap = argparse.ArgumentParser(
         description="Score normalized findings against a GT JSON catalog (location-based)."
     )
-    ap.add_argument("normalized_json", help="Path to normalized.json produced by a tool run")
-    ap.add_argument("gt_json", help="Path to GT JSON catalog (list of {file_path,line_number})")
-    ap.add_argument("--repo-name", help="Optional repo name used for file-path normalization")
-    ap.add_argument("--out", help="Optional output JSON path. If omitted, prints to stdout.")
+    ap.add_argument(
+        "normalized_json", help="Path to normalized.json produced by a tool run"
+    )
+    ap.add_argument(
+        "gt_json", help="Path to GT JSON catalog (list of {file_path,line_number})"
+    )
+    ap.add_argument(
+        "--repo-name", help="Optional repo name used for file-path normalization"
+    )
+    ap.add_argument(
+        "--out", help="Optional output JSON path. If omitted, prints to stdout."
+    )
     args = ap.parse_args(argv)
 
     norm_p = Path(args.normalized_json).expanduser()
@@ -122,7 +138,9 @@ def main(argv: List[str] | None = None) -> None:  # pragma: no cover
     if not gt_p.exists():
         raise SystemExit(f"GT catalog not found: {gt_p}")
 
-    result = score_from_files(normalized_json=norm_p, gt_json=gt_p, repo_name=args.repo_name)
+    result = score_from_files(
+        normalized_json=norm_p, gt_json=gt_p, repo_name=args.repo_name
+    )
     out = json.dumps(result, indent=2, sort_keys=True)
     if args.out:
         out_path = Path(args.out).expanduser()

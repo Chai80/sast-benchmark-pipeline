@@ -16,7 +16,9 @@ from pipeline.analysis.utils.path_norm import normalize_file_path
 from ..common.findings import load_normalized_json
 
 
-def _is_excluded_by_prefix(file_path: str, *, repo_name: str, exclude_prefixes: Sequence[str]) -> bool:
+def _is_excluded_by_prefix(
+    file_path: str, *, repo_name: str, exclude_prefixes: Sequence[str]
+) -> bool:
     """Copy of the suite scope filter behavior (prefix-based)."""
     if not exclude_prefixes:
         return False
@@ -69,7 +71,9 @@ def _file_presence_from_normalized(
         for f in findings:
             if not isinstance(f, dict):
                 continue
-            fp = normalize_file_path(str(f.get("file_path") or ""), repo_name=ctx.repo_name)
+            fp = normalize_file_path(
+                str(f.get("file_path") or ""), repo_name=ctx.repo_name
+            )
             if not fp:
                 continue
             if apply_scope_filter and _is_excluded_by_prefix(
@@ -100,8 +104,12 @@ def build_gap_queue(
     """
 
     # --- Gap queue file presence (unfiltered vs filtered) ----------------
-    files_unfiltered = _file_presence_from_normalized(ctx, apply_mode_filter=False, apply_scope_filter=False)
-    files_mode_only = _file_presence_from_normalized(ctx, apply_mode_filter=True, apply_scope_filter=False)
+    files_unfiltered = _file_presence_from_normalized(
+        ctx, apply_mode_filter=False, apply_scope_filter=False
+    )
+    files_mode_only = _file_presence_from_normalized(
+        ctx, apply_mode_filter=True, apply_scope_filter=False
+    )
 
     # fully-filtered file presence can be derived from location_items
     files_full: Dict[str, bool] = {}
@@ -145,8 +153,12 @@ def build_gap_queue(
     gap_summary = {
         "gt_total": int(total_gt_items),
         "gap_total": int(gap_total),
-        "gap_rate": round(float(gap_total) / float(total_gt_items), 6) if total_gt_items else 0.0,
-        "by_reason": {k: int(v) for k, v in sorted(gap_counts.items(), key=lambda kv: kv[0])},
+        "gap_rate": round(float(gap_total) / float(total_gt_items), 6)
+        if total_gt_items
+        else 0.0,
+        "by_reason": {
+            k: int(v) for k, v in sorted(gap_counts.items(), key=lambda kv: kv[0])
+        },
     }
 
     return gap_rows, gap_summary

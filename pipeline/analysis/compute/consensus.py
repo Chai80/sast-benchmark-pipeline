@@ -55,7 +55,9 @@ def build_consensus_rows_and_summary(
                 "cluster_id": c.get("cluster_id"),
                 "tools": ",".join(c.get("tools") or []),
                 "tool_count": tool_count,
-                "agreement_fraction": (tool_count / total_tools) if total_tools else 0.0,
+                "agreement_fraction": (tool_count / total_tools)
+                if total_tools
+                else 0.0,
                 "consensus_level": _consensus_level(tool_count, total_tools),
                 "total_findings": len(items),
                 "max_severity": sev,
@@ -90,7 +92,10 @@ def build_consensus_rows_and_summary(
         "clusters": len(rows),
         "tools": int(total_tools),
         "top_tool_count": int(rows[0]["tool_count"]) if rows else 0,
-        "by_tool_count": {str(k): int(v) for k, v in sorted(by_tool_count.items(), key=lambda kv: kv[0])},
+        "by_tool_count": {
+            str(k): int(v)
+            for k, v in sorted(by_tool_count.items(), key=lambda kv: kv[0])
+        },
     }
 
     return rows, summary

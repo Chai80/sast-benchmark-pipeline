@@ -27,8 +27,12 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run Snyk Code scan and normalize results.")
     p.add_argument("--repo-url", help="Git repo URL to scan.")
     p.add_argument("--repo-path", help="Local repo path to scan (skip clone).")
-    p.add_argument("--repos-dir", default="repos", help="Repos base dir (default: repos).")
-    p.add_argument("--output-root", default="runs/snyk", help="Output root (default: runs/snyk).")
+    p.add_argument(
+        "--repos-dir", default="repos", help="Repos base dir (default: repos)."
+    )
+    p.add_argument(
+        "--output-root", default="runs/snyk", help="Output root (default: runs/snyk)."
+    )
     return p.parse_args()
 
 

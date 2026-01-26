@@ -11,7 +11,9 @@ from typing import Any, Dict, List, Sequence
 from pipeline.analysis.stages.common.severity import max_severity
 
 
-def build_location_matrix_rows(clusters: Sequence[Dict[str, Any]], *, tools: Sequence[str]) -> List[Dict[str, Any]]:
+def build_location_matrix_rows(
+    clusters: Sequence[Dict[str, Any]], *, tools: Sequence[str]
+) -> List[Dict[str, Any]]:
     """Build rows for `location_matrix.csv`/`location_matrix.json`.
 
     Parameters

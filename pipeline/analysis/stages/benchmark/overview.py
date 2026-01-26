@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
-from pipeline.analysis.compute.overview import analyze_latest_hotspots_for_repo, print_text_report
+from pipeline.analysis.compute.overview import analyze_latest_hotspots_for_repo
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage
 from pipeline.analysis.io.write_artifacts import write_json
 

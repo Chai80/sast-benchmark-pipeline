@@ -10,7 +10,9 @@ from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
 
 class TestSuiteTriageEvalBaselineIsolation(unittest.TestCase):
-    def _write_csv(self, path: Path, *, header: list[str], rows: list[dict[str, str]]) -> None:
+    def _write_csv(
+        self, path: Path, *, header: list[str], rows: list[dict[str, str]]
+    ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=header)
@@ -25,7 +27,9 @@ class TestSuiteTriageEvalBaselineIsolation(unittest.TestCase):
             "summary": {"total_gt_items": len(gt_ids)},
             "rows": [{"gt_id": gid} for gid in gt_ids],
         }
-        (gt_dir / "gt_score.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        (gt_dir / "gt_score.json").write_text(
+            json.dumps(payload, indent=2), encoding="utf-8"
+        )
 
     def test_baseline_ignores_triage_rank_when_calibration_exists(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -105,7 +109,9 @@ class TestSuiteTriageEvalBaselineIsolation(unittest.TestCase):
 
             # With calibration present, baseline should IGNORE triage_rank and fall back to
             # the baseline tie-breaks (file_path asc among tied rows), selecting a.py first.
-            self.assertAlmostEqual(float(macro["baseline"]["1"]["precision"]), 1.0, places=6)
+            self.assertAlmostEqual(
+                float(macro["baseline"]["1"]["precision"]), 1.0, places=6
+            )
 
 
 if __name__ == "__main__":

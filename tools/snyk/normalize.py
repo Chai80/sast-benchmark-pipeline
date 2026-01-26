@@ -8,8 +8,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-from tools.core import finalize_normalized_findings, load_cwe_to_owasp_map, read_json, write_json
-from tools.normalize.common import build_per_finding_metadata, build_scan_info, build_target_repo
+from tools.core import (
+    finalize_normalized_findings,
+    load_cwe_to_owasp_map,
+    read_json,
+    write_json,
+)
+from tools.normalize.common import (
+    build_per_finding_metadata,
+    build_scan_info,
+    build_target_repo,
+)
 from tools.normalize.classification import resolve_owasp_and_cwe
 
 from .sarif import (
@@ -57,7 +66,9 @@ def normalize_sarif(
 
     sarif = read_json(raw_sarif_path)
     runs = sarif.get("runs") or []
-    run0 = runs[0] if isinstance(runs, list) and runs and isinstance(runs[0], dict) else {}
+    run0 = (
+        runs[0] if isinstance(runs, list) and runs and isinstance(runs[0], dict) else {}
+    )
     rmap = rules_by_id(run0)
     results = run0.get("results") or []
 
@@ -75,7 +86,11 @@ def normalize_sarif(
         fp, start, end, line_content = primary_location(repo_path, res)
         sev = severity_from_level(res.get("level"))
         msg = res.get("message")
-        title = msg.get("text") if isinstance(msg, dict) and isinstance(msg.get("text"), str) else (rname or rid)
+        title = (
+            msg.get("text")
+            if isinstance(msg, dict) and isinstance(msg.get("text"), str)
+            else (rname or rid)
+        )
 
         tags = extract_tags(rdef, res)
         cwe_candidates = extract_cwe_candidates(res, rdef, tags)

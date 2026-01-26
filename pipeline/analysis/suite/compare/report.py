@@ -96,7 +96,9 @@ def _k_key(s: str) -> Tuple[int, str]:
 # ---------------------------------------------------------------------------
 
 
-def _append_policy_diff(rows: List[Dict[str, Any]], *, pol_a: Mapping[str, Any], pol_b: Mapping[str, Any]) -> None:
+def _append_policy_diff(
+    rows: List[Dict[str, Any]], *, pol_a: Mapping[str, Any], pol_b: Mapping[str, Any]
+) -> None:
     # Flat policy keys (keep CSV small)
     pol_fields: List[Tuple[str, Sequence[str]]] = [
         ("initial_gt_tolerance", ("initial_gt_tolerance",)),
@@ -110,7 +112,11 @@ def _append_policy_diff(rows: List[Dict[str, Any]], *, pol_a: Mapping[str, Any],
     for name, path in pol_fields:
         va = _pol_get(pol_a, path)
         vb = _pol_get(pol_b, path)
-        d = _delta(va, vb) if isinstance(va, (int, float, str)) and isinstance(vb, (int, float, str)) else None
+        d = (
+            _delta(va, vb)
+            if isinstance(va, (int, float, str)) and isinstance(vb, (int, float, str))
+            else None
+        )
         _append_row(rows, section="policy", name=name, a_val=va, b_val=vb, delta_val=d)
 
     # Selection warnings are lists; represent as JSON strings.
@@ -126,9 +132,17 @@ def _append_policy_diff(rows: List[Dict[str, Any]], *, pol_a: Mapping[str, Any],
     )
 
 
-def _append_scanner_config_diff(rows: List[Dict[str, Any]], *, sc_a: Mapping[str, Any], sc_b: Mapping[str, Any]) -> None:
+def _append_scanner_config_diff(
+    rows: List[Dict[str, Any]], *, sc_a: Mapping[str, Any], sc_b: Mapping[str, Any]
+) -> None:
     # Config/profile changes are the most common explanation for "tool drift".
-    _append_row(rows, section="scanner_config", name="profile", a_val=sc_a.get("profile"), b_val=sc_b.get("profile"))
+    _append_row(
+        rows,
+        section="scanner_config",
+        name="profile",
+        a_val=sc_a.get("profile"),
+        b_val=sc_b.get("profile"),
+    )
     _append_row(
         rows,
         section="scanner_config",
@@ -146,8 +160,16 @@ def _append_scanner_config_diff(rows: List[Dict[str, Any]], *, sc_a: Mapping[str
         delta_val=None,
     )
 
-    hashes_a = sc_a.get("config_receipt_hashes") if isinstance(sc_a.get("config_receipt_hashes"), Mapping) else {}
-    hashes_b = sc_b.get("config_receipt_hashes") if isinstance(sc_b.get("config_receipt_hashes"), Mapping) else {}
+    hashes_a = (
+        sc_a.get("config_receipt_hashes")
+        if isinstance(sc_a.get("config_receipt_hashes"), Mapping)
+        else {}
+    )
+    hashes_b = (
+        sc_b.get("config_receipt_hashes")
+        if isinstance(sc_b.get("config_receipt_hashes"), Mapping)
+        else {}
+    )
     tools_cfg = sorted(set(list(hashes_a.keys()) + list(hashes_b.keys())))
     for t in tools_cfg:
         _append_row(
@@ -161,19 +183,32 @@ def _append_scanner_config_diff(rows: List[Dict[str, Any]], *, sc_a: Mapping[str
         )
 
 
-def _append_dataset_counts(rows: List[Dict[str, Any]], *, ds_a: Mapping[str, Any], ds_b: Mapping[str, Any]) -> None:
+def _append_dataset_counts(
+    rows: List[Dict[str, Any]], *, ds_a: Mapping[str, Any], ds_b: Mapping[str, Any]
+) -> None:
     for key in ("clusters_total", "clusters_gt_pos", "clusters_gt_neg", "cases_seen"):
         va = ds_a.get(key)
         vb = ds_b.get(key)
-        _append_row(rows, section="dataset", name=key, a_val=va, b_val=vb, delta_val=_delta(va, vb))
+        _append_row(
+            rows,
+            section="dataset",
+            name=key,
+            a_val=va,
+            b_val=vb,
+            delta_val=_delta(va, vb),
+        )
 
 
-def _append_eval_diff(rows: List[Dict[str, Any]], *, eval_a: Mapping[str, Any], eval_b: Mapping[str, Any]) -> None:
+def _append_eval_diff(
+    rows: List[Dict[str, Any]], *, eval_a: Mapping[str, Any], eval_b: Mapping[str, Any]
+) -> None:
     for agg in ("micro", "macro"):
         obj_a = eval_a.get(agg) if isinstance(eval_a, dict) else {}
         obj_b = eval_b.get(agg) if isinstance(eval_b, dict) else {}
 
-        strat_keys = sorted(set(list(obj_a.keys()) + list(obj_b.keys())), key=_strategy_order)
+        strat_keys = sorted(
+            set(list(obj_a.keys()) + list(obj_b.keys())), key=_strategy_order
+        )
 
         for strat in strat_keys:
             ka_obj = obj_a.get(strat) if isinstance(obj_a, dict) else {}
@@ -217,7 +252,10 @@ def _append_eval_diff(rows: List[Dict[str, Any]], *, eval_a: Mapping[str, Any], 
 
 
 def _append_calibration_global(
-    rows: List[Dict[str, Any]], *, cal_w_a: Mapping[str, Any], cal_w_b: Mapping[str, Any]
+    rows: List[Dict[str, Any]],
+    *,
+    cal_w_a: Mapping[str, Any],
+    cal_w_b: Mapping[str, Any],
 ) -> None:
     tools = sorted(set(list(cal_w_a.keys()) + list(cal_w_b.keys())))
     for t in tools:
@@ -235,7 +273,10 @@ def _append_calibration_global(
 
 
 def _append_calibration_by_owasp(
-    rows: List[Dict[str, Any]], *, cal_by_owasp_a: Mapping[str, Any], cal_by_owasp_b: Mapping[str, Any]
+    rows: List[Dict[str, Any]],
+    *,
+    cal_by_owasp_a: Mapping[str, Any],
+    cal_by_owasp_b: Mapping[str, Any],
 ) -> None:
     # Best-effort per-OWASP weights
     owasp_ids = sorted(set(list(cal_by_owasp_a.keys()) + list(cal_by_owasp_b.keys())))
@@ -255,12 +296,19 @@ def _append_calibration_by_owasp(
             )
 
 
-def _append_tool_utility_diff(rows: List[Dict[str, Any]], *, util_a: Mapping[str, Any], util_b: Mapping[str, Any]) -> None:
+def _append_tool_utility_diff(
+    rows: List[Dict[str, Any]], *, util_a: Mapping[str, Any], util_b: Mapping[str, Any]
+) -> None:
     util_tools = sorted(set(list(util_a.keys()) + list(util_b.keys())))
     for t in util_tools:
         ra = util_a.get(t, {})
         rb = util_b.get(t, {})
-        for field in ("gt_ids_covered", "unique_gt_ids", "neg_clusters", "exclusive_neg_clusters"):
+        for field in (
+            "gt_ids_covered",
+            "unique_gt_ids",
+            "neg_clusters",
+            "exclusive_neg_clusters",
+        ):
             va = ra.get(field)
             vb = rb.get(field)
             _append_row(
@@ -275,10 +323,13 @@ def _append_tool_utility_diff(rows: List[Dict[str, Any]], *, util_a: Mapping[str
 
 
 def _append_tool_marginal_diff(
-    rows: List[Dict[str, Any]], *, marg_a: Mapping[Tuple[str, str, int], Any], marg_b: Mapping[Tuple[str, str, int], Any]
+    rows: List[Dict[str, Any]],
+    *,
+    marg_a: Mapping[Tuple[str, str, int], Any],
+    marg_b: Mapping[Tuple[str, str, int], Any],
 ) -> None:
     keys = sorted(set(list(marg_a.keys()) + list(marg_b.keys())))
-    for (tool, strat, k) in keys:
+    for tool, strat, k in keys:
         ra = marg_a.get((tool, strat, k), {})
         rb = marg_b.get((tool, strat, k), {})
         for field in ("delta_precision", "delta_gt_coverage", "delta_neg_in_topk"):
@@ -326,15 +377,27 @@ def _build_alerts(
         pass
 
     try:
-        hashes_a = a.scanner_config.get("config_receipt_hashes") if isinstance(a.scanner_config, Mapping) else {}
-        hashes_b = b.scanner_config.get("config_receipt_hashes") if isinstance(b.scanner_config, Mapping) else {}
+        hashes_a = (
+            a.scanner_config.get("config_receipt_hashes")
+            if isinstance(a.scanner_config, Mapping)
+            else {}
+        )
+        hashes_b = (
+            b.scanner_config.get("config_receipt_hashes")
+            if isinstance(b.scanner_config, Mapping)
+            else {}
+        )
         if isinstance(hashes_a, Mapping) and isinstance(hashes_b, Mapping):
             changed_tools: List[str] = []
             for t in sorted(set(list(hashes_a.keys()) + list(hashes_b.keys()))):
-                if json.dumps(hashes_a.get(t) or [], sort_keys=True) != json.dumps(hashes_b.get(t) or [], sort_keys=True):
+                if json.dumps(hashes_a.get(t) or [], sort_keys=True) != json.dumps(
+                    hashes_b.get(t) or [], sort_keys=True
+                ):
                     changed_tools.append(str(t))
             if changed_tools:
-                alerts.append(f"Scanner config signature changed for tools: {changed_tools}")
+                alerts.append(
+                    f"Scanner config signature changed for tools: {changed_tools}"
+                )
     except Exception:
         pass
 
@@ -348,7 +411,15 @@ def _build_alerts(
 
 def _append_alert_rows(rows: List[Dict[str, Any]], *, alerts: Sequence[str]) -> None:
     for msg in alerts:
-        _append_row(rows, section="alerts", name="alert", a_val="", b_val="", delta_val=None, notes=str(msg))
+        _append_row(
+            rows,
+            section="alerts",
+            name="alert",
+            a_val="",
+            b_val="",
+            delta_val=None,
+            notes=str(msg),
+        )
 
 
 _SECTION_ORDER: Dict[str, float] = {
@@ -427,7 +498,10 @@ def build_suite_compare_report(
             missing.append(f"{a.suite_id}: triage_eval_summary.json")
         if b.eval_summary is None:
             missing.append(f"{b.suite_id}: triage_eval_summary.json")
-        raise SystemExit("Cannot compare suites; missing required eval summary: " + ", ".join(missing))
+        raise SystemExit(
+            "Cannot compare suites; missing required eval summary: "
+            + ", ".join(missing)
+        )
 
     # Extract key inputs.
     pol_a = _extract_gt_policy(a.qa_manifest)
@@ -460,14 +534,18 @@ def build_suite_compare_report(
     _append_dataset_counts(rows_csv, ds_a=ds_a, ds_b=ds_b)
     _append_eval_diff(rows_csv, eval_a=eval_a, eval_b=eval_b)
     _append_calibration_global(rows_csv, cal_w_a=cal_w_a, cal_w_b=cal_w_b)
-    _append_calibration_by_owasp(rows_csv, cal_by_owasp_a=cal_by_owasp_a, cal_by_owasp_b=cal_by_owasp_b)
+    _append_calibration_by_owasp(
+        rows_csv, cal_by_owasp_a=cal_by_owasp_a, cal_by_owasp_b=cal_by_owasp_b
+    )
     _append_tool_utility_diff(rows_csv, util_a=util_a, util_b=util_b)
 
     if include_tool_marginal and marg_a and marg_b:
         _append_tool_marginal_diff(rows_csv, marg_a=marg_a, marg_b=marg_b)
 
     # --- Alerts ------------------------------------------------------
-    alerts = _build_alerts(a=a, b=b, pol_a=pol_a, pol_b=pol_b, warn_a=warn_a, warn_b=warn_b)
+    alerts = _build_alerts(
+        a=a, b=b, pol_a=pol_a, pol_b=pol_b, warn_a=warn_a, warn_b=warn_b
+    )
     _append_alert_rows(rows_csv, alerts=alerts)
 
     # Stable sort for CSV.
@@ -483,23 +561,43 @@ def build_suite_compare_report(
             "suite_id": a.suite_id,
             "suite_dir": str(a.suite_dir),
             "suite_json_path": str(a.suite_json_path),
-            "qa_manifest_path": "" if a.qa_manifest_path is None else str(a.qa_manifest_path),
-            "eval_summary_path": "" if a.eval_summary_path is None else str(a.eval_summary_path),
+            "qa_manifest_path": ""
+            if a.qa_manifest_path is None
+            else str(a.qa_manifest_path),
+            "eval_summary_path": ""
+            if a.eval_summary_path is None
+            else str(a.eval_summary_path),
             "dataset_csv": "" if a.dataset_csv is None else str(a.dataset_csv),
-            "tool_utility_csv": "" if a.tool_utility_csv is None else str(a.tool_utility_csv),
-            "calibration_json": "" if a.calibration_json is None else str(a.calibration_json),
-            "tool_marginal_csv": "" if a.tool_marginal_csv is None else str(a.tool_marginal_csv),
+            "tool_utility_csv": ""
+            if a.tool_utility_csv is None
+            else str(a.tool_utility_csv),
+            "calibration_json": ""
+            if a.calibration_json is None
+            else str(a.calibration_json),
+            "tool_marginal_csv": ""
+            if a.tool_marginal_csv is None
+            else str(a.tool_marginal_csv),
         },
         "suite_b": {
             "suite_id": b.suite_id,
             "suite_dir": str(b.suite_dir),
             "suite_json_path": str(b.suite_json_path),
-            "qa_manifest_path": "" if b.qa_manifest_path is None else str(b.qa_manifest_path),
-            "eval_summary_path": "" if b.eval_summary_path is None else str(b.eval_summary_path),
+            "qa_manifest_path": ""
+            if b.qa_manifest_path is None
+            else str(b.qa_manifest_path),
+            "eval_summary_path": ""
+            if b.eval_summary_path is None
+            else str(b.eval_summary_path),
             "dataset_csv": "" if b.dataset_csv is None else str(b.dataset_csv),
-            "tool_utility_csv": "" if b.tool_utility_csv is None else str(b.tool_utility_csv),
-            "calibration_json": "" if b.calibration_json is None else str(b.calibration_json),
-            "tool_marginal_csv": "" if b.tool_marginal_csv is None else str(b.tool_marginal_csv),
+            "tool_utility_csv": ""
+            if b.tool_utility_csv is None
+            else str(b.tool_utility_csv),
+            "calibration_json": ""
+            if b.calibration_json is None
+            else str(b.calibration_json),
+            "tool_marginal_csv": ""
+            if b.tool_marginal_csv is None
+            else str(b.tool_marginal_csv),
         },
         "warnings": {
             "suite_a": list(sorted(set(warn_a))),
@@ -537,7 +635,17 @@ def build_suite_compare_report(
     write_csv(
         out_csv,
         rows_csv,
-        fieldnames=["section", "name", "tool", "strategy", "k", "a", "b", "delta", "notes"],
+        fieldnames=[
+            "section",
+            "name",
+            "tool",
+            "strategy",
+            "k",
+            "a",
+            "b",
+            "delta",
+            "notes",
+        ],
     )
 
     return {

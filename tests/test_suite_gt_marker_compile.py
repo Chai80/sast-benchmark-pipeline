@@ -64,7 +64,9 @@ class TestSuiteGTMarkerCompilation(unittest.TestCase):
                 suite_id,
             ]
 
-            result = subprocess.run(cmd, cwd=str(REPO_ROOT), text=True, capture_output=True)
+            result = subprocess.run(
+                cmd, cwd=str(REPO_ROOT), text=True, capture_output=True
+            )
 
             if result.returncode != 0:
                 raise AssertionError(
@@ -76,7 +78,10 @@ class TestSuiteGTMarkerCompilation(unittest.TestCase):
 
             gt_dir = suite_root / suite_id / "cases" / "case-one" / "gt"
             self.assertTrue(gt_dir.exists(), "Expected <case_dir>/gt/ directory")
-            self.assertTrue((gt_dir / "gt_catalog.yaml").exists(), "Expected compiled gt_catalog.yaml")
+            self.assertTrue(
+                (gt_dir / "gt_catalog.yaml").exists(),
+                "Expected compiled gt_catalog.yaml",
+            )
 
             # The compiled catalog should include our marker id.
             yaml_text = (gt_dir / "gt_catalog.yaml").read_text(encoding="utf-8")

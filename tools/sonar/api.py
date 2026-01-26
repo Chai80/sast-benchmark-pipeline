@@ -25,7 +25,9 @@ def validate_sonarcloud_credentials(cfg: SonarConfig) -> None:
     """Validate token and organization with simple SonarCloud API calls."""
     headers = _auth_headers(cfg)
 
-    resp = requests.get(f"{cfg.host}/api/authentication/validate", headers=headers, timeout=10)
+    resp = requests.get(
+        f"{cfg.host}/api/authentication/validate", headers=headers, timeout=10
+    )
     resp.raise_for_status()
     if not resp.json().get("valid", False):
         raise RuntimeError("SonarCloud token appears to be invalid (valid=false).")
@@ -43,7 +45,6 @@ def validate_sonarcloud_credentials(cfg: SonarConfig) -> None:
             f"No organization found for key '{cfg.org}'. "
             "Double-check SONAR_ORG in the SonarCloud UI."
         )
-
 
 
 def fetch_ce_task(cfg: SonarConfig, task_id: str) -> Optional[Dict[str, Any]]:
@@ -93,10 +94,15 @@ def component_exists(cfg: SonarConfig, project_key: str) -> bool:
     if resp.ok:
         return True
 
-    print(f"⚠️ components/show HTTP {resp.status_code} for {project_key}: {resp.text[:120]}")
+    print(
+        f"⚠️ components/show HTTP {resp.status_code} for {project_key}: {resp.text[:120]}"
+    )
     return False
 
-def wait_for_ce_success(cfg: SonarConfig, project_key: str, timeout_sec: int = 300) -> None:
+
+def wait_for_ce_success(
+    cfg: SonarConfig, project_key: str, timeout_sec: int = 300
+) -> None:
     """Best-effort wait for Compute Engine to finish the latest analysis."""
     ce_url = f"{cfg.host}/api/ce/component"
     headers = _auth_headers(cfg)
@@ -114,7 +120,9 @@ def wait_for_ce_success(cfg: SonarConfig, project_key: str, timeout_sec: int = 3
             print(f"⚠️ CE: project '{project_key}' not found (404). Skipping wait.")
             return
         if not resp.ok:
-            print(f"⚠️ CE status fetch failed: HTTP {resp.status_code} {resp.text[:120]}")
+            print(
+                f"⚠️ CE status fetch failed: HTTP {resp.status_code} {resp.text[:120]}"
+            )
             return
 
         data = resp.json()
@@ -130,7 +138,7 @@ def wait_for_ce_success(cfg: SonarConfig, project_key: str, timeout_sec: int = 3
                 task_id = current.get("id")
                 if task_id:
                     payload = fetch_ce_task(cfg, task_id) or {}
-                    task = (payload.get("task") or {})
+                    task = payload.get("task") or {}
                     if task.get("errorMessage"):
                         print(f"🧾 CE errorMessage: {task['errorMessage']}")
                 return
@@ -146,7 +154,9 @@ def wait_for_ce_success(cfg: SonarConfig, project_key: str, timeout_sec: int = 3
         time.sleep(5)
 
 
-def fetch_all_issues_for_project(cfg: SonarConfig, project_key: str) -> List[Dict[str, Any]]:
+def fetch_all_issues_for_project(
+    cfg: SonarConfig, project_key: str
+) -> List[Dict[str, Any]]:
     """Fetch all issues for a project via /api/issues/search (paginated)."""
     headers = _auth_headers(cfg)
     all_issues: List[Dict[str, Any]] = []
@@ -173,15 +183,22 @@ def fetch_all_issues_for_project(cfg: SonarConfig, project_key: str) -> List[Dic
                 timeout=30,
             )
         except requests.RequestException as e:
-            print(f"⚠️ Issues request error page {page}: {e}. Returning partial results.")
+            print(
+                f"⚠️ Issues request error page {page}: {e}. Returning partial results."
+            )
             break
 
         if resp.status_code == 404:
             print(f"⚠️ Issues search: project '{project_key}' not found (404).")
             break
 
-        if resp.status_code == 400 and "Can return only the first 10000 results" in resp.text:
-            print(f"⚠️ Hit SonarCloud 10k issue limit. Returning first {len(all_issues)} issues.")
+        if (
+            resp.status_code == 400
+            and "Can return only the first 10000 results" in resp.text
+        ):
+            print(
+                f"⚠️ Hit SonarCloud 10k issue limit. Returning first {len(all_issues)} issues."
+            )
             break
 
         if 500 <= resp.status_code < 600:
@@ -189,7 +206,9 @@ def fetch_all_issues_for_project(cfg: SonarConfig, project_key: str) -> List[Dic
             break
 
         if not resp.ok:
-            print(f"⚠️ HTTP {resp.status_code}: {resp.text[:200]!r}. Returning partial results.")
+            print(
+                f"⚠️ HTTP {resp.status_code}: {resp.text[:200]!r}. Returning partial results."
+            )
             break
 
         try:
@@ -208,13 +227,20 @@ def fetch_all_issues_for_project(cfg: SonarConfig, project_key: str) -> List[Dic
     return all_issues
 
 
-def fetch_rule_show(cfg: SonarConfig, rule_key: str, organization: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def fetch_rule_show(
+    cfg: SonarConfig, rule_key: str, organization: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
     """Fetch /api/rules/show for a rule_key. Returns JSON dict or None on failure."""
     headers = _auth_headers(cfg)
     params: Dict[str, Any] = {"key": rule_key, "organization": organization or cfg.org}
 
     try:
-        resp = requests.get(f"{cfg.host.rstrip('/')}/api/rules/show", params=params, headers=headers, timeout=15)
+        resp = requests.get(
+            f"{cfg.host.rstrip('/')}/api/rules/show",
+            params=params,
+            headers=headers,
+            timeout=15,
+        )
     except requests.RequestException as e:
         print(f"⚠️ Failed to fetch rule metadata for {rule_key}: {e}")
         return None

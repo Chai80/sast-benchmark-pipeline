@@ -141,7 +141,9 @@ def prepare_run_paths(
     )
 
 
-def discover_repo_dir(output_root: Path, prefer: Optional[str] = None) -> Optional[Path]:
+def discover_repo_dir(
+    output_root: Path, prefer: Optional[str] = None
+) -> Optional[Path]:
     """Discover the per-tool *run root* directory inside a case.
 
     Supports two layouts:
@@ -156,7 +158,9 @@ def discover_repo_dir(output_root: Path, prefer: Optional[str] = None) -> Option
         return None
 
     # v2: output_root contains run_id directories directly.
-    run_dirs = [d for d in output_root.iterdir() if d.is_dir() and RUN_ID_RE.match(d.name)]
+    run_dirs = [
+        d for d in output_root.iterdir() if d.is_dir() and RUN_ID_RE.match(d.name)
+    ]
     if run_dirs:
         return output_root
 
@@ -213,7 +217,9 @@ def find_latest_run_dir(*, runs_dir: Path, tool: str, repo_name: str) -> Path:
     # v1: tool_dir/<repo_name>/<run_id>
     repo_dir = discover_repo_dir(tool_dir, prefer=repo_name)
     if repo_dir:
-        run_dirs = [d for d in repo_dir.iterdir() if d.is_dir() and RUN_ID_RE.match(d.name)]
+        run_dirs = [
+            d for d in repo_dir.iterdir() if d.is_dir() and RUN_ID_RE.match(d.name)
+        ]
         if run_dirs:
             return max(run_dirs, key=lambda p: p.name)
 

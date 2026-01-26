@@ -6,7 +6,9 @@ from itertools import combinations
 from typing import Any, Dict, List, Sequence
 
 
-def build_pairwise_agreement_rows(clusters: Sequence[Dict[str, Any]], *, tools: Sequence[str]) -> List[Dict[str, Any]]:
+def build_pairwise_agreement_rows(
+    clusters: Sequence[Dict[str, Any]], *, tools: Sequence[str]
+) -> List[Dict[str, Any]]:
     """Compute pairwise Jaccard similarity across tools over clustered locations."""
 
     tools_l = list(tools)

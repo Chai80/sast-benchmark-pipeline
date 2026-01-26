@@ -114,8 +114,16 @@ def _compute_deltas_by_case(
         base_cov = _opt_float(base.get("gt_coverage"))
         strat_cov = _opt_float(r.get("gt_coverage"))
 
-        prec_delta = (strat_prec - base_prec) if (base_prec is not None and strat_prec is not None) else None
-        cov_delta = (strat_cov - base_cov) if (base_cov is not None and strat_cov is not None) else None
+        prec_delta = (
+            (strat_prec - base_prec)
+            if (base_prec is not None and strat_prec is not None)
+            else None
+        )
+        cov_delta = (
+            (strat_cov - base_cov)
+            if (base_cov is not None and strat_cov is not None)
+            else None
+        )
 
         out.append(
             {
@@ -126,16 +134,34 @@ def _compute_deltas_by_case(
                 "n_clusters": _to_int(r.get("n_clusters"), 0),
                 "has_gt": _to_int(r.get("has_gt"), 0),
                 "gt_total": _to_int(r.get("gt_total"), 0),
-                "baseline_precision": "" if base_prec is None else round(float(base_prec), 6),
-                "strategy_precision": "" if strat_prec is None else round(float(strat_prec), 6),
-                "precision_delta": "" if prec_delta is None else round(float(prec_delta), 6),
-                "baseline_gt_coverage": "" if base_cov is None else round(float(base_cov), 6),
-                "strategy_gt_coverage": "" if strat_cov is None else round(float(strat_cov), 6),
-                "gt_coverage_delta": "" if cov_delta is None else round(float(cov_delta), 6),
+                "baseline_precision": ""
+                if base_prec is None
+                else round(float(base_prec), 6),
+                "strategy_precision": ""
+                if strat_prec is None
+                else round(float(strat_prec), 6),
+                "precision_delta": ""
+                if prec_delta is None
+                else round(float(prec_delta), 6),
+                "baseline_gt_coverage": ""
+                if base_cov is None
+                else round(float(base_cov), 6),
+                "strategy_gt_coverage": ""
+                if strat_cov is None
+                else round(float(strat_cov), 6),
+                "gt_coverage_delta": ""
+                if cov_delta is None
+                else round(float(cov_delta), 6),
             }
         )
 
-    out.sort(key=lambda r: (str(r.get("case_id") or ""), str(r.get("strategy") or ""), int(r.get("k") or 0)))
+    out.sort(
+        key=lambda r: (
+            str(r.get("case_id") or ""),
+            str(r.get("strategy") or ""),
+            int(r.get("k") or 0),
+        )
+    )
     return out
 
 
@@ -167,7 +193,9 @@ def _compute_macro_micro(
             macro[strat][str(k)] = {
                 "precision": None if p_n == 0 else round(float(p_sum) / float(p_n), 6),
                 "precision_cases": int(p_n),
-                "gt_coverage": None if c_n == 0 else round(float(c_sum) / float(c_n), 6),
+                "gt_coverage": None
+                if c_n == 0
+                else round(float(c_sum) / float(c_n), 6),
                 "gt_coverage_cases": int(c_n),
             }
 
@@ -180,7 +208,9 @@ def _compute_macro_micro(
                 "precision": None if denom == 0 else round(float(tp) / float(denom), 6),
                 "tp_at_k": int(tp),
                 "denom_at_k": int(denom),
-                "gt_coverage": None if total_gt == 0 else round(float(covered) / float(total_gt), 6),
+                "gt_coverage": None
+                if total_gt == 0
+                else round(float(covered) / float(total_gt), 6),
                 "gt_covered_at_k": int(covered),
                 "gt_total": int(total_gt),
             }
@@ -215,11 +245,15 @@ def _compute_delta_vs_baseline(
 
             m_out[kk] = {
                 "precision": _delta(cur_m.get("precision"), base_m.get("precision")),
-                "gt_coverage": _delta(cur_m.get("gt_coverage"), base_m.get("gt_coverage")),
+                "gt_coverage": _delta(
+                    cur_m.get("gt_coverage"), base_m.get("gt_coverage")
+                ),
             }
             mi_out[kk] = {
                 "precision": _delta(cur_mi.get("precision"), base_mi.get("precision")),
-                "gt_coverage": _delta(cur_mi.get("gt_coverage"), base_mi.get("gt_coverage")),
+                "gt_coverage": _delta(
+                    cur_mi.get("gt_coverage"), base_mi.get("gt_coverage")
+                ),
             }
 
         out["macro"][strat] = m_out
@@ -243,7 +277,9 @@ def _compute_tool_utility(
         if len(tools) == 1:
             unique_gt_by_tool[next(iter(tools))] += 1
 
-    all_tools = sorted(set(list(total_gt_by_tool.keys()) + list(tool_neg_clusters.keys())))
+    all_tools = sorted(
+        set(list(total_gt_by_tool.keys()) + list(tool_neg_clusters.keys()))
+    )
 
     tool_rows: List[Dict[str, Any]] = []
     for t in all_tools:
@@ -296,7 +332,7 @@ def _drop_tool_from_row(row: Dict[str, str], tool: str) -> Optional[Dict[str, st
     if tool not in tools:
         return dict(row)
 
-    counts = _parse_tool_counts_json(str(row.get('tool_counts_json') or ''), tools)
+    counts = _parse_tool_counts_json(str(row.get("tool_counts_json") or ""), tools)
     counts.pop(tool, None)
     counts = {k: int(v) for k, v in counts.items() if int(v) > 0}
     if not counts:
@@ -305,15 +341,15 @@ def _drop_tool_from_row(row: Dict[str, str], tool: str) -> Optional[Dict[str, st
     rr = dict(row)
     new_tools = sorted(counts.keys())
 
-    rr['tool_counts_json'] = _stable_tool_counts_json(counts)
-    rr['tools_json'] = json.dumps(new_tools, ensure_ascii=False)
-    rr['tools'] = ','.join(new_tools)
-    rr['tool_count'] = str(int(len(new_tools)))
-    rr['finding_count'] = str(int(sum(int(v) for v in counts.values())))
+    rr["tool_counts_json"] = _stable_tool_counts_json(counts)
+    rr["tools_json"] = json.dumps(new_tools, ensure_ascii=False)
+    rr["tools"] = ",".join(new_tools)
+    rr["tool_count"] = str(int(len(new_tools)))
+    rr["finding_count"] = str(int(sum(int(v) for v in counts.values())))
 
     # Force re-score under calibrated ranking.
-    if 'triage_score_v1' in rr:
-        rr['triage_score_v1'] = ''
+    if "triage_score_v1" in rr:
+        rr["triage_score_v1"] = ""
 
     return rr
 
@@ -325,16 +361,18 @@ def _build_marginal_strategies(cal: Optional[Dict[str, Any]]) -> Dict[str, RankF
     from .strategies import _rank_agreement, _rank_baseline, _rank_calibrated
 
     strategies_marginal: Dict[str, RankFn] = {
-        'baseline': (lambda rows: _rank_baseline(rows, use_triage_rank=False)),
-        'agreement': _rank_agreement,
+        "baseline": (lambda rows: _rank_baseline(rows, use_triage_rank=False)),
+        "agreement": _rank_agreement,
     }
 
     if cal:
 
-        def _rank_cal_m(rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal) -> List[Dict[str, str]]:
+        def _rank_cal_m(
+            rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal
+        ) -> List[Dict[str, str]]:
             return _rank_calibrated(rows, cal=_cal)
 
-        strategies_marginal['calibrated'] = _rank_cal_m
+        strategies_marginal["calibrated"] = _rank_cal_m
 
     return strategies_marginal
 
@@ -351,7 +389,8 @@ def _micro_totals_for_rows(
     """Micro totals used for marginal value comparison (precision/coverage/neg)."""
 
     out: Dict[int, Dict[str, int]] = {
-        int(k): {'tp': 0, 'denom': 0, 'covered': 0, 'gt_total': 0, 'neg': 0} for k in k_list
+        int(k): {"tp": 0, "denom": 0, "covered": 0, "gt_total": 0, "neg": 0}
+        for k in k_list
     }
 
     for cid in case_ids:
@@ -367,8 +406,8 @@ def _micro_totals_for_rows(
             k_eff = min(kk, len(ordered))
             top = ordered[:k_eff]
 
-            tp = sum(1 for r in top if _to_int(r.get('gt_overlap'), 0) == 1)
-            neg = sum(1 for r in top if _to_int(r.get('gt_overlap'), 0) == 0)
+            tp = sum(1 for r in top if _to_int(r.get("gt_overlap"), 0) == 1)
+            neg = sum(1 for r in top if _to_int(r.get("gt_overlap"), 0) == 0)
 
             covered_ids: Set[str] = set()
             if gt_total > 0:
@@ -376,26 +415,26 @@ def _micro_totals_for_rows(
                     covered_ids.update(_gt_ids_for_row(r))
             covered = int(len(covered_ids)) if gt_total > 0 else 0
 
-            out[kk]['tp'] += int(tp)
-            out[kk]['denom'] += int(k_eff)
-            out[kk]['neg'] += int(neg)
+            out[kk]["tp"] += int(tp)
+            out[kk]["denom"] += int(k_eff)
+            out[kk]["neg"] += int(neg)
             if gt_total > 0:
-                out[kk]['covered'] += int(covered)
-                out[kk]['gt_total'] += int(gt_total)
+                out[kk]["covered"] += int(covered)
+                out[kk]["gt_total"] += int(gt_total)
 
     return out
 
 
 def _metrics_from_totals(t: Mapping[str, int]) -> Dict[str, Any]:
-    denom = int(t.get('denom', 0) or 0)
-    gt_total = int(t.get('gt_total', 0) or 0)
-    tp = int(t.get('tp', 0) or 0)
-    covered = int(t.get('covered', 0) or 0)
-    neg = int(t.get('neg', 0) or 0)
+    denom = int(t.get("denom", 0) or 0)
+    gt_total = int(t.get("gt_total", 0) or 0)
+    tp = int(t.get("tp", 0) or 0)
+    covered = int(t.get("covered", 0) or 0)
+    neg = int(t.get("neg", 0) or 0)
     return {
-        'precision': None if denom == 0 else float(tp) / float(denom),
-        'gt_coverage': None if gt_total == 0 else float(covered) / float(gt_total),
-        'neg_in_topk': int(neg),
+        "precision": None if denom == 0 else float(tp) / float(denom),
+        "gt_coverage": None if gt_total == 0 else float(covered) / float(gt_total),
+        "neg_in_topk": int(neg),
     }
 
 
@@ -411,10 +450,10 @@ def _compute_tool_cluster_counts(
     # Pre-seed keys so missing tools still appear with zeros.
     out: Dict[str, Dict[str, int]] = {
         str(t): {
-            'clusters_with_tool': 0,
-            'clusters_exclusive_total': 0,
-            'clusters_exclusive_pos': 0,
-            'clusters_exclusive_neg': 0,
+            "clusters_with_tool": 0,
+            "clusters_exclusive_total": 0,
+            "clusters_exclusive_pos": 0,
+            "clusters_exclusive_neg": 0,
         }
         for t in all_tools
     }
@@ -422,7 +461,7 @@ def _compute_tool_cluster_counts(
     for cid in case_ids:
         if not case_has_gt.get(cid, False):
             continue
-        for r in (by_case.get(cid) or []):
+        for r in by_case.get(cid) or []:
             tools = _tools_for_row(r)
             if not tools:
                 continue
@@ -431,28 +470,28 @@ def _compute_tool_cluster_counts(
                 tt = str(t)
                 if tt not in out:
                     out[tt] = {
-                        'clusters_with_tool': 0,
-                        'clusters_exclusive_total': 0,
-                        'clusters_exclusive_pos': 0,
-                        'clusters_exclusive_neg': 0,
+                        "clusters_with_tool": 0,
+                        "clusters_exclusive_total": 0,
+                        "clusters_exclusive_pos": 0,
+                        "clusters_exclusive_neg": 0,
                     }
-                out[tt]['clusters_with_tool'] += 1
+                out[tt]["clusters_with_tool"] += 1
 
             if len(tools) == 1:
                 tt = str(tools[0])
                 if tt not in out:
                     out[tt] = {
-                        'clusters_with_tool': 0,
-                        'clusters_exclusive_total': 0,
-                        'clusters_exclusive_pos': 0,
-                        'clusters_exclusive_neg': 0,
+                        "clusters_with_tool": 0,
+                        "clusters_exclusive_total": 0,
+                        "clusters_exclusive_pos": 0,
+                        "clusters_exclusive_neg": 0,
                     }
 
-                out[tt]['clusters_exclusive_total'] += 1
-                if _to_int(r.get('gt_overlap'), 0) == 1:
-                    out[tt]['clusters_exclusive_pos'] += 1
+                out[tt]["clusters_exclusive_total"] += 1
+                if _to_int(r.get("gt_overlap"), 0) == 1:
+                    out[tt]["clusters_exclusive_pos"] += 1
                 else:
-                    out[tt]['clusters_exclusive_neg'] += 1
+                    out[tt]["clusters_exclusive_neg"] += 1
 
     # Normalize types
     for t, d in out.items():
@@ -504,40 +543,62 @@ def _build_tool_marginal_rows_for_tool(
             full_m = _metrics_from_totals(full_totals.get(strat, {}).get(kk, {}))
             drop_m = _metrics_from_totals(drop_totals.get(strat, {}).get(kk, {}))
 
-            p_full = full_m.get('precision')
-            p_drop = drop_m.get('precision')
-            c_full = full_m.get('gt_coverage')
-            c_drop = drop_m.get('gt_coverage')
+            p_full = full_m.get("precision")
+            p_drop = drop_m.get("precision")
+            c_full = full_m.get("gt_coverage")
+            c_drop = drop_m.get("gt_coverage")
 
-            dp = (float(p_drop) - float(p_full)) if (p_full is not None and p_drop is not None) else None
-            dc = (float(c_drop) - float(c_full)) if (c_full is not None and c_drop is not None) else None
+            dp = (
+                (float(p_drop) - float(p_full))
+                if (p_full is not None and p_drop is not None)
+                else None
+            )
+            dc = (
+                (float(c_drop) - float(c_full))
+                if (c_full is not None and c_drop is not None)
+                else None
+            )
 
-            neg_full = int(full_m.get('neg_in_topk') or 0)
-            neg_drop = int(drop_m.get('neg_in_topk') or 0)
+            neg_full = int(full_m.get("neg_in_topk") or 0)
+            neg_drop = int(drop_m.get("neg_in_topk") or 0)
 
             rows.append(
                 {
-                    'suite_id': sid,
-                    'tool': str(tool),
-                    'strategy': str(strat),
-                    'k': int(kk),
-                    'precision_full': '' if p_full is None else round(float(p_full), 6),
-                    'precision_drop': '' if p_drop is None else round(float(p_drop), 6),
-                    'delta_precision': '' if dp is None else round(float(dp), 6),
-                    'gt_coverage_full': '' if c_full is None else round(float(c_full), 6),
-                    'gt_coverage_drop': '' if c_drop is None else round(float(c_drop), 6),
-                    'delta_gt_coverage': '' if dc is None else round(float(dc), 6),
-                    'neg_in_topk_full': int(neg_full),
-                    'neg_in_topk_drop': int(neg_drop),
-                    'delta_neg_in_topk': int(neg_drop) - int(neg_full),
-                    'gt_ids_covered': int(util.get('gt_ids_covered') or 0),
-                    'unique_gt_ids': int(util.get('unique_gt_ids') or 0),
-                    'neg_clusters': int(util.get('neg_clusters') or 0),
-                    'exclusive_neg_clusters': int(util.get('exclusive_neg_clusters') or 0),
-                    'clusters_with_tool': int(cluster_counts.get('clusters_with_tool') or 0),
-                    'clusters_exclusive_total': int(cluster_counts.get('clusters_exclusive_total') or 0),
-                    'clusters_exclusive_pos': int(cluster_counts.get('clusters_exclusive_pos') or 0),
-                    'clusters_exclusive_neg': int(cluster_counts.get('clusters_exclusive_neg') or 0),
+                    "suite_id": sid,
+                    "tool": str(tool),
+                    "strategy": str(strat),
+                    "k": int(kk),
+                    "precision_full": "" if p_full is None else round(float(p_full), 6),
+                    "precision_drop": "" if p_drop is None else round(float(p_drop), 6),
+                    "delta_precision": "" if dp is None else round(float(dp), 6),
+                    "gt_coverage_full": ""
+                    if c_full is None
+                    else round(float(c_full), 6),
+                    "gt_coverage_drop": ""
+                    if c_drop is None
+                    else round(float(c_drop), 6),
+                    "delta_gt_coverage": "" if dc is None else round(float(dc), 6),
+                    "neg_in_topk_full": int(neg_full),
+                    "neg_in_topk_drop": int(neg_drop),
+                    "delta_neg_in_topk": int(neg_drop) - int(neg_full),
+                    "gt_ids_covered": int(util.get("gt_ids_covered") or 0),
+                    "unique_gt_ids": int(util.get("unique_gt_ids") or 0),
+                    "neg_clusters": int(util.get("neg_clusters") or 0),
+                    "exclusive_neg_clusters": int(
+                        util.get("exclusive_neg_clusters") or 0
+                    ),
+                    "clusters_with_tool": int(
+                        cluster_counts.get("clusters_with_tool") or 0
+                    ),
+                    "clusters_exclusive_total": int(
+                        cluster_counts.get("clusters_exclusive_total") or 0
+                    ),
+                    "clusters_exclusive_pos": int(
+                        cluster_counts.get("clusters_exclusive_pos") or 0
+                    ),
+                    "clusters_exclusive_neg": int(
+                        cluster_counts.get("clusters_exclusive_neg") or 0
+                    ),
                 }
             )
 
@@ -568,7 +629,9 @@ def _compute_tool_marginal_value(
     if not cases_with_gt:
         return []
 
-    tool_utility_by_tool: Dict[str, Dict[str, Any]] = {str(r.get('tool') or ''): dict(r) for r in tool_rows}
+    tool_utility_by_tool: Dict[str, Dict[str, Any]] = {
+        str(r.get("tool") or ""): dict(r) for r in tool_rows
+    }
 
     strategies_marginal = _build_marginal_strategies(cal)
 
@@ -593,7 +656,9 @@ def _compute_tool_marginal_value(
     tool_marginal_rows: List[Dict[str, Any]] = []
 
     for tool in all_tools:
-        dropped_by_case = _drop_tool_by_case(by_case=by_case, tool=str(tool), case_ids=case_ids, case_has_gt=case_has_gt)
+        dropped_by_case = _drop_tool_by_case(
+            by_case=by_case, tool=str(tool), case_ids=case_ids, case_has_gt=case_has_gt
+        )
 
         drop_totals: Dict[str, Dict[int, Dict[str, int]]] = {}
         for strat, rank_fn in strategies_marginal.items():
@@ -622,12 +687,15 @@ def _compute_tool_marginal_value(
             )
         )
 
-    strat_order = {name: idx for idx, name in enumerate(['baseline', 'agreement', 'calibrated'], start=1)}
+    strat_order = {
+        name: idx
+        for idx, name in enumerate(["baseline", "agreement", "calibrated"], start=1)
+    }
     tool_marginal_rows.sort(
         key=lambda r: (
-            str(r.get('tool') or ''),
-            int(strat_order.get(str(r.get('strategy') or ''), 99)),
-            int(r.get('k') or 0),
+            str(r.get("tool") or ""),
+            int(strat_order.get(str(r.get("strategy") or ""), 99)),
+            int(r.get("k") or 0),
         )
     )
 
@@ -642,7 +710,9 @@ def _compute_topk_focus(
     micro: Dict[str, Dict[str, Dict[str, Any]]],
 ) -> Dict[str, Any]:
     focus_ks = [k for k in (10, 25, 50) if k in k_list]
-    focus_strategies = [s for s in ("baseline", "calibrated_global", "calibrated") if s in strategies]
+    focus_strategies = [
+        s for s in ("baseline", "calibrated_global", "calibrated") if s in strategies
+    ]
 
     topk_focus: Dict[str, Any] = {
         "ks": list(focus_ks),
@@ -665,7 +735,9 @@ def _compute_topk_focus(
     return topk_focus
 
 
-def _compute_calibration_context(cal: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def _compute_calibration_context(
+    cal: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
     if not cal or not isinstance(cal, dict):
         return None
 
@@ -673,7 +745,11 @@ def _compute_calibration_context(cal: Optional[Dict[str, Any]]) -> Optional[Dict
     min_support_by_owasp = int(scoring.get("min_support_by_owasp", 10))
 
     fallback: List[str] = []
-    by_owasp = cal.get("tool_stats_by_owasp") if isinstance(cal.get("tool_stats_by_owasp"), dict) else {}
+    by_owasp = (
+        cal.get("tool_stats_by_owasp")
+        if isinstance(cal.get("tool_stats_by_owasp"), dict)
+        else {}
+    )
     if isinstance(by_owasp, dict):
         for oid, v in by_owasp.items():
             if not isinstance(v, dict):
@@ -797,8 +873,12 @@ def _build_topk_rows_for_case_strategy(
                 "gt_overlap_ids_count": int(len(ids)),
                 "has_gt": int(bool(has_gt)),
                 "gt_total": int(gt_total),
-                "cumulative_gt_covered": "" if cum_cov is None else int(len(covered_so_far)),
-                "cumulative_gt_coverage": "" if cum_cov is None else round(float(cum_cov), 6),
+                "cumulative_gt_covered": ""
+                if cum_cov is None
+                else int(len(covered_so_far)),
+                "cumulative_gt_coverage": ""
+                if cum_cov is None
+                else round(float(cum_cov), 6),
             }
         )
 
@@ -824,7 +904,9 @@ def _build_by_case_rows_for_case_strategy(
         k_eff = min(kk, len(ordered))
         top = list(ordered[:k_eff])
 
-        tp = sum(1 for r in top if _to_int(r.get("gt_overlap"), 0) == 1) if has_gt else 0
+        tp = (
+            sum(1 for r in top if _to_int(r.get("gt_overlap"), 0) == 1) if has_gt else 0
+        )
         denom = int(k_eff) if has_gt else 0
         prec = (float(tp) / float(denom)) if denom else None
 

@@ -18,12 +18,21 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
             (suite_dir / "analysis").mkdir(parents=True, exist_ok=True)
 
             (suite_dir / "suite.json").write_text(
-                json.dumps({"plan": {"analysis": {"gt_tolerance_effective": 5}}}, indent=2) + "\n",
+                json.dumps(
+                    {"plan": {"analysis": {"gt_tolerance_effective": 5}}}, indent=2
+                )
+                + "\n",
                 encoding="utf-8",
             )
 
             (suite_dir / "analysis" / "gt_tolerance_selection.json").write_text(
-                json.dumps({"schema_version": "gt_tolerance_selection_v1", "selected_gt_tolerance": 7}, indent=2)
+                json.dumps(
+                    {
+                        "schema_version": "gt_tolerance_selection_v1",
+                        "selected_gt_tolerance": 7,
+                    },
+                    indent=2,
+                )
                 + "\n",
                 encoding="utf-8",
             )
@@ -38,7 +47,10 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
             suite_dir.mkdir(parents=True, exist_ok=True)
 
             (suite_dir / "suite.json").write_text(
-                json.dumps({"plan": {"analysis": {"gt_tolerance_effective": 5}}}, indent=2) + "\n",
+                json.dumps(
+                    {"plan": {"analysis": {"gt_tolerance_effective": 5}}}, indent=2
+                )
+                + "\n",
                 encoding="utf-8",
             )
 
@@ -58,7 +70,13 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
 
             # Record an effective tolerance
             (suite_dir / "analysis" / "gt_tolerance_selection.json").write_text(
-                json.dumps({"schema_version": "gt_tolerance_selection_v1", "selected_gt_tolerance": 7}, indent=2)
+                json.dumps(
+                    {
+                        "schema_version": "gt_tolerance_selection_v1",
+                        "selected_gt_tolerance": 7,
+                    },
+                    indent=2,
+                )
                 + "\n",
                 encoding="utf-8",
             )
@@ -69,7 +87,9 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
                 called["gt_tolerance"] = int(gt_tolerance)
                 return {"ok": True, "gt_tolerance": int(gt_tolerance)}
 
-            case = CaseSpec(case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec())
+            case = CaseSpec(
+                case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec()
+            )
 
             req = AnalyzeRequest(
                 metric="suite",
@@ -103,7 +123,13 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
 
             # Record an effective tolerance
             (suite_dir / "analysis" / "gt_tolerance_selection.json").write_text(
-                json.dumps({"schema_version": "gt_tolerance_selection_v1", "selected_gt_tolerance": 7}, indent=2)
+                json.dumps(
+                    {
+                        "schema_version": "gt_tolerance_selection_v1",
+                        "selected_gt_tolerance": 7,
+                    },
+                    indent=2,
+                )
                 + "\n",
                 encoding="utf-8",
             )
@@ -114,7 +140,9 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
                 called["gt_tolerance"] = int(gt_tolerance)
                 return {"ok": True, "gt_tolerance": int(gt_tolerance)}
 
-            case = CaseSpec(case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec())
+            case = CaseSpec(
+                case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec()
+            )
 
             req = AnalyzeRequest(
                 metric="suite",
@@ -142,7 +170,9 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
             suite_root = root / "runs" / "suites"
 
             # Compute suite paths for a minimal suite layout
-            paths = get_suite_paths(case_id="case1", suite_id="S1", suite_root=suite_root)
+            paths = get_suite_paths(
+                case_id="case1", suite_id="S1", suite_root=suite_root
+            )
             ensure_suite_dirs(paths)
 
             # Suite-level analysis dir is created lazily by the pipeline; make it for the test.
@@ -150,7 +180,13 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
 
             # Record an effective tolerance at the suite level
             (paths.suite_dir / "analysis" / "gt_tolerance_selection.json").write_text(
-                json.dumps({"schema_version": "gt_tolerance_selection_v1", "selected_gt_tolerance": 7}, indent=2)
+                json.dumps(
+                    {
+                        "schema_version": "gt_tolerance_selection_v1",
+                        "selected_gt_tolerance": 7,
+                    },
+                    indent=2,
+                )
                 + "\n",
                 encoding="utf-8",
             )
@@ -167,7 +203,9 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
                 called["gt_tolerance"] = int(gt_tolerance)
                 return {"ok": True, "gt_tolerance": int(gt_tolerance)}
 
-            case = CaseSpec(case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec())
+            case = CaseSpec(
+                case_id="case1", runs_repo_name="case1", label="case1", repo=RepoSpec()
+            )
             req = RunRequest(
                 invocation_mode="benchmark",
                 case=case,
@@ -181,7 +219,12 @@ class TestGTToleranceEffectiveResolution(unittest.TestCase):
 
             warnings: list[str] = []
             with patch("pipeline.analysis.analyze_suite.run_suite", new=fake_run_suite):
-                out = _maybe_run_analysis(req=req, suite_paths=paths, scanners=("semgrep",), case_warnings=warnings)
+                out = _maybe_run_analysis(
+                    req=req,
+                    suite_paths=paths,
+                    scanners=("semgrep",),
+                    case_warnings=warnings,
+                )
 
             self.assertIsInstance(out, dict)
             self.assertEqual(7, called.get("gt_tolerance"))

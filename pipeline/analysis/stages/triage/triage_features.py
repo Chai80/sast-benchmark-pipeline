@@ -5,7 +5,6 @@ from typing import Any, Dict
 
 from pipeline.analysis.compute.triage_features import (
     TRIAGE_FEATURES_FIELDNAMES,
-    TRIAGE_FEATURES_SCHEMA_VERSION,
     build_triage_features_rows,
 )
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore, register_stage

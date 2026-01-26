@@ -41,11 +41,19 @@ from tools.core import (
     which_or_raise,
     write_json,
 )
-from .client import AIKIDO_TOOL_VERSION, API_ROOT, get_access_token, list_code_repos, export_all_issues, trigger_aikido_scan
+from .client import (
+    AIKIDO_TOOL_VERSION,
+    API_ROOT,
+    get_access_token,
+    list_code_repos,
+    export_all_issues,
+    trigger_aikido_scan,
+)
 from .normalize import normalize_aikido_results
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_PATH = PROJECT_ROOT / ".env"
+
 
 def _infer_aikido_cache_dir(output_root: str) -> Path:
     """Infer a shared cache dir for Aikido API calls.
@@ -62,7 +70,11 @@ def _infer_aikido_cache_dir(output_root: str) -> Path:
     """
     p = Path(output_root).resolve()
     try:
-        if p.name == "aikido" and p.parent.name in {"scans", "tool_runs"} and p.parents[2].name == "cases":
+        if (
+            p.name == "aikido"
+            and p.parent.name in {"scans", "tool_runs"}
+            and p.parents[2].name == "cases"
+        ):
             suite_dir = p.parents[3]
             return suite_dir / ".cache" / "aikido"
     except Exception:
@@ -109,7 +121,9 @@ def choose_git_ref_interactively(repos: Sequence[Dict[str, Any]]) -> str:
     for idx, r in enumerate(repos, start=1):
         print(f"[{idx}] id={r.get('id')} | name={r.get('name')} | url={r.get('url')}")
     while True:
-        choice = input(f"Enter the number of the repo to scan (1-{len(repos)}): ").strip()
+        choice = input(
+            f"Enter the number of the repo to scan (1-{len(repos)}): "
+        ).strip()
         try:
             n = int(choice)
             if 1 <= n <= len(repos):
@@ -149,7 +163,9 @@ def _extract_owner_repo(text: str) -> Optional[Tuple[str, str]]:
     return None
 
 
-def _repo_variants(repo_obj: Dict[str, Any]) -> Tuple[set[str], Optional[Tuple[str, str]]]:
+def _repo_variants(
+    repo_obj: Dict[str, Any],
+) -> Tuple[set[str], Optional[Tuple[str, str]]]:
     name = str(repo_obj.get("name") or "").strip()
     url = str(repo_obj.get("url") or "").strip()
 
@@ -169,7 +185,13 @@ def _repo_variants(repo_obj: Dict[str, Any]) -> Tuple[set[str], Optional[Tuple[s
 
 def _repo_branch(repo_obj: Dict[str, Any]) -> Optional[str]:
     """Best-effort extraction of the branch name for a code repo."""
-    for k in ("branch", "branch_name", "scanned_branch", "scan_branch", "default_branch"):
+    for k in (
+        "branch",
+        "branch_name",
+        "scanned_branch",
+        "scan_branch",
+        "default_branch",
+    ):
         v = repo_obj.get(k)
         if v not in (None, ""):
             return str(v)
@@ -246,8 +268,9 @@ def find_repo_by_git_ref(
     return int(chosen["id"]), chosen
 
 
-
-def filter_issues_for_repo(issues: Sequence[Dict[str, Any]], code_repo_id: str) -> List[Dict[str, Any]]:
+def filter_issues_for_repo(
+    issues: Sequence[Dict[str, Any]], code_repo_id: str
+) -> List[Dict[str, Any]]:
     want = str(code_repo_id)
 
     def _get_issue_repo_id(issue: Dict[str, Any]) -> Optional[str]:
@@ -310,8 +333,12 @@ def build_cloud_run_metadata(
         "run_id": run_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "issues_count": issues_count,
-        "trigger_http_seconds": float(trigger_http_seconds) if trigger_http_seconds is not None else None,
-        "scan_time_seconds": float(trigger_http_seconds) if trigger_http_seconds is not None else None,
+        "trigger_http_seconds": float(trigger_http_seconds)
+        if trigger_http_seconds is not None
+        else None,
+        "scan_time_seconds": float(trigger_http_seconds)
+        if trigger_http_seconds is not None
+        else None,
         "command": command_str,
         "exit_code": 0,
         "config_hash": config_hash,
@@ -325,16 +352,27 @@ def build_cloud_run_metadata(
     }
 
 
-def execute_cloud(*, git_ref: Optional[str], output_root: str, skip_trigger: bool, repositoryname: Optional[str] = None, branch: Optional[str] = None) -> Tuple[RunPaths, Dict[str, Any]]:
+def execute_cloud(
+    *,
+    git_ref: Optional[str],
+    output_root: str,
+    skip_trigger: bool,
+    repositoryname: Optional[str] = None,
+    branch: Optional[str] = None,
+) -> Tuple[RunPaths, Dict[str, Any]]:
     # Load project .env (if present)
     load_dotenv(ENV_PATH)
 
     cfg = get_aikido_config()
     cache_dir = _infer_aikido_cache_dir(output_root)
-    cache_ttl = int(os.environ.get('AIKIDO_CACHE_TTL_SECS', '3600'))
-    repos = list_code_repos(cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl)
+    cache_ttl = int(os.environ.get("AIKIDO_CACHE_TTL_SECS", "3600"))
+    repos = list_code_repos(
+        cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl
+    )
     selected_git_ref = git_ref or choose_git_ref_interactively(repos)
-    code_repo_id, repo_obj = find_repo_by_git_ref(repos, selected_git_ref, branch=branch)
+    code_repo_id, repo_obj = find_repo_by_git_ref(
+        repos, selected_git_ref, branch=branch
+    )
 
     derived_repo_name = repo_obj.get("name") or "unknown_repo"
     repo_name = repositoryname or derived_repo_name
@@ -346,7 +384,9 @@ def execute_cloud(*, git_ref: Optional[str], output_root: str, skip_trigger: boo
     if not skip_trigger:
         trigger_http_seconds = trigger_aikido_scan(cfg.token, code_repo_id)
 
-    all_issues = export_all_issues(cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl)
+    all_issues = export_all_issues(
+        cfg.token, cache_dir=str(cache_dir), cache_ttl_seconds=cache_ttl
+    )
     repo_issues = filter_issues_for_repo(all_issues, code_repo_id)
 
     write_json(paths.raw_results, repo_issues)
@@ -373,7 +413,11 @@ def execute_cloud(*, git_ref: Optional[str], output_root: str, skip_trigger: boo
 def _detect_git_branch(repo_path: Path) -> Optional[str]:
     """Return the current branch name, or None if unavailable/detached."""
     try:
-        res = run_cmd(["git", "-C", str(repo_path), "rev-parse", "--abbrev-ref", "HEAD"], print_stdout=False, print_stderr=False)
+        res = run_cmd(
+            ["git", "-C", str(repo_path), "rev-parse", "--abbrev-ref", "HEAD"],
+            print_stdout=False,
+            print_stderr=False,
+        )
         b = (res.stdout or "").strip()
         if not b or b == "HEAD":
             return None
@@ -382,7 +426,9 @@ def _detect_git_branch(repo_path: Path) -> Optional[str]:
         return None
 
 
-def _derive_repositoryname(*, git_ref: Optional[str], repo_url: Optional[str], repo_path: Path) -> str:
+def _derive_repositoryname(
+    *, git_ref: Optional[str], repo_url: Optional[str], repo_path: Path
+) -> str:
     """Best-effort repo name for Aikido Local Scanner's --repositoryname."""
 
     # Prefer the explicit (owner/repo) ref if provided.
@@ -459,7 +505,9 @@ def _run_local_scanner_docker(
 
     if gating_mode == "pr":
         if not head_commit_id:
-            raise SystemExit("Aikido local scanner PR gating mode requires --head-commit-id.")
+            raise SystemExit(
+                "Aikido local scanner PR gating mode requires --head-commit-id."
+            )
         cmd.extend(["--head-commit-id", head_commit_id])
         if base_commit_id:
             cmd.extend(["--base-commit-id", base_commit_id])
@@ -474,7 +522,13 @@ def _run_local_scanner_docker(
         cmd.append("--debug")
 
     res = run_cmd(cmd, cwd=None, print_stdout=False, print_stderr=False)
-    return res.exit_code, res.elapsed_seconds, res.command_str, (res.stdout or ""), (res.stderr or "")
+    return (
+        res.exit_code,
+        res.elapsed_seconds,
+        res.command_str,
+        (res.stdout or ""),
+        (res.stderr or ""),
+    )
 
 
 def _run_local_scanner_binary(
@@ -523,7 +577,9 @@ def _run_local_scanner_binary(
 
     if gating_mode == "pr":
         if not head_commit_id:
-            raise SystemExit("Aikido local scanner PR gating mode requires --head-commit-id.")
+            raise SystemExit(
+                "Aikido local scanner PR gating mode requires --head-commit-id."
+            )
         cmd.extend(["--head-commit-id", head_commit_id])
         if base_commit_id:
             cmd.extend(["--base-commit-id", base_commit_id])
@@ -538,7 +594,13 @@ def _run_local_scanner_binary(
         cmd.append("--debug")
 
     res = run_cmd(cmd, cwd=None, print_stdout=False, print_stderr=False)
-    return res.exit_code, res.elapsed_seconds, res.command_str, (res.stdout or ""), (res.stderr or "")
+    return (
+        res.exit_code,
+        res.elapsed_seconds,
+        res.command_str,
+        (res.stdout or ""),
+        (res.stderr or ""),
+    )
 
 
 def execute_local(
@@ -573,11 +635,17 @@ def execute_local(
     run_id, paths = prepare_run_paths(output_root, repo.repo_name)
 
     branch = branchname or _detect_git_branch(repo.repo_path) or "unknown"
-    repo_name_for_aikido = repositoryname or _derive_repositoryname(git_ref=git_ref, repo_url=repo_url, repo_path=repo.repo_path)
+    repo_name_for_aikido = repositoryname or _derive_repositoryname(
+        git_ref=git_ref, repo_url=repo_url, repo_path=repo.repo_path
+    )
 
     # Prefer the installed binary if requested and available.
     local_bin = shutil.which("aikido-local-scanner") if prefer_binary else None
-    docker_image = docker_image or os.environ.get("AIKIDO_LOCAL_SCANNER_IMAGE") or LOCAL_SCANNER_DOCKER_IMAGE_DEFAULT
+    docker_image = (
+        docker_image
+        or os.environ.get("AIKIDO_LOCAL_SCANNER_IMAGE")
+        or LOCAL_SCANNER_DOCKER_IMAGE_DEFAULT
+    )
 
     stdout = ""
     stderr = ""
@@ -618,8 +686,12 @@ def execute_local(
         )
 
     # Persist logs for debugging.
-    (paths.run_dir / "aikido_local_scanner.stdout.log").write_text(stdout, encoding="utf-8")
-    (paths.run_dir / "aikido_local_scanner.stderr.log").write_text(stderr, encoding="utf-8")
+    (paths.run_dir / "aikido_local_scanner.stdout.log").write_text(
+        stdout, encoding="utf-8"
+    )
+    (paths.run_dir / "aikido_local_scanner.stderr.log").write_text(
+        stderr, encoding="utf-8"
+    )
 
     # If the scanner did not write an output file, surface a helpful error.
     if not paths.raw_results.exists():
@@ -646,7 +718,9 @@ def execute_local(
 
     metadata = build_std_run_metadata(
         scanner="aikido",
-        scanner_version=f"local-scanner:{docker_image}" if not local_bin else "local-scanner:binary",
+        scanner_version=f"local-scanner:{docker_image}"
+        if not local_bin
+        else "local-scanner:binary",
         repo=repo,
         run_id=run_id,
         command_str=command_str,
@@ -697,7 +771,13 @@ def execute(
     """Dispatch to the chosen backend."""
     mode = (mode or "cloud").strip().lower()
     if mode == "cloud":
-        return execute_cloud(git_ref=git_ref, output_root=output_root, skip_trigger=skip_trigger, repositoryname=repositoryname, branch=branch)
+        return execute_cloud(
+            git_ref=git_ref,
+            output_root=output_root,
+            skip_trigger=skip_trigger,
+            repositoryname=repositoryname,
+            branch=branch,
+        )
 
     if mode == "local":
         if not repo_path:
@@ -769,7 +849,7 @@ def cli_entry(
             prefer_binary=prefer_binary,
             docker_image=docker_image,
         )
-        print(f"Run complete.")
+        print("Run complete.")
         print(f"  Issues JSON     : {paths.raw_results}")
         print(f"  Metadata        : {paths.metadata}")
         print(f"  Normalized JSON : {paths.normalized}")

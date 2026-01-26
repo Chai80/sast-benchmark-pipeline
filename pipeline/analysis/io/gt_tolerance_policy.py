@@ -124,7 +124,9 @@ def resolve_effective_gt_tolerance(
     if sel is not None:
         eff = int(sel)
         if eff != req:
-            warnings.append(f"gt_tolerance overridden by selection_json: requested={req} effective={eff}")
+            warnings.append(
+                f"gt_tolerance overridden by selection_json: requested={req} effective={eff}"
+            )
         return {
             "requested_gt_tolerance": req,
             "effective_gt_tolerance": eff,
@@ -136,7 +138,9 @@ def resolve_effective_gt_tolerance(
     if suite_eff is not None:
         eff = int(suite_eff)
         if eff != req:
-            warnings.append(f"gt_tolerance overridden by suite_json: requested={req} effective={eff}")
+            warnings.append(
+                f"gt_tolerance overridden by suite_json: requested={req} effective={eff}"
+            )
         return {
             "requested_gt_tolerance": req,
             "effective_gt_tolerance": eff,

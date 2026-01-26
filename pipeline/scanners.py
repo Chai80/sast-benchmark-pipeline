@@ -36,16 +36,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Literal
 
 from pipeline.identifiers import derive_sonar_project_key
 
-try:
-    # Python 3.8+ (typing.Literal exists). Keep import local to avoid hard
-    # failures if someone runs on an older interpreter.
-    from typing import Literal
-except Exception:  # pragma: no cover
-    Literal = str  # type: ignore
+if TYPE_CHECKING:
+    from pipeline.execution.run_case import RunRequest
 
 
 @dataclass(frozen=True)
@@ -72,19 +68,21 @@ class ScannerInfo:
     # How this tool identifies the target repository.
     # - "repo": standard tools that accept --repo-path/--repo-url
     # - "git-ref": tools that use a git slug/reference (e.g. Aikido cloud mode)
-    target_mode: "Literal['repo', 'git-ref']" = "repo"
+    target_mode: Literal["repo", "git-ref"] = "repo"
 
     # Optional env preflight: vars that must exist for the tool to run.
     required_env: tuple[str, ...] = ()
 
     # Optional pure hook to derive additional CLI args.
-    # NOTE: uses a string annotation to avoid importing run_case.RunRequest.
-    extra_args_builder: Optional[Callable[["RunRequest", ScannerRunContext], Dict[str, Any]]] = None
+    # NOTE: RunRequest is imported under TYPE_CHECKING to avoid runtime cycles.
+    extra_args_builder: Optional[
+        Callable[[RunRequest, ScannerRunContext], Dict[str, Any]]
+    ] = None
 
     default: bool = True
 
 
-def _sonar_extra_args(req: "RunRequest", _ctx: ScannerRunContext) -> Dict[str, Any]:
+def _sonar_extra_args(req: RunRequest, _ctx: ScannerRunContext) -> Dict[str, Any]:
     """Derive Sonar args from the RunRequest.
 
     Pure function: reads env + request, returns CLI args.
@@ -98,7 +96,7 @@ def _sonar_extra_args(req: "RunRequest", _ctx: ScannerRunContext) -> Dict[str, A
     return {"project-key": derive_sonar_project_key(org, str(req.repo_id))}
 
 
-def _aikido_extra_args(req: "RunRequest", ctx: ScannerRunContext) -> Dict[str, Any]:
+def _aikido_extra_args(req: RunRequest, ctx: ScannerRunContext) -> Dict[str, Any]:
     """Derive Aikido args from the RunRequest.
 
     Aikido's cloud integration identifies repos by a git-ref (owner/repo or URL
@@ -117,7 +115,9 @@ def _aikido_extra_args(req: "RunRequest", ctx: ScannerRunContext) -> Dict[str, A
     git_ref = getattr(req, "aikido_git_ref", None)
     if not git_ref:
         try:
-            repo_url = getattr(getattr(getattr(req, "case", None), "repo", None), "repo_url", None)
+            repo_url = getattr(
+                getattr(getattr(req, "case", None), "repo", None), "repo_url", None
+            )
             if repo_url:
                 git_ref = str(repo_url).rstrip("/").replace(".git", "")
         except Exception:
@@ -184,7 +184,11 @@ DEFAULT_SCANNERS_CSV: str = ",".join(DEFAULT_SCANNERS)
 SCANNER_LABELS: Dict[str, str] = {k: info.label for k, info in SCANNERS.items()}
 SCANNER_SCRIPTS: Dict[str, str] = {k: info.script for k, info in SCANNERS.items()}
 
-SCANNER_TARGET_MODES: Dict[str, str] = {k: str(info.target_mode) for k, info in SCANNERS.items()}
+SCANNER_TARGET_MODES: Dict[str, str] = {
+    k: str(info.target_mode) for k, info in SCANNERS.items()
+}
 
 # Keep the legacy shape: Dict[str, set[str]]
-SCANNER_TRACKS: Dict[str, set[str]] = {k: set(info.tracks) for k, info in SCANNERS.items()}
+SCANNER_TRACKS: Dict[str, set[str]] = {
+    k: set(info.tracks) for k, info in SCANNERS.items()
+}

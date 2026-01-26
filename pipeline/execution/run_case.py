@@ -38,10 +38,14 @@ ENV_PATH: Path = REPO_ROOT / ".env"
 
 def _require_env(var: str) -> None:
     if not os.getenv(var):
-        raise SystemExit(f"Missing {var}. Put it in {ENV_PATH} (or export it in your shell).")
+        raise SystemExit(
+            f"Missing {var}. Put it in {ENV_PATH} (or export it in your shell)."
+        )
 
 
-def _print_invocation_header(req: RunRequest, *, scanners: Sequence[str], suite_paths: Optional[SuitePaths]) -> None:
+def _print_invocation_header(
+    req: RunRequest, *, scanners: Sequence[str], suite_paths: Optional[SuitePaths]
+) -> None:
     if req.invocation_mode == "scan":
         print("\n🚀 Running scan")
         print(f"  Scanner : {scanners[0]}")
@@ -97,7 +101,9 @@ def run_tools(req: RunRequest) -> int:
 
     # Optional track enforcement (useful when mixing SAST/SCA/IaC case sets).
     case_track = plan.get_case_track(req.case)
-    scanners, skipped_by_track, notes = plan.apply_track_filter(scanners_requested, case_track)
+    scanners, skipped_by_track, notes = plan.apply_track_filter(
+        scanners_requested, case_track
+    )
     for msg in notes:
         print(f"  {msg}")
     if skipped_by_track:
@@ -151,8 +157,12 @@ def run_tools(req: RunRequest) -> int:
         if "project-key" in extra_args:
             print(f"  Sonar project key : {extra_args.get('project-key')}")
 
-        invocation = plan.build_scan_invocation(scanner=scanner_key, req=req, extra_args=extra_args)
-        execution = runner.run_invocation(invocation, dry_run=req.dry_run, quiet=req.quiet)
+        invocation = plan.build_scan_invocation(
+            scanner=scanner_key, req=req, extra_args=extra_args
+        )
+        execution = runner.run_invocation(
+            invocation, dry_run=req.dry_run, quiet=req.quiet
+        )
 
         if execution.exit_code != 0:
             overall = execution.exit_code
@@ -172,10 +182,12 @@ def run_tools(req: RunRequest) -> int:
     # Post-processing: backfill repo context and write manifests
     # -------------------------------------------------------------------
 
-    case_repo_path, case_repo_branch, case_repo_commit, probe_repo_path = plan.backfill_case_repo_context(
-        req=req,
-        tool_runs_manifest=tool_runs_manifest,
-        git_ctx=git_ctx,
+    case_repo_path, case_repo_branch, case_repo_commit, probe_repo_path = (
+        plan.backfill_case_repo_context(
+            req=req,
+            tool_runs_manifest=tool_runs_manifest,
+            git_ctx=git_ctx,
+        )
     )
 
     # If we discovered a repo path but branch/commit are still missing, try git.
@@ -261,7 +273,9 @@ def run_tools(req: RunRequest) -> int:
         print(f"  Suite dir: {suite_paths.suite_dir}")
         print(f"  Case dir : {suite_paths.case_dir}")
         print(f"  Tool runs: {suite_paths.tool_runs_dir}")
-        print(f"  Analysis : {suite_paths.analysis_dir if not req.skip_analysis else '(skipped)'}")
+        print(
+            f"  Analysis : {suite_paths.analysis_dir if not req.skip_analysis else '(skipped)'}"
+        )
         print(f"  Manifest : {suite_paths.case_json_path}")
         print(f"  Summary  : {suite_paths.suite_summary_path}")
 

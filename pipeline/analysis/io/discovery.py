@@ -16,7 +16,6 @@ This module remains as a thin shim to avoid churn in the analysis code.
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from sast_benchmark.io.layout import find_latest_normalized_json, find_latest_run_dir
 

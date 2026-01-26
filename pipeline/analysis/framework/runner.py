@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Set
+from typing import List, Optional, Sequence, Set
 
 from .context import AnalysisContext
 from .registry import get_stage

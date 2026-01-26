@@ -29,7 +29,7 @@ to read/write dicts; callers can opt into ``FindingNormalized.from_dict`` and
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 
 def _none_if_empty_str(v: Any) -> Any:
@@ -170,7 +170,9 @@ class FindingNormalized:
     def from_dict(cls, d: Mapping[str, Any]) -> "FindingNormalized":
         """Parse a dict (as emitted in normalized.json) into a dataclass."""
         if not isinstance(d, Mapping):
-            raise TypeError(f"FindingNormalized.from_dict expected mapping, got {type(d)!r}")
+            raise TypeError(
+                f"FindingNormalized.from_dict expected mapping, got {type(d)!r}"
+            )
 
         known_keys = {
             "finding_id",

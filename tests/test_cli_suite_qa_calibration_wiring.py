@@ -51,7 +51,11 @@ class FakePipeline:
         # The real pipeline writes a config receipt per tool run.
         # The QA runbook expects these to exist so profile/config becomes a
         # tracked, suite-visible variable.
-        scanners = getattr(req, "scanners", None) or getattr(req, "scanners_requested", None) or []
+        scanners = (
+            getattr(req, "scanners", None)
+            or getattr(req, "scanners_requested", None)
+            or []
+        )
         profile = getattr(req, "profile", None) or "default"
         for tool in [str(t).strip() for t in (scanners or []) if str(t).strip()]:
             tr_dir = case_dir / "tool_runs" / tool / "R1"
@@ -279,7 +283,9 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
 
         return worktrees_root
 
-    def _make_args(self, *, suite_root: Path, worktrees_root: Path, suite_id: str) -> argparse.Namespace:
+    def _make_args(
+        self, *, suite_root: Path, worktrees_root: Path, suite_id: str
+    ) -> argparse.Namespace:
         # NOTE: The suite command has many CLI flags. This only populates
         # the fields used by run_suite_mode.
         return argparse.Namespace(
@@ -287,7 +293,6 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             no_suite=False,
             suite_root=str(suite_root),
             suite_id=suite_id,
-
             # Suite sources
             suite_file=None,
             cases_from=None,
@@ -295,7 +300,6 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             max_cases=None,
             repo_url=None,
             branches=None,
-
             # Execution
             scanners="semgrep,snyk,sonar",
             dry_run=False,
@@ -303,27 +307,22 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             skip_analysis=False,
             tolerance=0,
             analysis_filter="security",
-
             # Tool overrides (required fields in suite.py)
             sonar_project_key=None,
             aikido_git_ref=None,
-
             # QA flags
             qa_calibration=True,
             qa_scope="smoke",
             qa_owasp=None,
             qa_cases=None,
             qa_no_reanalyze=False,
-
             # GT knobs
             gt_tolerance=0,
             gt_source="auto",
-
             # (QA) Optional deterministic sweep + auto-selection
             gt_tolerance_sweep=None,
             gt_tolerance_auto=False,
             gt_tolerance_auto_min_fraction=0.95,
-
             # Analysis selectors
             exclude_prefixes=(),
             include_harness=False,
@@ -344,7 +343,6 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
 
             pipeline = FakePipeline(nonempty_score=True)
 
-
             buf = StringIO()
             with redirect_stdout(buf):
                 rc = int(run_suite_mode(args, pipeline, repo_registry={}))
@@ -353,27 +351,45 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
 
             suite_dir = suite_root / safe_name(suite_id)
             checklist_path = suite_dir / "analysis" / "qa_calibration_checklist.txt"
-            self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
+            self.assertTrue(
+                checklist_path.exists(), "Expected checklist file to be written"
+            )
             checklist = checklist_path.read_text(encoding="utf-8")
             self.assertIn("Overall: PASS", checklist)
 
             # The key regression assertion: the QA workflow must trigger the second
             # analyze pass (otherwise triage_queue.csv cannot have triage_score_v1).
-            self.assertEqual(len(pipeline.analyze_calls), 2, "Expected analyze() to run once per case")
+            self.assertEqual(
+                len(pipeline.analyze_calls),
+                2,
+                "Expected analyze() to run once per case",
+            )
 
             # The suite-level outputs should also exist.
-            self.assertTrue((suite_dir / "analysis" / "_tables" / "triage_dataset.csv").exists())
-            self.assertTrue((suite_dir / "analysis" / "triage_calibration.json").exists())
-            self.assertTrue((suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").exists())
+            self.assertTrue(
+                (suite_dir / "analysis" / "_tables" / "triage_dataset.csv").exists()
+            )
+            self.assertTrue(
+                (suite_dir / "analysis" / "triage_calibration.json").exists()
+            )
+            self.assertTrue(
+                (
+                    suite_dir / "analysis" / "_tables" / "triage_eval_summary.json"
+                ).exists()
+            )
 
             # Suite classification + pointer: QA calibration runs should be tagged
             # and update runs/suites/LATEST_QA for deterministic selection.
-            suite_json = json.loads((suite_dir / "suite.json").read_text(encoding="utf-8"))
+            suite_json = json.loads(
+                (suite_dir / "suite.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(suite_json.get("suite_kind"), "qa_calibration")
 
-            latest_qa = (suite_root / "LATEST_QA")
+            latest_qa = suite_root / "LATEST_QA"
             self.assertTrue(latest_qa.exists(), "Expected LATEST_QA pointer to exist")
-            self.assertEqual(latest_qa.read_text(encoding="utf-8").strip(), safe_name(suite_id))
+            self.assertEqual(
+                latest_qa.read_text(encoding="utf-8").strip(), safe_name(suite_id)
+            )
 
     def test_qa_calibration_checklist_failure_returns_nonzero(self) -> None:
         """If triage_score_v1 is never populated, the QA runbook must FAIL."""
@@ -392,19 +408,21 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
 
             pipeline = FakePipeline(nonempty_score=False)
 
-
             buf = StringIO()
             with redirect_stdout(buf):
                 rc = int(run_suite_mode(args, pipeline, repo_registry={}))
 
-            self.assertNotEqual(rc, 0, "Expected non-zero exit code for failed QA checklist")
+            self.assertNotEqual(
+                rc, 0, "Expected non-zero exit code for failed QA checklist"
+            )
 
             suite_dir = suite_root / safe_name(suite_id)
             checklist_path = suite_dir / "analysis" / "qa_calibration_checklist.txt"
-            self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
+            self.assertTrue(
+                checklist_path.exists(), "Expected checklist file to be written"
+            )
             checklist = checklist_path.read_text(encoding="utf-8")
             self.assertIn("Overall: FAIL", checklist)
-
 
     def test_qa_calibration_sweep_auto_writes_selection_and_manifest(self) -> None:
         """QA calibration with GT tolerance sweep/auto should persist sweep+selection+manifest artifacts."""
@@ -438,7 +456,9 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
 
             # Sweep artifacts
             self.assertTrue(
-                (suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").exists(),
+                (
+                    suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv"
+                ).exists(),
                 "Expected sweep report CSV",
             )
             self.assertTrue(
@@ -450,7 +470,11 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             sel_path = suite_dir / "analysis" / "gt_tolerance_selection.json"
             self.assertTrue(sel_path.exists(), "Expected gt_tolerance_selection.json")
             sel = json.loads(sel_path.read_text(encoding="utf-8"))
-            self.assertEqual(sel.get("selected_gt_tolerance"), 0, "With identical rows, auto should pick smallest")
+            self.assertEqual(
+                sel.get("selected_gt_tolerance"),
+                0,
+                "With identical rows, auto should pick smallest",
+            )
 
             # QA manifest artifact (canonical)
             manifest_path = suite_dir / "analysis" / "qa_manifest.json"
@@ -464,7 +488,10 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
 
             # Legacy alias (backward compatibility)
             legacy_path = suite_dir / "analysis" / "qa_calibration_manifest.json"
-            self.assertTrue(legacy_path.exists(), "Expected legacy qa_calibration_manifest.json alias")
+            self.assertTrue(
+                legacy_path.exists(),
+                "Expected legacy qa_calibration_manifest.json alias",
+            )
 
             # The sweep+finalize+reanalyze flow should call analyze() multiple times.
             # candidates=2, cases=2 => sweep analyze=4
@@ -472,8 +499,9 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             # QA reanalyze=2
             self.assertEqual(len(pipeline.analyze_calls), 8)
 
-
-    def test_qa_calibration_sweep_fails_if_any_sweep_candidate_has_analysis_errors(self) -> None:
+    def test_qa_calibration_sweep_fails_if_any_sweep_candidate_has_analysis_errors(
+        self,
+    ) -> None:
         """If any gt_tolerance candidate sweep has non-zero analysis_rc, QA must FAIL."""
 
         with tempfile.TemporaryDirectory() as td:
@@ -500,23 +528,32 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
             with redirect_stdout(buf):
                 rc = int(run_suite_mode(args, pipeline, repo_registry={}))
 
-            self.assertNotEqual(rc, 0, f"Expected non-zero exit code. Output:\n{buf.getvalue()}")
+            self.assertNotEqual(
+                rc, 0, f"Expected non-zero exit code. Output:\n{buf.getvalue()}"
+            )
 
             suite_dir = suite_root / safe_name(suite_id)
 
             checklist_path = suite_dir / "analysis" / "qa_calibration_checklist.txt"
-            self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
+            self.assertTrue(
+                checklist_path.exists(), "Expected checklist file to be written"
+            )
             checklist = checklist_path.read_text(encoding="utf-8")
             self.assertIn("Overall: FAIL", checklist)
             self.assertIn("analysis_rc=0", checklist)
 
             # Sweep artifacts should still be written (the sweep report is useful for debugging).
-            self.assertTrue((suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv").exists())
-            self.assertTrue((suite_dir / "analysis" / "gt_tolerance_sweep.json").exists())
+            self.assertTrue(
+                (
+                    suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_report.csv"
+                ).exists()
+            )
+            self.assertTrue(
+                (suite_dir / "analysis" / "gt_tolerance_sweep.json").exists()
+            )
 
             # The sweep+finalize+reanalyze flow should still attempt all analyze() calls.
             self.assertEqual(len(pipeline.analyze_calls), 8)
-
 
     def test_qa_calibration_checklist_exposes_gt_ambiguity_warnings(self) -> None:
         """Ambiguous GT matches should be visible as WARN lines in the QA checklist (non-fatal)."""
@@ -543,13 +580,19 @@ class TestCLISuiteQACalibrationWiring(unittest.TestCase):
 
             buf = StringIO()
             with redirect_stdout(buf):
-                rc = int(run_suite_mode(args, pipeline, repo_registry={} ))
+                rc = int(run_suite_mode(args, pipeline, repo_registry={}))
 
-            self.assertEqual(rc, 0, f"Expected success (warnings are non-fatal). Output:\n{buf.getvalue()}")
+            self.assertEqual(
+                rc,
+                0,
+                f"Expected success (warnings are non-fatal). Output:\n{buf.getvalue()}",
+            )
 
             suite_dir = suite_root / safe_name(suite_id)
             checklist_path = suite_dir / "analysis" / "qa_calibration_checklist.txt"
-            self.assertTrue(checklist_path.exists(), "Expected checklist file to be written")
+            self.assertTrue(
+                checklist_path.exists(), "Expected checklist file to be written"
+            )
             checklist = checklist_path.read_text(encoding="utf-8")
 
             # Must still pass overall.

@@ -1,0 +1,11 @@
+[tool.ruff]
+required-version = "==0.6.3"
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Guardrails v1: minimal, low-drama, high-signal linting
+# Pyflakes only (undefined names, unused imports, etc.)
+select = ["F"]
+
+[tool.ruff.format]

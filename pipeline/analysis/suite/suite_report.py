@@ -10,8 +10,7 @@ ground" mixing I/O, formatting, and business logic. The code has been moved into
 a stable import path for CLI and tests.
 """
 
-from typing import Any, Dict, Optional
-from pathlib import Path
+from typing import Any, Dict
 
 from pipeline.analysis.suite_report import (
     build_suite_report,

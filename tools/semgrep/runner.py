@@ -49,5 +49,11 @@ def run_semgrep(
         "--output",
         str(output_path),
     ]
-    res = run_cmd(cmd, cwd=repo_path, timeout_seconds=timeout_seconds, print_stderr=True, print_stdout=False)
+    res = run_cmd(
+        cmd,
+        cwd=repo_path,
+        timeout_seconds=timeout_seconds,
+        print_stderr=True,
+        print_stdout=False,
+    )
     return res.exit_code, res.elapsed_seconds, res.command_str

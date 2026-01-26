@@ -29,16 +29,25 @@ class TestSuiteReportHighlights(unittest.TestCase):
             # Minimal suite-level artifacts referenced by the report
             tables_dir = suite_dir / "analysis" / "_tables"
             tables_dir.mkdir(parents=True, exist_ok=True)
-            (tables_dir / "triage_dataset.csv").write_text("suite_id,case_id\nS1,A01\n", encoding="utf-8")
+            (tables_dir / "triage_dataset.csv").write_text(
+                "suite_id,case_id\nS1,A01\n", encoding="utf-8"
+            )
             (tables_dir / "triage_eval_summary.json").write_text("{}", encoding="utf-8")
             (tables_dir / "triage_eval_topk.csv").write_text(
-                "case_id,strategy,rank,gt_overlap,gt_total,cumulative_gt_covered\n", encoding="utf-8"
+                "case_id,strategy,rank,gt_overlap,gt_total,cumulative_gt_covered\n",
+                encoding="utf-8",
             )
-            (suite_dir / "analysis" / "triage_calibration.json").write_text("{}", encoding="utf-8")
+            (suite_dir / "analysis" / "triage_calibration.json").write_text(
+                "{}", encoding="utf-8"
+            )
 
             # QA artifacts (optional, but should show up in "where to click")
-            (suite_dir / "analysis" / "qa_checklist.md").write_text("# QA\n", encoding="utf-8")
-            (suite_dir / "analysis" / "qa_calibration_checklist.txt").write_text("PASS\n", encoding="utf-8")
+            (suite_dir / "analysis" / "qa_checklist.md").write_text(
+                "# QA\n", encoding="utf-8"
+            )
+            (suite_dir / "analysis" / "qa_calibration_checklist.txt").write_text(
+                "PASS\n", encoding="utf-8"
+            )
 
             # Tolerance evidence (C3 integrity notes)
             (suite_dir / "analysis" / "gt_tolerance_sweep_summary.csv").write_text(
@@ -66,7 +75,9 @@ class TestSuiteReportHighlights(unittest.TestCase):
                 hotspot_pack.write_text("{}", encoding="utf-8")
 
                 (case_dir / "gt" / "gt_score.json").write_text("{}", encoding="utf-8")
-                (case_dir / "gt" / "gt_gap_queue.csv").write_text("cluster_id\nc1\n", encoding="utf-8")
+                (case_dir / "gt" / "gt_gap_queue.csv").write_text(
+                    "cluster_id\nc1\n", encoding="utf-8"
+                )
 
                 manifest = {
                     "context": {
@@ -75,7 +86,10 @@ class TestSuiteReportHighlights(unittest.TestCase):
                     },
                     "stages": [
                         {"name": "location_matrix", "summary": {"clusters": 3}},
-                        {"name": "triage_queue", "summary": {"rows": 7, "top_severity": sev}},
+                        {
+                            "name": "triage_queue",
+                            "summary": {"rows": 7, "top_severity": sev},
+                        },
                         {
                             "name": "gt_score",
                             "summary": {

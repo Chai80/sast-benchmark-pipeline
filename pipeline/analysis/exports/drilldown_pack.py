@@ -11,7 +11,9 @@ from pipeline.analysis.stages.common.severity import max_severity
 from pipeline.analysis.stages.common.store_keys import StoreKeys
 
 
-def build_hotspot_drilldown_pack(ctx: AnalysisContext, store: ArtifactStore, *, limit: int = 200) -> Dict[str, Any]:
+def build_hotspot_drilldown_pack(
+    ctx: AnalysisContext, store: ArtifactStore, *, limit: int = 200
+) -> Dict[str, Any]:
     clusters = ensure_location_clusters(ctx, store)
 
     out_rows: List[Dict[str, Any]] = []
@@ -75,7 +77,9 @@ def stage_drilldown_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
 
 
 def main(argv: List[str] | None = None) -> None:  # pragma: no cover
-    ap = argparse.ArgumentParser(description="Build hotspot drilldown pack from an analysis directory.")
+    ap = argparse.ArgumentParser(
+        description="Build hotspot drilldown pack from an analysis directory."
+    )
     ap.add_argument("--analysis-dir", required=True)
     args = ap.parse_args(argv)
 

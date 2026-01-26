@@ -30,7 +30,20 @@ def stage_tool_profile(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, 
         write_json(out_json, rows)
         store.add_artifact("tool_profile_json", out_json)
     if "csv" in ctx.formats:
-        write_csv(out_csv, rows, fieldnames=["tool", "findings", "files", "high", "medium", "low", "unknown", "types"])
+        write_csv(
+            out_csv,
+            rows,
+            fieldnames=[
+                "tool",
+                "findings",
+                "files",
+                "high",
+                "medium",
+                "low",
+                "unknown",
+                "types",
+            ],
+        )
         store.add_artifact("tool_profile_csv", out_csv)
 
     return {"tools": len(rows)}

@@ -5,7 +5,11 @@ from pathlib import Path
 
 
 from pipeline.models import CaseSpec, RepoSpec
-from pipeline.suites.suite_definition import SuiteAnalysisDefaults, SuiteCase, SuiteDefinition
+from pipeline.suites.suite_definition import (
+    SuiteAnalysisDefaults,
+    SuiteCase,
+    SuiteDefinition,
+)
 from pipeline.suites.suite_resolver import SuiteInputProvenance, resolve_suite_run
 
 
@@ -31,7 +35,9 @@ class TestSuiteResolver(unittest.TestCase):
                         )
                     )
                 ],
-                analysis=SuiteAnalysisDefaults(skip=False, tolerance=3, filter="security"),
+                analysis=SuiteAnalysisDefaults(
+                    skip=False, tolerance=3, filter="security"
+                ),
             )
 
             resolved = resolve_suite_run(
@@ -57,7 +63,9 @@ class TestSuiteResolver(unittest.TestCase):
             plan_cases = data["plan"].get("cases")
             self.assertIsInstance(plan_cases, list)
             self.assertEqual(len(plan_cases), 1)
-            self.assertEqual(plan_cases[0].get("case_id"), resolved.cases[0].suite_case.case.case_id)
+            self.assertEqual(
+                plan_cases[0].get("case_id"), resolved.cases[0].suite_case.case.case_id
+            )
 
             # Execution summary starts empty; it will be filled by orchestrator during runs.
             self.assertEqual(data.get("cases"), {})

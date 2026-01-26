@@ -16,8 +16,12 @@ class TestTriageQueueContract(unittest.TestCase):
 
         self.assertIsInstance(TRIAGE_QUEUE_FIELDNAMES, list)
         self.assertGreaterEqual(len(TRIAGE_QUEUE_FIELDNAMES), 8)
-        self.assertTrue(all(isinstance(x, str) and x.strip() for x in TRIAGE_QUEUE_FIELDNAMES))
-        self.assertEqual(len(TRIAGE_QUEUE_FIELDNAMES), len(set(TRIAGE_QUEUE_FIELDNAMES)))
+        self.assertTrue(
+            all(isinstance(x, str) and x.strip() for x in TRIAGE_QUEUE_FIELDNAMES)
+        )
+        self.assertEqual(
+            len(TRIAGE_QUEUE_FIELDNAMES), len(set(TRIAGE_QUEUE_FIELDNAMES))
+        )
 
         # Required columns
         for required in [
@@ -55,7 +59,9 @@ class TestTriageQueueContract(unittest.TestCase):
         rank_triage_rows(rows_a, calibrated=False)
         rank_triage_rows(rows_b, calibrated=False)
 
-        self.assertEqual([r["cluster_id"] for r in rows_a], [r["cluster_id"] for r in rows_b])
+        self.assertEqual(
+            [r["cluster_id"] for r in rows_a], [r["cluster_id"] for r in rows_b]
+        )
         self.assertEqual([r["cluster_id"] for r in rows_a], ["a.py:1-1", "a.py:1-2"])
         self.assertEqual([r["rank"] for r in rows_a], [1, 2])
 
@@ -83,9 +89,23 @@ class TestTriageQueueContract(unittest.TestCase):
 
         # When scores tie, fall back to baseline severity ordering.
         s1 = dict(base)
-        s1.update({"triage_score_v1": 0.5, "cluster_id": "a.py:1-1", "_sev_rank": 3, "max_severity": "HIGH"})
+        s1.update(
+            {
+                "triage_score_v1": 0.5,
+                "cluster_id": "a.py:1-1",
+                "_sev_rank": 3,
+                "max_severity": "HIGH",
+            }
+        )
         s2 = dict(base)
-        s2.update({"triage_score_v1": 0.5, "cluster_id": "a.py:1-2", "_sev_rank": 1, "max_severity": "LOW"})
+        s2.update(
+            {
+                "triage_score_v1": 0.5,
+                "cluster_id": "a.py:1-2",
+                "_sev_rank": 1,
+                "max_severity": "LOW",
+            }
+        )
         rows2 = [s2, s1]
         rank_triage_rows(rows2, calibrated=True)
         self.assertEqual([r["cluster_id"] for r in rows2], ["a.py:1-1", "a.py:1-2"])

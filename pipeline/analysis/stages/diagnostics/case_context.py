@@ -39,7 +39,9 @@ def _load_case_json(case_dir: Path) -> Optional[Dict[str, Any]]:
     description="Validate scanned git branch/commit against case expectations (suite mode).",
     produces=(StoreKeys.DIAGNOSTICS_CASE_CONTEXT,),
 )
-def stage_diagnostics_case_context(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
+def stage_diagnostics_case_context(
+    ctx: AnalysisContext, store: ArtifactStore
+) -> Dict[str, Any]:
     case_dir = _find_case_dir(ctx)
     if not case_dir:
         # Not running in suite mode; nothing to do.
@@ -50,8 +52,12 @@ def stage_diagnostics_case_context(ctx: AnalysisContext, store: ArtifactStore) -
         store.add_warning("diagnostics_case_context: case.json missing or unreadable")
         return {"status": "skipped", "reason": "missing_case_json"}
 
-    expected_branch = (case_json.get("case") or {}).get("expected_branch") or (case_json.get("case") or {}).get("branch")
-    expected_commit = (case_json.get("case") or {}).get("expected_commit") or (case_json.get("case") or {}).get("commit")
+    expected_branch = (case_json.get("case") or {}).get("expected_branch") or (
+        case_json.get("case") or {}
+    ).get("branch")
+    expected_commit = (case_json.get("case") or {}).get("expected_commit") or (
+        case_json.get("case") or {}
+    ).get("commit")
     actual_branch = (case_json.get("repo") or {}).get("git_branch")
     actual_commit = (case_json.get("repo") or {}).get("git_commit")
 
@@ -60,13 +66,19 @@ def stage_diagnostics_case_context(ctx: AnalysisContext, store: ArtifactStore) -
         if not actual_branch:
             mismatches["branch"] = {"expected": expected_branch, "actual": None}
         elif str(expected_branch) != str(actual_branch):
-            mismatches["branch"] = {"expected": expected_branch, "actual": actual_branch}
+            mismatches["branch"] = {
+                "expected": expected_branch,
+                "actual": actual_branch,
+            }
 
     if expected_commit:
         if not actual_commit:
             mismatches["commit"] = {"expected": expected_commit, "actual": None}
         elif str(expected_commit) != str(actual_commit):
-            mismatches["commit"] = {"expected": expected_commit, "actual": actual_commit}
+            mismatches["commit"] = {
+                "expected": expected_commit,
+                "actual": actual_commit,
+            }
 
     report = {
         "status": "ok" if not mismatches else "mismatch",

@@ -20,11 +20,16 @@ from pipeline.analysis.io.config_receipts import summarize_scanner_config
 
 from .model import CalibrationSuiteValidationOptions, QACheck
 
+
 def print_checklist(checks: Sequence[QACheck]) -> None:
     """Print a compact PASS/FAIL checklist."""
 
     for c in checks:
-        status = "FAIL" if (not c.ok) else ("WARN" if bool(getattr(c, "warn", False)) else "PASS")
+        status = (
+            "FAIL"
+            if (not c.ok)
+            else ("WARN" if bool(getattr(c, "warn", False)) else "PASS")
+        )
         suffix = ""
         if c.path:
             suffix += f"  [{c.path}]"
@@ -102,8 +107,12 @@ def _compute_gt_ambiguity_stats(dataset_csv: Path) -> Dict[str, int]:
             gt_id_to_cluster_count[gid] = int(gt_id_to_cluster_count.get(gid, 0)) + 1
 
     gt_ids_covered = len(gt_id_to_cluster_count)
-    gt_ids_multi_cluster = sum(1 for _gid, c in gt_id_to_cluster_count.items() if int(c) > 1)
-    max_clusters_per_gt_id = max([int(c) for c in gt_id_to_cluster_count.values()], default=0)
+    gt_ids_multi_cluster = sum(
+        1 for _gid, c in gt_id_to_cluster_count.items() if int(c) > 1
+    )
+    max_clusters_per_gt_id = max(
+        [int(c) for c in gt_id_to_cluster_count.values()], default=0
+    )
 
     return {
         "gt_ids_covered": int(gt_ids_covered),
@@ -128,7 +137,6 @@ def _to_int(x: Any, default: int = 0) -> int:
         return int(float(str(x)))
     except Exception:
         return int(default)
-
 
 
 def _csv_has_any_nonempty_value(path: Path, *, column: str) -> bool:
@@ -206,10 +214,14 @@ def _check_exists(
 
     p = Path(path)
     if not required:
-        return QACheck(name=name, ok=True, path=str(p), detail=str(ok_detail_if_not_required))
+        return QACheck(
+            name=name, ok=True, path=str(p), detail=str(ok_detail_if_not_required)
+        )
 
     ok = p.exists()
-    return QACheck(name=name, ok=ok, path=str(p), detail="" if ok else str(missing_detail))
+    return QACheck(
+        name=name, ok=ok, path=str(p), detail="" if ok else str(missing_detail)
+    )
 
 
 def _checks_scanner_receipts(suite_dir: Path) -> List[QACheck]:
@@ -221,7 +233,9 @@ def _checks_scanner_receipts(suite_dir: Path) -> List[QACheck]:
     receipts_found = _to_int(sc.get("receipts_found"), 0)
     profile = sc.get("profile")
     profile_mode = str(sc.get("profile_mode") or "")
-    missing_tools = sc.get("missing_tools") if isinstance(sc.get("missing_tools"), list) else []
+    missing_tools = (
+        sc.get("missing_tools") if isinstance(sc.get("missing_tools"), list) else []
+    )
     warnings_list = sc.get("warnings") if isinstance(sc.get("warnings"), list) else []
 
     ok_profile = bool(profile) and profile_mode != "unknown"
@@ -233,11 +247,15 @@ def _checks_scanner_receipts(suite_dir: Path) -> List[QACheck]:
         if receipts_found <= 0:
             detail_parts.append("no config_receipt.json found under cases/*/tool_runs")
         if missing_tools:
-            detail_parts.append(f"missing receipts for tools: {sorted(set([str(x) for x in missing_tools]))}")
+            detail_parts.append(
+                f"missing receipts for tools: {sorted(set([str(x) for x in missing_tools]))}"
+            )
     if warn_profile:
         detail_parts.append(f"profile drift inside suite: profile_mode={profile_mode}")
     if warnings_list:
-        detail_parts.append("; ".join([str(w) for w in warnings_list if str(w).strip()]))
+        detail_parts.append(
+            "; ".join([str(w) for w in warnings_list if str(w).strip()])
+        )
 
     return [
         QACheck(
@@ -264,7 +282,9 @@ def _checks_gt_tolerance_selection(
     checks: List[QACheck] = []
     selected_gt_tolerance: Optional[int] = None
 
-    checks.append(_check_exists("analysis/gt_tolerance_selection.json exists", sel_json))
+    checks.append(
+        _check_exists("analysis/gt_tolerance_selection.json exists", sel_json)
+    )
 
     if not sel_json.exists():
         return checks, None
@@ -282,7 +302,9 @@ def _checks_gt_tolerance_selection(
         )
         return checks, None
 
-    sel_val = payload.get("selected_gt_tolerance") if isinstance(payload, dict) else None
+    sel_val = (
+        payload.get("selected_gt_tolerance") if isinstance(payload, dict) else None
+    )
     ok_val = False
     try:
         selected_gt_tolerance = int(sel_val)  # type: ignore[arg-type]
@@ -341,7 +363,11 @@ def _checks_gt_tolerance_sweep(
     sweep_json = Path(analysis_dir) / "gt_tolerance_sweep.json"
 
     checks: List[QACheck] = []
-    checks.append(_check_exists("analysis/_tables/gt_tolerance_sweep_report.csv exists", sweep_report))
+    checks.append(
+        _check_exists(
+            "analysis/_tables/gt_tolerance_sweep_report.csv exists", sweep_report
+        )
+    )
     checks.append(_check_exists("analysis/gt_tolerance_sweep.json exists", sweep_json))
 
     if not sweep_json.exists():
@@ -387,7 +413,9 @@ def _checks_gt_tolerance_sweep(
             name="gt_tolerance_sweep has analysis_rc=0 for all candidates",
             ok=ok_rc,
             path=str(sweep_json),
-            detail="" if ok_rc else f"non-zero analysis_rc for tolerances: {', '.join(bad)}",
+            detail=""
+            if ok_rc
+            else f"non-zero analysis_rc for tolerances: {', '.join(bad)}",
         )
     )
 
@@ -420,9 +448,15 @@ def _checks_gt_ambiguity(
         )
         return checks
 
-    warn_amb = (int(amb.get("clusters_multi_gt", 0)) > 0) or (int(amb.get("gt_ids_multi_cluster", 0)) > 0)
+    warn_amb = (int(amb.get("clusters_multi_gt", 0)) > 0) or (
+        int(amb.get("gt_ids_multi_cluster", 0)) > 0
+    )
 
-    tol_suffix = f" (gt_tolerance={selected_gt_tolerance})" if selected_gt_tolerance is not None else ""
+    tol_suffix = (
+        f" (gt_tolerance={selected_gt_tolerance})"
+        if selected_gt_tolerance is not None
+        else ""
+    )
     detail = (
         f"many_to_one_clusters={int(amb.get('clusters_multi_gt', 0))}; "
         f"one_to_many_gt_ids={int(amb.get('gt_ids_multi_cluster', 0))}; "
@@ -477,7 +511,9 @@ def _checks_calibration_artifacts(
                 )
             )
         else:
-            included_cases = cal_data.get("included_cases") if isinstance(cal_data, dict) else None
+            included_cases = (
+                cal_data.get("included_cases") if isinstance(cal_data, dict) else None
+            )
             ok_inc = isinstance(included_cases, list) and len(included_cases) > 0
             checks.append(
                 QACheck(
@@ -567,7 +603,9 @@ def _checks_triage_queue(
     ok_schema = (not missing_col_cases) and (not read_errors)
     detail_parts: List[str] = []
     if missing_col_cases:
-        detail_parts.append(f"missing triage_score_v1 for cases: {sorted(missing_col_cases)}")
+        detail_parts.append(
+            f"missing triage_score_v1 for cases: {sorted(missing_col_cases)}"
+        )
     if read_errors:
         detail_parts.append(f"CSV read errors: {read_errors}")
 
@@ -605,7 +643,9 @@ def _checks_triage_queue(
         QACheck(
             name="triage_queue.csv has non-empty triage_score_v1",
             ok=bool(any_scored),
-            detail="" if any_scored else "all triage_score_v1 values are empty (calibration likely not applied)",
+            detail=""
+            if any_scored
+            else "all triage_score_v1 values are empty (calibration likely not applied)",
             path=str(suite_dir / "cases"),
         )
     )
@@ -651,8 +691,16 @@ def _checks_triage_eval(tables_dir: Path, *, expect_calibration: bool) -> List[Q
         ]
 
     checks: List[QACheck] = []
-    checks.append(_check_exists("analysis/_tables/triage_tool_utility.csv exists", tool_utility_csv))
-    checks.append(_check_exists("analysis/_tables/triage_tool_marginal.csv exists", tool_marginal_csv))
+    checks.append(
+        _check_exists(
+            "analysis/_tables/triage_tool_utility.csv exists", tool_utility_csv
+        )
+    )
+    checks.append(
+        _check_exists(
+            "analysis/_tables/triage_tool_marginal.csv exists", tool_marginal_csv
+        )
+    )
 
     if not eval_summary.exists():
         checks.append(
@@ -782,14 +830,34 @@ def _validate_calibration_suite_artifacts(
     )
 
     # 3) Required suite artifacts
-    checks.append(_check_exists("analysis/_tables/triage_dataset.csv exists", triage_dataset))
-    checks.extend(_checks_gt_ambiguity(triage_dataset, selected_gt_tolerance=selected_gt_tolerance))
-    checks.extend(_checks_calibration_artifacts(analysis_dir, tables_dir, expect_calibration=bool(options.expect_calibration)))
+    checks.append(
+        _check_exists("analysis/_tables/triage_dataset.csv exists", triage_dataset)
+    )
+    checks.extend(
+        _checks_gt_ambiguity(
+            triage_dataset, selected_gt_tolerance=selected_gt_tolerance
+        )
+    )
+    checks.extend(
+        _checks_calibration_artifacts(
+            analysis_dir,
+            tables_dir,
+            expect_calibration=bool(options.expect_calibration),
+        )
+    )
 
     # 4) Per-case triage queue checks (schema + scored signal)
-    checks.extend(_checks_triage_queue(suite_dir, require_scored_queue=bool(options.require_scored_queue)))
+    checks.extend(
+        _checks_triage_queue(
+            suite_dir, require_scored_queue=bool(options.require_scored_queue)
+        )
+    )
 
     # 5) triage_eval (strategies + tool utility/marginal)
-    checks.extend(_checks_triage_eval(tables_dir, expect_calibration=bool(options.expect_calibration)))
+    checks.extend(
+        _checks_triage_eval(
+            tables_dir, expect_calibration=bool(options.expect_calibration)
+        )
+    )
 
     return checks

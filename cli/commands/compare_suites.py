@@ -22,11 +22,15 @@ from pipeline.analysis.suite.suite_compare_report import build_suite_compare_rep
 def _parse_compare_suites_csv(raw: str) -> Tuple[str, str]:
     s = str(raw or "").strip()
     if not s:
-        raise SystemExit("--compare-suites requires a value like 'latest,previous' or '<suiteA>,<suiteB>'")
+        raise SystemExit(
+            "--compare-suites requires a value like 'latest,previous' or '<suiteA>,<suiteB>'"
+        )
 
     parts = [p.strip() for p in s.split(",") if p.strip()]
     if len(parts) != 2:
-        raise SystemExit(f"--compare-suites expects exactly two comma-separated refs (got: {raw!r})")
+        raise SystemExit(
+            f"--compare-suites expects exactly two comma-separated refs (got: {raw!r})"
+        )
     return parts[0], parts[1]
 
 
@@ -74,7 +78,9 @@ def run_suite_compare(args, *, suite_root: Path) -> int:
         # Default: non-interactive drift check.
         ref_a, ref_b = "latest", "previous"
 
-    suite_a, suite_b = _resolve_pair(suite_root=suite_root, ref_a=str(ref_a), ref_b=str(ref_b))
+    suite_a, suite_b = _resolve_pair(
+        suite_root=suite_root, ref_a=str(ref_a), ref_b=str(ref_b)
+    )
 
     # Default output: write into suite A (usually 'latest').
     summary = build_suite_compare_report(suite_dir_a=suite_a, suite_dir_b=suite_b)

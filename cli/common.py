@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Optional
 
 
-def derive_runs_repo_name(*, repo_url: Optional[str], repo_path: Optional[str], fallback: str) -> str:
+def derive_runs_repo_name(
+    *, repo_url: Optional[str], repo_path: Optional[str], fallback: str
+) -> str:
     """Best-effort repo name used by scanners under runs/<tool>/<repo_name>/..."""
     if repo_url:
         last = repo_url.rstrip("/").split("/")[-1]

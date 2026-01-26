@@ -30,7 +30,9 @@ def _load_normalized_by_tool(ctx: AnalysisContext) -> Dict[str, Dict[str, Any]]:
     description="Schema sanity checks for normalized JSON files.",
     produces=(StoreKeys.DIAGNOSTICS_SCHEMA,),
 )
-def stage_diagnostics_schema(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
+def stage_diagnostics_schema(
+    ctx: AnalysisContext, store: ArtifactStore
+) -> Dict[str, Any]:
     normalized = _load_normalized_by_tool(ctx)
 
     missing_top = Counter()
@@ -38,10 +40,21 @@ def stage_diagnostics_schema(ctx: AnalysisContext, store: ArtifactStore) -> Dict
     finding_counts = {}
 
     required_top = ["schema_version", "tool", "findings"]
-    required_finding = ["finding_id", "rule_id", "title", "file_path", "line_number", "severity"]
+    required_finding = [
+        "finding_id",
+        "rule_id",
+        "title",
+        "file_path",
+        "line_number",
+        "severity",
+    ]
 
     for tool, doc in normalized.items():
-        finding_counts[tool] = len(doc.get("findings") or []) if isinstance(doc.get("findings"), list) else 0
+        finding_counts[tool] = (
+            len(doc.get("findings") or [])
+            if isinstance(doc.get("findings"), list)
+            else 0
+        )
         for k in required_top:
             if k not in doc:
                 missing_top[k] += 1

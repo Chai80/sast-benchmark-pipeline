@@ -41,7 +41,11 @@ from pipeline.suites.layout import (
     get_suite_paths,
     new_suite_id,
 )
-from pipeline.suites.manifests import update_latest_pointer, update_suite_artifacts, write_case_manifest
+from pipeline.suites.manifests import (
+    update_latest_pointer,
+    update_suite_artifacts,
+    write_case_manifest,
+)
 from tools.io import read_json, write_json
 
 
@@ -150,7 +154,9 @@ def _write_run_json(
         return None
 
     normalized_name = _pick_first(["normalized.json", f"{repo_name}.normalized.json"])
-    raw_name = _pick_first(["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"])
+    raw_name = _pick_first(
+        ["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"]
+    )
     metadata_name = _pick_first(["metadata.json"])
     logs_dir = run_dir / "logs"
     logs_dir_name = "logs" if logs_dir.exists() and logs_dir.is_dir() else None
@@ -232,7 +238,9 @@ def import_legacy_repo_to_suite(
 
     sid = str(suite_id).strip() if suite_id else new_suite_id()
 
-    suite_paths: SuitePaths = get_suite_paths(case_id=str(case_id), suite_id=sid, suite_root=suite_root)
+    suite_paths: SuitePaths = get_suite_paths(
+        case_id=str(case_id), suite_id=sid, suite_root=suite_root
+    )
     ensure_suite_dirs(suite_paths)
     update_latest_pointer(suite_paths)
 
@@ -286,7 +294,9 @@ def import_legacy_repo_to_suite(
             _copy_tree(run_dir, dest_run_dir, link_mode=link_mode)
         except Exception as e:
             missing.append(str(tool))
-            warnings.append(f"legacy_copy_failed:{tool}:{run_dir} -> {dest_run_dir}: {e}")
+            warnings.append(
+                f"legacy_copy_failed:{tool}:{run_dir} -> {dest_run_dir}: {e}"
+            )
             continue
 
         # Add canonical aliases (normalized.json/raw.json) when missing.
@@ -307,7 +317,9 @@ def import_legacy_repo_to_suite(
         # Backfill repo context.
         if isinstance(metadata, dict):
             case_repo_url = case_repo_url or (metadata.get("repo_url") or None)
-            case_repo_path = case_repo_path or (metadata.get("repo_path") or metadata.get("repo_local_path") or None)
+            case_repo_path = case_repo_path or (
+                metadata.get("repo_path") or metadata.get("repo_local_path") or None
+            )
             case_git_branch = case_git_branch or (metadata.get("repo_branch") or None)
             case_git_commit = case_git_commit or (metadata.get("repo_commit") or None)
 

@@ -8,7 +8,12 @@ from pipeline.pipeline import SASTBenchmarkPipeline
 from .runbook import run_suite_runbook
 
 
-def run_suite_mode(args: argparse.Namespace, pipeline: SASTBenchmarkPipeline, *, repo_registry: Dict[str, Dict[str, str]]) -> int:
+def run_suite_mode(
+    args: argparse.Namespace,
+    pipeline: SASTBenchmarkPipeline,
+    *,
+    repo_registry: Dict[str, Dict[str, str]],
+) -> int:
     """Run multiple cases under one suite id.
 
     Suite definitions are Python-only at runtime:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import pprint
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from cli.common import derive_runs_repo_name, parse_csv
 from cli.suite_sources import (
@@ -40,16 +40,24 @@ def _parse_scanners_str(value: str) -> List[str]:
     return scanners
 
 
-def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[str, Dict[str, str]]) -> SuiteDefinition:
+def _build_suite_interactively(
+    args: argparse.Namespace, *, repo_registry: Dict[str, Dict[str, str]]
+) -> SuiteDefinition:
     print("\n🧩 Suite mode: run multiple cases under one suite id.")
     print("   - Use this for scanning many repos or many branches/worktrees.")
-    print("   - Replay files are optional; suite.json/case.json/run.json are always written.\n")
+    print(
+        "   - Replay files are optional; suite.json/case.json/run.json are always written.\n"
+    )
 
-    suite_id_in = _prompt_text("Suite id (press Enter to auto-generate)", default="").strip()
+    suite_id_in = _prompt_text(
+        "Suite id (press Enter to auto-generate)", default=""
+    ).strip()
     suite_id = suite_id_in or new_suite_id()
 
     default_scanners_csv = args.scanners or DEFAULT_SCANNERS_CSV
-    scanners_csv = _prompt_text("Scanners to run (comma-separated)", default=default_scanners_csv)
+    scanners_csv = _prompt_text(
+        "Scanners to run (comma-separated)", default=default_scanners_csv
+    )
     scanners = _parse_scanners_str(scanners_csv)
     if not scanners:
         raise SystemExit("No valid scanners selected.")
@@ -89,16 +97,22 @@ def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[
                 candidates = []
 
             if candidates:
-                opts: Dict[str, object] = {p.name: str(p) for p in sorted(candidates, key=lambda p: p.name)}
+                opts: Dict[str, object] = {
+                    p.name: str(p) for p in sorted(candidates, key=lambda p: p.name)
+                }
                 opts["custom"] = "Enter a custom worktrees folder path"
                 choice = choose_from_menu("Choose a worktrees folder:", opts)
                 if choice == "custom":
-                    entered = _prompt_text("Worktrees folder path", default=str(base)).strip()
+                    entered = _prompt_text(
+                        "Worktrees folder path", default=str(base)
+                    ).strip()
                     root = Path(entered).expanduser().resolve()
                 else:
                     root = (base / choice).resolve()
             else:
-                entered = _prompt_text("Worktrees folder path", default=str(base)).strip()
+                entered = _prompt_text(
+                    "Worktrees folder path", default=str(base)
+                ).strip()
                 root = Path(entered).expanduser().resolve()
 
             discovered = _discover_git_checkouts_under(root)
@@ -117,7 +131,9 @@ def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[
             for i, rel in enumerate(rels, start=1):
                 print(f"[{i}] {rel}")
 
-            raw_sel = _prompt_text("Select worktrees by number (e.g., 1,3-5) or 'all'", default="all")
+            raw_sel = _prompt_text(
+                "Select worktrees by number (e.g., 1,3-5) or 'all'", default="all"
+            )
             sel = _parse_index_selection(raw_sel, n=len(rels))
             if not sel:
                 print("  ⚠️  No worktrees selected.")
@@ -150,7 +166,9 @@ def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[
             continue
 
         if action == "add_csv":
-            csv_in = _prompt_text("Cases CSV path", default="inputs/suite_inputs/cases.csv").strip()
+            csv_in = _prompt_text(
+                "Cases CSV path", default="inputs/suite_inputs/cases.csv"
+            ).strip()
             csv_path = Path(csv_in).expanduser().resolve()
             loaded = _load_suite_cases_from_csv(csv_path)
             if not loaded:
@@ -166,7 +184,10 @@ def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[
                 # Ensure the case_id is safe
                 c = sc.case
                 if cid != c.case_id:
-                    sc = SuiteCase(case=CaseSpec(**{**c.__dict__, 'case_id': cid}), overrides=sc.overrides)
+                    sc = SuiteCase(
+                        case=CaseSpec(**{**c.__dict__, "case_id": cid}),
+                        overrides=sc.overrides,
+                    )
                 cases.append(sc)
                 seen_case_ids.add(cid)
                 added += 1
@@ -175,7 +196,9 @@ def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[
             continue
 
         # Default: add a single case via preset/custom/local
-        repo_spec, label, _repo_id = _resolve_repo_for_suite_case_interactive(repo_registry=repo_registry)
+        repo_spec, label, _repo_id = _resolve_repo_for_suite_case_interactive(
+            repo_registry=repo_registry
+        )
 
         runs_repo_name = derive_runs_repo_name(
             repo_url=repo_spec.repo_url,
@@ -184,13 +207,18 @@ def _build_suite_interactively(args: argparse.Namespace, *, repo_registry: Dict[
         )
 
         proposed = runs_repo_name
-        raw_case_id = _prompt_text("Case id (folder + DB key)", default=proposed).strip() or proposed
+        raw_case_id = (
+            _prompt_text("Case id (folder + DB key)", default=proposed).strip()
+            or proposed
+        )
         case_id = safe_name(raw_case_id)
         if case_id != raw_case_id:
             print(f"  ⚠️  case_id sanitized to: {case_id}")
 
         if case_id in seen_case_ids:
-            print(f"  ❌ case_id '{case_id}' already exists in this suite. Pick a different one.")
+            print(
+                f"  ❌ case_id '{case_id}' already exists in this suite. Pick a different one."
+            )
             continue
 
         seen_case_ids.add(case_id)
@@ -259,7 +287,9 @@ def _write_suite_py(path: str | Path, suite_def: SuiteDefinition) -> Path:
     return p
 
 
-def _resolve_suite_case_for_run(sc: SuiteCase, *, repo_registry: Dict[str, Dict[str, str]]) -> Tuple[SuiteCase, str]:
+def _resolve_suite_case_for_run(
+    sc: SuiteCase, *, repo_registry: Dict[str, Dict[str, str]]
+) -> Tuple[SuiteCase, str]:
     """Legacy shim.
 
     Suite-mode resolution now happens through the explicit resolver boundary
@@ -306,7 +336,10 @@ def _build_suite_from_sources(args: argparse.Namespace) -> SuiteDefinition:
                 continue
             c = sc.case
             if cid != c.case_id:
-                sc = SuiteCase(case=CaseSpec(**{**c.__dict__, 'case_id': cid}), overrides=sc.overrides)
+                sc = SuiteCase(
+                    case=CaseSpec(**{**c.__dict__, "case_id": cid}),
+                    overrides=sc.overrides,
+                )
             cases.append(sc)
             seen.add(cid)
 

@@ -29,13 +29,11 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
-from tools.io import read_json, read_line_content, write_json
+from tools.io import read_json
 
-from sast_benchmark.io.run_dir import create_run_dir, create_run_dir_compat
 from sast_benchmark.domain.finding import FindingNormalized
-
 
 
 _EPHEMERAL_CONFIG_KEYS = {
@@ -53,15 +51,15 @@ _EPHEMERAL_CONFIG_KEYS = {
 }
 
 
-def _config_hash(scanner: str, scanner_version: str, extra: Optional[Dict[str, Any]]) -> str:
+def _config_hash(
+    scanner: str, scanner_version: str, extra: Optional[Dict[str, Any]]
+) -> str:
     """Hash stable, config-like fields for provenance.
 
     This intentionally excludes run-specific paths and timings.
     """
     cfg_extra = {
-        k: v
-        for k, v in (extra or {}).items()
-        if k not in _EPHEMERAL_CONFIG_KEYS
+        k: v for k, v in (extra or {}).items() if k not in _EPHEMERAL_CONFIG_KEYS
     }
     payload = {
         "scanner": scanner,
@@ -100,6 +98,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 # Command helpers
 # -------------------------
 
+
 @dataclass(frozen=True)
 class CmdResult:
     exit_code: int
@@ -121,7 +120,7 @@ def which_or_raise(bin_name: str, fallbacks: Optional[List[str]] = None) -> str:
     if found:
         return found
 
-    for candidate in (fallbacks or []):
+    for candidate in fallbacks or []:
         p = Path(candidate)
         if p.exists() and os.access(str(p), os.X_OK):
             return str(p)
@@ -184,6 +183,7 @@ def run_cmd(
 # -------------------------
 # Repo helpers
 # -------------------------
+
 
 def _anchor_under_root(path: Path) -> Path:
     """Anchor a relative path under the project root."""
@@ -251,13 +251,13 @@ def get_git_branch(repo_path: Path) -> Optional[str]:
     Returns None if the repo is detached (HEAD) or git is unavailable.
     """
     res = run_cmd(
-        ['git', '-C', str(repo_path), 'rev-parse', '--abbrev-ref', 'HEAD'],
+        ["git", "-C", str(repo_path), "rev-parse", "--abbrev-ref", "HEAD"],
         timeout_seconds=20,
         print_stderr=False,
         print_stdout=False,
     )
-    b = (res.stdout or '').strip()
-    if res.exit_code != 0 or not b or b == 'HEAD':
+    b = (res.stdout or "").strip()
+    if res.exit_code != 0 or not b or b == "HEAD":
         return None
     return b
 
@@ -274,13 +274,23 @@ def get_commit_author_info(repo_path: Path, commit: str) -> Dict[str, Optional[s
         print_stdout=False,
     )
     if res.exit_code != 0:
-        return {"commit_author_name": None, "commit_author_email": None, "commit_date": None}
+        return {
+            "commit_author_name": None,
+            "commit_author_email": None,
+            "commit_date": None,
+        }
 
     lines = (res.stdout or "").splitlines()
     return {
-        "commit_author_name": lines[0].strip() if len(lines) > 0 and lines[0].strip() else None,
-        "commit_author_email": lines[1].strip() if len(lines) > 1 and lines[1].strip() else None,
-        "commit_date": lines[2].strip() if len(lines) > 2 and lines[2].strip() else None,
+        "commit_author_name": lines[0].strip()
+        if len(lines) > 0 and lines[0].strip()
+        else None,
+        "commit_author_email": lines[1].strip()
+        if len(lines) > 1 and lines[1].strip()
+        else None,
+        "commit_date": lines[2].strip()
+        if len(lines) > 2 and lines[2].strip()
+        else None,
     }
 
 
@@ -295,6 +305,7 @@ def get_commit_author_info(repo_path: Path, commit: str) -> Dict[str, Optional[s
 # -------------------------
 # Repo acquisition + metadata
 # -------------------------
+
 
 @dataclass(frozen=True)
 class TargetRepo:
@@ -340,13 +351,19 @@ def acquire_repo(
     return TargetRepo(repo_path=p, repo_name=name, repo_url=repo_url, commit=commit)
 
 
-def get_commit_author_info_compat(repo_path: Path, commit: Optional[str]) -> Dict[str, Optional[str]]:
+def get_commit_author_info_compat(
+    repo_path: Path, commit: Optional[str]
+) -> Dict[str, Optional[str]]:
     """
     Backwards-compatible helper.
 
     Returns keys with None if commit info isn't available; never raises.
     """
-    base = {"commit_author_name": None, "commit_author_email": None, "commit_date": None}
+    base = {
+        "commit_author_name": None,
+        "commit_author_email": None,
+        "commit_date": None,
+    }
     if not commit:
         return base
     try:
@@ -402,7 +419,10 @@ def build_run_metadata(
 # Source location helpers
 # -------------------------
 
-def normalize_repo_relative_path(repo_path: Path, tool_path: Optional[str]) -> Optional[str]:
+
+def normalize_repo_relative_path(
+    repo_path: Path, tool_path: Optional[str]
+) -> Optional[str]:
     """
     Convert tool-reported absolute paths to repo-relative if possible.
     """
@@ -426,6 +446,7 @@ def normalize_repo_relative_path(repo_path: Path, tool_path: Optional[str]) -> O
 # Shared mapping loaders
 # -------------------------
 
+
 def load_cwe_to_owasp_map(mappings_dir: Optional[Path] = None) -> Dict[str, Any]:
     """
     Load mappings/cwe_to_owasp_top10_mitre.json.
@@ -446,7 +467,10 @@ def load_cwe_to_owasp_map(mappings_dir: Optional[Path] = None) -> Dict[str, Any]
 # Deterministic output helpers
 # -------------------------
 
-def finalize_normalized_findings(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+
+def finalize_normalized_findings(
+    findings: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
     """Make normalized findings deterministic.
 
     Normalizers are allowed to be "thin" and focused on parsing, but the
@@ -463,10 +487,19 @@ def finalize_normalized_findings(findings: List[Dict[str, Any]]) -> List[Dict[st
     """
     # Optional lightweight schema validation (non-fatal by default).
     # Enable with: SAST_VALIDATE_NORMALIZED=1
-    validate = os.environ.get("SAST_VALIDATE_NORMALIZED", "").strip().lower() in {"1", "true", "yes", "y"}
-    strict = os.environ.get("SAST_VALIDATE_NORMALIZED_STRICT", "").strip().lower() in {"1", "true", "yes", "y"}
+    validate = os.environ.get("SAST_VALIDATE_NORMALIZED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }
+    strict = os.environ.get("SAST_VALIDATE_NORMALIZED_STRICT", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }
     validation_errors: List[str] = []
-
 
     def _safe_int(x: Any) -> int:
         try:
@@ -501,7 +534,9 @@ def finalize_normalized_findings(findings: List[Dict[str, Any]]) -> List[Dict[st
         if validate:
             problems = FindingNormalized.validate_dict(f)
             if problems:
-                where = f"{f.get('file_path') or '<no-file>'}:{f.get('line_number') or '?'}"
+                where = (
+                    f"{f.get('file_path') or '<no-file>'}:{f.get('line_number') or '?'}"
+                )
                 validation_errors.append(
                     f"normalized finding invalid at {where} (finding_id={f.get('finding_id')!r}): {', '.join(problems)}"
                 )
@@ -523,12 +558,17 @@ def finalize_normalized_findings(findings: List[Dict[str, Any]]) -> List[Dict[st
 
     if validate and validation_errors:
         head = validation_errors[:25]
-        msg = "\n".join(["[WARN] Normalized finding schema issues detected:"] + [f"  - {x}" for x in head])
+        msg = "\n".join(
+            ["[WARN] Normalized finding schema issues detected:"]
+            + [f"  - {x}" for x in head]
+        )
         if len(validation_errors) > 25:
             msg += f"\n  ... ({len(validation_errors) - 25} more)"
         print(msg, file=sys.stderr)
         if strict:
-            raise ValueError(f"Normalized findings failed validation ({len(validation_errors)} issues).")
+            raise ValueError(
+                f"Normalized findings failed validation ({len(validation_errors)} issues)."
+            )
 
     def _key(f: Dict[str, Any]) -> tuple:
         return (

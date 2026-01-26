@@ -11,7 +11,7 @@ from cli.commands.compare_suites import run_suite_compare
 from cli.commands.benchmark import run_benchmark
 from cli.commands.scan import run_scan
 from cli.commands.suite import run_suite_mode
-from cli.utils.suite_picker import prompt_for_suite, resolve_latest_suite_dir
+from cli.utils.suite_picker import resolve_latest_suite_dir
 
 from pipeline.identifiers import repo_id_from_repo_url, sanitize_sonar_key_fragment
 from pipeline.models import CaseSpec, RepoSpec
@@ -54,7 +54,12 @@ def resolve_repo(
     """Return (repo_url, repo_path, label, repo_id)."""
     if args.repo_key:
         entry = repo_registry[args.repo_key]
-        return entry.get("repo_url"), None, entry.get("label", args.repo_key), args.repo_key
+        return (
+            entry.get("repo_url"),
+            None,
+            entry.get("label", args.repo_key),
+            args.repo_key,
+        )
 
     if args.repo_path:
         p = Path(args.repo_path).resolve()
@@ -75,7 +80,9 @@ def resolve_repo(
     )
 
     if choice == "preset":
-        key = choose_from_menu("Choose a preset repo:", {k: v["label"] for k, v in repo_registry.items()})
+        key = choose_from_menu(
+            "Choose a preset repo:", {k: v["label"] for k, v in repo_registry.items()}
+        )
         entry = repo_registry[key]
         return entry.get("repo_url"), None, entry.get("label", key), key
 
@@ -168,14 +175,20 @@ def dispatch(
                 suite_dir = latest
                 suite_id = latest.name
 
-                src = "LATEST" if (suite_root / "LATEST").exists() else "lexicographic fallback"
+                src = (
+                    "LATEST"
+                    if (suite_root / "LATEST").exists()
+                    else "lexicographic fallback"
+                )
                 print(f"ℹ️  Using suite: {suite_id} (default via {src})")
             else:
                 # Allow explicit --suite-id latest.
                 if suite_id.strip().lower() == "latest":
                     latest = resolve_latest_suite_dir(suite_root)
                     if latest is None:
-                        raise SystemExit(f"No suites found under {suite_root} (LATEST not available).")
+                        raise SystemExit(
+                            f"No suites found under {suite_root} (LATEST not available)."
+                        )
                     suite_dir = latest
                     suite_id = latest.name
                     print(f"ℹ️  Resolved --suite-id latest -> {suite_id}")
@@ -184,15 +197,10 @@ def dispatch(
                     print(f"ℹ️  Using suite: {suite_id} (explicit)")
 
             if not Path(suite_dir).exists():
-
                 raise SystemExit(
-
                     f"Suite '{suite_id}' not found under {suite_root}. "
-
                     f"Hint: omit --suite-id to use LATEST, or pass --suite-id latest."
-
                 )
-
 
             # New default: when analyzing a suite, analyze ALL cases unless the
             # user pins --case-id.
@@ -222,9 +230,15 @@ def dispatch(
             track=str(args.track).strip() if args.track else None,
         )
 
-        return int(run_analyze(args, pipeline, case=case, suite_root=suite_root, suite_id=suite_id))
+        return int(
+            run_analyze(
+                args, pipeline, case=case, suite_root=suite_root, suite_id=suite_id
+            )
+        )
 
-    repo_url, repo_path, label, repo_id = resolve_repo(args, repo_registry=repo_registry)
+    repo_url, repo_path, label, repo_id = resolve_repo(
+        args, repo_registry=repo_registry
+    )
 
     # Derive the repo folder name used under runs/<tool>/<repo_name>/
     runs_repo_name = args.runs_repo_name or derive_runs_repo_name(
@@ -250,7 +264,25 @@ def dispatch(
     suite_id = str(args.suite_id) if args.suite_id else None
 
     if mode == "scan":
-        return int(run_scan(args, pipeline, case=case, repo_id=repo_id, suite_root=suite_root, suite_id=suite_id))
+        return int(
+            run_scan(
+                args,
+                pipeline,
+                case=case,
+                repo_id=repo_id,
+                suite_root=suite_root,
+                suite_id=suite_id,
+            )
+        )
 
     # default: benchmark
-    return int(run_benchmark(args, pipeline, case=case, repo_id=repo_id, suite_root=suite_root, suite_id=suite_id))
+    return int(
+        run_benchmark(
+            args,
+            pipeline,
+            case=case,
+            repo_id=repo_id,
+            suite_root=suite_root,
+            suite_id=suite_id,
+        )
+    )

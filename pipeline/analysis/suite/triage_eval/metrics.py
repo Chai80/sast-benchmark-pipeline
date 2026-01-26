@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
+
 def _to_int(x: Any, default: int = 0) -> int:
     try:
         if x is None:
@@ -98,6 +99,7 @@ def _load_case_gt_ids(case_dir: Path) -> Tuple[Set[str], bool]:
 
     return gt_ids, bool(gt_ids)
 
+
 def _gt_ids_for_row(r: Dict[str, str]) -> List[str]:
     # Canonical list encoding.
     ids = _parse_json_list(str(r.get("gt_overlap_ids_json") or ""))
@@ -123,4 +125,3 @@ class CaseEval:
     has_gt: bool
     gt_total: int
     n_clusters: int
-

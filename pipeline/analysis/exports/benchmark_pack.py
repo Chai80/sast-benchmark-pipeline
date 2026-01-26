@@ -115,8 +115,14 @@ def stage_benchmark_pack(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str
 
 
 def main(argv: List[str] | None = None) -> None:  # pragma: no cover
-    ap = argparse.ArgumentParser(description="Build benchmark_pack.json from an analysis directory.")
-    ap.add_argument("--analysis-dir", required=True, help="Path to a case analysis dir (contains outputs)")
+    ap = argparse.ArgumentParser(
+        description="Build benchmark_pack.json from an analysis directory."
+    )
+    ap.add_argument(
+        "--analysis-dir",
+        required=True,
+        help="Path to a case analysis dir (contains outputs)",
+    )
     args = ap.parse_args(argv)
 
     analysis_dir = Path(args.analysis_dir)

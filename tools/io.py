@@ -59,7 +59,9 @@ def write_json_atomic(
 ) -> None:
     """Explicit atomic JSON writer (canonical API)."""
 
-    _write_json_atomic(Path(path), data, indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii)
+    _write_json_atomic(
+        Path(path), data, indent=indent, sort_keys=sort_keys, ensure_ascii=ensure_ascii
+    )
 
 
 def read_json(path: Path) -> Any:

@@ -16,7 +16,13 @@ from tools.core import (
     write_json,
 )
 
-from .runner import SNYK_BIN_FALLBACKS, prepare_run_paths, run_snyk_code_sarif, snyk_version, RunPaths
+from .runner import (
+    SNYK_BIN_FALLBACKS,
+    prepare_run_paths,
+    run_snyk_code_sarif,
+    snyk_version,
+    RunPaths,
+)
 from .vendor_rules import load_snyk_vendor_owasp_2021_index
 from .normalize import normalize_sarif
 

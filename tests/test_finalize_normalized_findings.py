@@ -15,7 +15,10 @@ class TestFinalizeNormalizedFindings(unittest.TestCase):
                 "rule_id": "R2",
                 "title": "B",
                 "cwe_ids": ["79", "22"],
-                "owasp_top_10_2021": {"codes": ["A03", "A01"], "categories": ["X", "A"]},
+                "owasp_top_10_2021": {
+                    "codes": ["A03", "A01"],
+                    "categories": ["X", "A"],
+                },
             },
             {
                 "finding_id": "a",

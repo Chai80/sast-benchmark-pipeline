@@ -15,7 +15,9 @@ from .findings import load_findings_by_tool
 from .store_keys import StoreKeys
 
 
-def build_location_items(ctx: AnalysisContext, store: ArtifactStore) -> List[Dict[str, Any]]:
+def build_location_items(
+    ctx: AnalysisContext, store: ArtifactStore
+) -> List[Dict[str, Any]]:
     """Flatten findings into a list of location items for clustering."""
     cached = store.get(StoreKeys.LOCATION_ITEMS)
     if isinstance(cached, list):
@@ -28,7 +30,9 @@ def build_location_items(ctx: AnalysisContext, store: ArtifactStore) -> List[Dic
         for f in findings:
             if not isinstance(f, dict):
                 continue
-            fp = normalize_file_path(str(f.get("file_path") or ""), repo_name=ctx.repo_name)
+            fp = normalize_file_path(
+                str(f.get("file_path") or ""), repo_name=ctx.repo_name
+            )
             items.append(
                 {
                     "tool": tool,
@@ -47,7 +51,9 @@ def build_location_items(ctx: AnalysisContext, store: ArtifactStore) -> List[Dic
     return items
 
 
-def ensure_location_clusters(ctx: AnalysisContext, store: ArtifactStore) -> List[Dict[str, Any]]:
+def ensure_location_clusters(
+    ctx: AnalysisContext, store: ArtifactStore
+) -> List[Dict[str, Any]]:
     """Return cached clusters if present; otherwise compute + cache them.
 
     This is a common precondition for many stages (hotspots, consensus, triage,
@@ -59,6 +65,8 @@ def ensure_location_clusters(ctx: AnalysisContext, store: ArtifactStore) -> List
         return clusters
 
     items = build_location_items(ctx, store)
-    clusters = cluster_locations(items, tolerance=ctx.tolerance, repo_name=ctx.repo_name)
+    clusters = cluster_locations(
+        items, tolerance=ctx.tolerance, repo_name=ctx.repo_name
+    )
     store.put(StoreKeys.LOCATION_CLUSTERS, clusters)
     return clusters

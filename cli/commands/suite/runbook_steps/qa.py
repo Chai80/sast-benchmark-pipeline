@@ -130,7 +130,9 @@ def _suite_stage_build_triage_calibration(*, suite_dir: Path, suite_id: str) -> 
     """Best-effort suite-level triage calibration."""
 
     try:
-        from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibration
+        from pipeline.analysis.suite.suite_triage_calibration import (
+            build_triage_calibration,
+        )
 
         cal = build_triage_calibration(suite_dir=suite_dir, suite_id=suite_id)
 
@@ -183,7 +185,9 @@ def _print_triage_eval_macro_snapshot(ev: Dict[str, Any]) -> None:
         print(f"  ⚠️  Failed to print triage_eval macro snapshot: {e}")
 
 
-def post_run_aggregation_and_qa(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun, overall: int) -> int:
+def post_run_aggregation_and_qa(
+    ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun, overall: int
+) -> int:
     """Suite-level aggregation + QA calibration runbook (best-effort)."""
 
     args = ctx.args
@@ -210,7 +214,9 @@ def post_run_aggregation_and_qa(ctx: SuiteRunContext, resolved_run: ResolvedSuit
     # QA calibration runbook: second pass analyze + deterministic checklist
     # ------------------------------------------------------------------
     if qa_mode and (not bool(args.dry_run)) and (not bool(skip_analysis)):
-        overall = _run_qa_calibration_runbook(ctx, resolved_run, qa_ctx=qa_ctx, overall=int(overall))
+        overall = _run_qa_calibration_runbook(
+            ctx, resolved_run, qa_ctx=qa_ctx, overall=int(overall)
+        )
 
     return int(overall)
 
@@ -228,16 +234,22 @@ def _run_qa_calibration_runbook(
     readable and individual stages can be refactored safely.
     """
 
-    overall = _qa_stage_reanalyze(ctx, resolved_run, qa_ctx=qa_ctx, overall=int(overall))
+    overall = _qa_stage_reanalyze(
+        ctx, resolved_run, qa_ctx=qa_ctx, overall=int(overall)
+    )
     _qa_stage_build_triage_eval(ctx, qa_ctx=qa_ctx)
 
     checks, overall = _qa_stage_validate_suite(ctx, qa_ctx=qa_ctx, overall=int(overall))
     overall = _qa_stage_write_manifest(ctx, qa_ctx=qa_ctx, overall=int(overall))
 
     rep_paths = _qa_stage_write_suite_report(qa_ctx=qa_ctx)
-    checks = _qa_stage_append_suite_report_checks(checks, qa_ctx=qa_ctx, rep_paths=rep_paths)
+    checks = _qa_stage_append_suite_report_checks(
+        checks, qa_ctx=qa_ctx, rep_paths=rep_paths
+    )
 
-    overall = _qa_stage_write_checklist_artifacts(checks, qa_ctx=qa_ctx, overall=int(overall))
+    overall = _qa_stage_write_checklist_artifacts(
+        checks, qa_ctx=qa_ctx, overall=int(overall)
+    )
 
     return int(overall)
 
@@ -292,7 +304,9 @@ def _qa_stage_reanalyze(
     return int(overall)
 
 
-def _qa_stage_build_triage_eval(ctx: SuiteRunContext, *, qa_ctx: QARunbookContext) -> None:
+def _qa_stage_build_triage_eval(
+    ctx: SuiteRunContext, *, qa_ctx: QARunbookContext
+) -> None:
     """Suite-level triage_eval stage (best-effort)."""
 
     try:
@@ -336,7 +350,9 @@ def _qa_stage_validate_suite(
             suite_dir=qa_ctx.suite_dir,
             require_scored_queue=(not bool(ctx.flags.qa_no_reanalyze)),
             expect_calibration=True,
-            expect_gt_tolerance_sweep=bool(ctx.gt_sweep.sweep_raw or ctx.gt_sweep.auto_enabled),
+            expect_gt_tolerance_sweep=bool(
+                ctx.gt_sweep.sweep_raw or ctx.gt_sweep.auto_enabled
+            ),
             expect_gt_tolerance_selection=True,
         )
 
@@ -353,7 +369,9 @@ def _qa_stage_validate_suite(
     return checks, int(overall)
 
 
-def _qa_stage_write_manifest(ctx: SuiteRunContext, *, qa_ctx: QARunbookContext, overall: int) -> int:
+def _qa_stage_write_manifest(
+    ctx: SuiteRunContext, *, qa_ctx: QARunbookContext, overall: int
+) -> int:
     """Write QA manifest (best-effort).
 
     We write the manifest even when the checklist fails so CI can scrape it.
@@ -370,16 +388,42 @@ def _qa_stage_write_manifest(ctx: SuiteRunContext, *, qa_ctx: QARunbookContext, 
         suite_dir = qa_ctx.suite_dir
 
         artifacts = {
-            "triage_dataset_csv": str((suite_dir / "analysis" / "_tables" / "triage_dataset.csv").resolve()),
-            "triage_calibration_json": str((suite_dir / "analysis" / "triage_calibration.json").resolve()),
-            "triage_eval_summary_json": str((suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").resolve()),
-            "suite_report_md": str((suite_dir / "analysis" / "suite_report.md").resolve()),
-            "suite_report_json": str((suite_dir / "analysis" / "suite_report.json").resolve()),
-            "triage_tool_utility_csv": str((suite_dir / "analysis" / "_tables" / "triage_tool_utility.csv").resolve()),
-            "triage_tool_marginal_csv": str((suite_dir / "analysis" / "_tables" / "triage_tool_marginal.csv").resolve()),
-            "qa_checklist_json": str((suite_dir / "analysis" / "qa_checklist.json").resolve()),
-            "qa_checklist_md": str((suite_dir / "analysis" / "qa_checklist.md").resolve()),
-            "qa_checklist_txt": str((suite_dir / "analysis" / "qa_calibration_checklist.txt").resolve()),
+            "triage_dataset_csv": str(
+                (suite_dir / "analysis" / "_tables" / "triage_dataset.csv").resolve()
+            ),
+            "triage_calibration_json": str(
+                (suite_dir / "analysis" / "triage_calibration.json").resolve()
+            ),
+            "triage_eval_summary_json": str(
+                (
+                    suite_dir / "analysis" / "_tables" / "triage_eval_summary.json"
+                ).resolve()
+            ),
+            "suite_report_md": str(
+                (suite_dir / "analysis" / "suite_report.md").resolve()
+            ),
+            "suite_report_json": str(
+                (suite_dir / "analysis" / "suite_report.json").resolve()
+            ),
+            "triage_tool_utility_csv": str(
+                (
+                    suite_dir / "analysis" / "_tables" / "triage_tool_utility.csv"
+                ).resolve()
+            ),
+            "triage_tool_marginal_csv": str(
+                (
+                    suite_dir / "analysis" / "_tables" / "triage_tool_marginal.csv"
+                ).resolve()
+            ),
+            "qa_checklist_json": str(
+                (suite_dir / "analysis" / "qa_checklist.json").resolve()
+            ),
+            "qa_checklist_md": str(
+                (suite_dir / "analysis" / "qa_checklist.md").resolve()
+            ),
+            "qa_checklist_txt": str(
+                (suite_dir / "analysis" / "qa_calibration_checklist.txt").resolve()
+            ),
             "gt_tolerance_selection_json": ctx.gt_sweep.selection_path,
         }
 
@@ -389,7 +433,12 @@ def _qa_stage_write_manifest(ctx: SuiteRunContext, *, qa_ctx: QARunbookContext, 
                     "gt_tolerance_sweep_report_csv": ctx.gt_sweep.report_csv,
                     "gt_tolerance_sweep_payload_json": ctx.gt_sweep.payload_json,
                     "gt_tolerance_sweep_tool_stats_csv": str(
-                        (suite_dir / "analysis" / "_tables" / "gt_tolerance_sweep_tool_stats.csv").resolve()
+                        (
+                            suite_dir
+                            / "analysis"
+                            / "_tables"
+                            / "gt_tolerance_sweep_tool_stats.csv"
+                        ).resolve()
                     ),
                 }
             )
@@ -400,7 +449,9 @@ def _qa_stage_write_manifest(ctx: SuiteRunContext, *, qa_ctx: QARunbookContext, 
             sweep_enabled=bool(ctx.gt_sweep.enabled),
             sweep_candidates=[int(x) for x in (ctx.gt_sweep.candidates or [])],
             auto_enabled=bool(getattr(args, "gt_tolerance_auto", False)),
-            auto_min_fraction=float(getattr(args, "gt_tolerance_auto_min_fraction", 0.95) or 0.95)
+            auto_min_fraction=float(
+                getattr(args, "gt_tolerance_auto_min_fraction", 0.95) or 0.95
+            )
             if bool(getattr(args, "gt_tolerance_auto", False))
             else None,
             selection_path=ctx.gt_sweep.selection_path,
@@ -429,11 +480,15 @@ def _qa_stage_write_manifest(ctx: SuiteRunContext, *, qa_ctx: QARunbookContext, 
             checklist_pass=bool(ctx.qa_checklist_pass),
         )
 
-        out_manifest = write_qa_calibration_manifest(suite_dir=suite_dir, manifest=manifest)
+        out_manifest = write_qa_calibration_manifest(
+            suite_dir=suite_dir, manifest=manifest
+        )
         print(f"\n🧾 Wrote QA manifest: {out_manifest}")
 
         # Backward-compatible alias (best-effort)
-        legacy_path = (suite_dir / "analysis" / "qa_calibration_manifest.json").resolve()
+        legacy_path = (
+            suite_dir / "analysis" / "qa_calibration_manifest.json"
+        ).resolve()
         if legacy_path.exists() and str(legacy_path) != str(out_manifest):
             print(f"   (legacy alias) {legacy_path}")
 
@@ -451,7 +506,9 @@ def _qa_stage_write_suite_report(*, qa_ctx: QARunbookContext) -> Dict[str, Any]:
     try:
         from pipeline.analysis.suite.suite_report import write_suite_report
 
-        rep_paths = write_suite_report(suite_dir=qa_ctx.suite_dir, suite_id=str(qa_ctx.suite_id))
+        rep_paths = write_suite_report(
+            suite_dir=qa_ctx.suite_dir, suite_id=str(qa_ctx.suite_id)
+        )
         print("\n📄 Suite report")
         print(f"  Markdown: {rep_paths.get('out_md')}")
         print(f"  JSON    : {rep_paths.get('out_json')}")
@@ -474,8 +531,15 @@ def _qa_stage_append_suite_report_checks(
         from pipeline.analysis.qa.qa_calibration_runbook import QACheck
 
         suite_dir = qa_ctx.suite_dir
-        md_path = Path(str(rep_paths.get("out_md") or (suite_dir / "analysis" / "suite_report.md"))).resolve()
-        js_path = Path(str(rep_paths.get("out_json") or (suite_dir / "analysis" / "suite_report.json"))).resolve()
+        md_path = Path(
+            str(rep_paths.get("out_md") or (suite_dir / "analysis" / "suite_report.md"))
+        ).resolve()
+        js_path = Path(
+            str(
+                rep_paths.get("out_json")
+                or (suite_dir / "analysis" / "suite_report.json")
+            )
+        ).resolve()
 
         checks.append(
             QACheck(

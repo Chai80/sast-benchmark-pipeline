@@ -14,8 +14,19 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from pipeline.suites.layout import SuitePaths, discover_latest_run_dir, discover_repo_dir, ensure_suite_dirs, get_suite_paths, new_suite_id
-from pipeline.suites.manifests import update_latest_pointer, update_suite_artifacts, write_case_manifest
+from pipeline.suites.layout import (
+    SuitePaths,
+    discover_latest_run_dir,
+    discover_repo_dir,
+    ensure_suite_dirs,
+    get_suite_paths,
+    new_suite_id,
+)
+from pipeline.suites.manifests import (
+    update_latest_pointer,
+    update_suite_artifacts,
+    write_case_manifest,
+)
 from sast_benchmark.gt.catalog import materialize_case_gt_catalog
 from tools.io import write_json
 
@@ -57,19 +68,25 @@ def _capture_optional_benchmark_yaml(
         return
 
 
-def init_suite_paths(req: RunCaseRequest, *, case_warnings: List[str]) -> Optional[SuitePaths]:
+def init_suite_paths(
+    req: RunCaseRequest, *, case_warnings: List[str]
+) -> Optional[SuitePaths]:
     """Create/ensure suite layout and return SuitePaths (or None)."""
 
     if not req.use_suite:
         return None
 
     sid = str(req.suite_id) if req.suite_id else new_suite_id()
-    suite_paths = get_suite_paths(case_id=req.case.case_id, suite_id=sid, suite_root=req.suite_root)
+    suite_paths = get_suite_paths(
+        case_id=req.case.case_id, suite_id=sid, suite_root=req.suite_root
+    )
     ensure_suite_dirs(suite_paths)
     update_latest_pointer(suite_paths)
 
     # Optional: capture suite GT YAML into the case folder for reproducibility
-    _capture_optional_benchmark_yaml(req.case.repo.repo_path, suite_paths.case_dir, warnings=case_warnings)
+    _capture_optional_benchmark_yaml(
+        req.case.repo.repo_path, suite_paths.case_dir, warnings=case_warnings
+    )
 
     return suite_paths
 
@@ -144,7 +161,9 @@ def write_run_json(
         return None
 
     normalized_name = _pick_first(["normalized.json", f"{repo_name}.normalized.json"])
-    raw_name = _pick_first(["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"])
+    raw_name = _pick_first(
+        ["raw.sarif", "raw.json", f"{repo_name}.sarif", f"{repo_name}.json"]
+    )
     metadata_name = _pick_first(["metadata.json"])
     config_receipt_name = _pick_first(["config_receipt.json"])
     logs_dir = run_dir / "logs"
@@ -188,7 +207,9 @@ def record_tool_run_manifest(
     # Discover the tool run root (layout v2: <output_root>/<run_id>/... or v1: <output_root>/<repo>/<run_id>/...)
     run_root_dir = discover_repo_dir(tool_out_root, prefer=req.case.runs_repo_name)
     run_dir = discover_latest_run_dir(run_root_dir) if run_root_dir else None
-    metadata = _load_json_if_exists((run_dir / "metadata.json") if run_dir else Path("/nonexistent"))
+    metadata = _load_json_if_exists(
+        (run_dir / "metadata.json") if run_dir else Path("/nonexistent")
+    )
 
     # Prefer the scanner-captured local checkout path for downstream analysis/GT extraction.
     scanned_repo_dir = None
@@ -203,7 +224,9 @@ def record_tool_run_manifest(
             srd = Path(str(scanned_repo_dir)).resolve()
             out_root = tool_out_root.resolve()
             if srd == out_root or out_root in srd.parents:
-                case_warnings.append(f"repo_dir_suspicious:{scanner}:repo_dir_points_into_output_root:{srd}")
+                case_warnings.append(
+                    f"repo_dir_suspicious:{scanner}:repo_dir_points_into_output_root:{srd}"
+                )
     except Exception:
         pass
 
@@ -224,7 +247,9 @@ def record_tool_run_manifest(
             )
             config_receipt_path = str(run_dir / "config_receipt.json")
         except Exception as e:
-            case_warnings.append(f"write_config_receipt_failed:{scanner}:{run_dir}: {e}")
+            case_warnings.append(
+                f"write_config_receipt_failed:{scanner}:{run_dir}: {e}"
+            )
 
         try:
             write_run_json(
@@ -362,14 +387,18 @@ def maybe_run_analysis(
     # prefer it to keep benchmark/analyze outputs deterministic.
     effective_gt_tolerance = int(getattr(req, "gt_tolerance", 0) or 0)
     try:
-        from pipeline.analysis.io.gt_tolerance_policy import resolve_effective_gt_tolerance
+        from pipeline.analysis.io.gt_tolerance_policy import (
+            resolve_effective_gt_tolerance,
+        )
 
         pol = resolve_effective_gt_tolerance(
             suite_dir=suite_paths.suite_dir,
             requested=int(getattr(req, "gt_tolerance", 0) or 0),
         )
 
-        effective_gt_tolerance = int(pol.get("effective_gt_tolerance") or effective_gt_tolerance)
+        effective_gt_tolerance = int(
+            pol.get("effective_gt_tolerance") or effective_gt_tolerance
+        )
         src = str(pol.get("source") or "")
 
         # Record only when the policy *changes* the effective value.
@@ -383,7 +412,7 @@ def maybe_run_analysis(
             case_warnings.append(msg)
             print(f"  ℹ️  {msg}")
 
-        for w in (pol.get("warnings") or []):
+        for w in pol.get("warnings") or []:
             if str(w).strip():
                 print(f"  ⚠️  {w}")
     except Exception:

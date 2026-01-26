@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .metrics import _case_dirs, _load_csv_rows
-from .strategies import _load_suite_calibration, _rank_agreement, _rank_baseline, _rank_calibrated, _rank_calibrated_global
+from .strategies import (
+    _load_suite_calibration,
+    _rank_agreement,
+    _rank_baseline,
+    _rank_calibrated,
+    _rank_calibrated_global,
+)
 
 
 RankFn = Callable[[List[Dict[str, str]]], List[Dict[str, str]]]
@@ -74,7 +80,9 @@ def load_strategies(
     # If calibration exists, triage_rank may already reflect calibrated ordering.
     use_triage_rank_for_baseline = not bool(cal)
 
-    def _rank_base(rows: List[Dict[str, str]], *, _use: bool = use_triage_rank_for_baseline) -> List[Dict[str, str]]:
+    def _rank_base(
+        rows: List[Dict[str, str]], *, _use: bool = use_triage_rank_for_baseline
+    ) -> List[Dict[str, str]]:
         return _rank_baseline(rows, use_triage_rank=_use)
 
     strategies: Dict[str, RankFn] = {
@@ -85,10 +93,14 @@ def load_strategies(
     if cal:
         # Capture cal in default args for deterministic behavior.
 
-        def _rank_cal_global(rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal) -> List[Dict[str, str]]:
+        def _rank_cal_global(
+            rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal
+        ) -> List[Dict[str, str]]:
             return _rank_calibrated_global(rows, cal=_cal)
 
-        def _rank_cal(rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal) -> List[Dict[str, str]]:
+        def _rank_cal(
+            rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal
+        ) -> List[Dict[str, str]]:
             return _rank_calibrated(rows, cal=_cal)
 
         strategies["calibrated_global"] = _rank_cal_global

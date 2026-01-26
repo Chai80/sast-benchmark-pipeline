@@ -14,7 +14,12 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Sequence
 
-from pipeline.analysis.io.write_artifacts import write_csv, write_json, write_markdown, write_text
+from pipeline.analysis.io.write_artifacts import (
+    write_csv,
+    write_json,
+    write_markdown,
+    write_text,
+)
 
 from .model import TriageEvalBuildRequest, TriageEvalPaths
 
@@ -313,11 +318,15 @@ def _write_best_effort_log(
             lines.extend([f"  - {c}" for c in cases_no_clusters])
         if cases_with_gt_but_no_clusters:
             lines.append("")
-            lines.append(f"cases_with_gt_but_no_clusters ({len(cases_with_gt_but_no_clusters)}):")
+            lines.append(
+                f"cases_with_gt_but_no_clusters ({len(cases_with_gt_but_no_clusters)}):"
+            )
             lines.extend([f"  - {c}" for c in cases_with_gt_but_no_clusters])
         if cases_with_gt_but_no_overlaps:
             lines.append("")
-            lines.append(f"cases_with_gt_but_no_overlaps ({len(cases_with_gt_but_no_overlaps)}):")
+            lines.append(
+                f"cases_with_gt_but_no_overlaps ({len(cases_with_gt_but_no_overlaps)}):"
+            )
             lines.extend([f"  - {c}" for c in cases_with_gt_but_no_overlaps])
         if warnings:
             lines.append("")

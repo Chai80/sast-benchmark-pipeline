@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-from pathlib import Path
 from typing import Optional
 
 from pipeline.core import ROOT_DIR as REPO_ROOT
@@ -45,7 +44,12 @@ def run_invocation(inv: ToolInvocation, *, dry_run: bool, quiet: bool) -> ToolEx
         result = subprocess.run(inv.cmd, env=env, cwd=str(REPO_ROOT))
 
     finished = now_iso()
-    return ToolExecution(invocation=inv, exit_code=int(result.returncode), started=started, finished=finished)
+    return ToolExecution(
+        invocation=inv,
+        exit_code=int(result.returncode),
+        started=started,
+        finished=finished,
+    )
 
 
 def detect_git_branch(repo_path: Optional[str]) -> Optional[str]:

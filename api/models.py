@@ -22,13 +22,11 @@ class Scan:
     tool_version: str
     # Exact version of the scanner (e.g. "1.1301.0") for reproducibility.
 
-
     # -------- Benchmark / target label --------
 
     target_key: Optional[str]
     # Optional short label for the benchmark target, e.g. "juice_shop".
     # Used for grouping scans in reports; can be None for ad-hoc repos.
-
 
     # -------- Repo / commit metadata --------
 
@@ -45,7 +43,6 @@ class Scan:
     # When that commit was authored, as an ISO 8601 string.
     # Example: "2025-11-26T11:38:38+01:00". None if not available.
 
-
     # -------- How this scan was run --------
 
     run_id: str
@@ -56,7 +53,6 @@ class Scan:
 
     command: str
     # Full CLI command used to run the scanner (for debugging / reproducibility).
-
 
     # -------- Performance + issue counts --------
 
@@ -74,7 +70,6 @@ class Scan:
 
     low_count: int
     # Number of findings with severity LOW.
-
 
     # -------- Lifecycle / status --------
 
@@ -105,7 +100,6 @@ class Finding:
     # Deterministic ID within the scan, usually "<tool>:<rule_id>:<file_path>:<line>".
     # Unique per scan, useful for deduplicating and debugging.
 
-
     # -------- Security / rule information --------
 
     cwe_id: Optional[str]
@@ -120,7 +114,6 @@ class Finding:
     severity: Optional[str]
     # Normalized severity:
     # "HIGH", "MEDIUM", "LOW", or None if the tool’s severity could not be mapped.
-
 
     # -------- Where in the code this happens --------
 

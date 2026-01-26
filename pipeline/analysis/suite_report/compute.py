@@ -31,7 +31,12 @@ def _compute_macro_from_topk_rows(
     topk_rows: List[Dict[str, Any]],
     *,
     ks: Sequence[int] = (10, 25, 50),
-    strategies: Sequence[str] = ("baseline", "agreement", "calibrated_global", "calibrated"),
+    strategies: Sequence[str] = (
+        "baseline",
+        "agreement",
+        "calibrated_global",
+        "calibrated",
+    ),
 ) -> Dict[str, Dict[str, Dict[str, float]]]:
     """Compute macro Precision@K and Coverage@K from triage_eval_topk rows.
 
@@ -93,8 +98,12 @@ def _compute_macro_from_topk_rows(
                         coverages.append(covered / float(gt_total))
 
             out[strat][str(k)] = {
-                "precision": float(sum(precisions) / len(precisions)) if precisions else float("nan"),
-                "gt_coverage": float(sum(coverages) / len(coverages)) if coverages else float("nan"),
+                "precision": float(sum(precisions) / len(precisions))
+                if precisions
+                else float("nan"),
+                "gt_coverage": float(sum(coverages) / len(coverages))
+                if coverages
+                else float("nan"),
             }
 
     return out
@@ -108,7 +117,11 @@ def _compute_owasp_support(
     owasp_support: Dict[str, Dict[str, int]] = {}
     owasp_fallback: List[str] = []
 
-    by_owasp = triage_cal.get("tool_stats_by_owasp") if isinstance(triage_cal.get("tool_stats_by_owasp"), dict) else {}
+    by_owasp = (
+        triage_cal.get("tool_stats_by_owasp")
+        if isinstance(triage_cal.get("tool_stats_by_owasp"), dict)
+        else {}
+    )
     for k, v in by_owasp.items():
         if not isinstance(v, dict):
             continue
@@ -116,14 +129,20 @@ def _compute_owasp_support(
         cases_n = int(sup.get("cases") or 0)
         clusters_n = int(sup.get("clusters") or 0)
         gtpos_n = int(sup.get("gt_positive_clusters") or 0)
-        owasp_support[str(k)] = {"cases": cases_n, "clusters": clusters_n, "gt_positive_clusters": gtpos_n}
+        owasp_support[str(k)] = {
+            "cases": cases_n,
+            "clusters": clusters_n,
+            "gt_positive_clusters": gtpos_n,
+        }
         if isinstance(min_support_by_owasp, int) and clusters_n < min_support_by_owasp:
             owasp_fallback.append(str(k))
 
     return owasp_support, owasp_fallback
 
 
-def _resolve_created_at(*, suite: Dict[str, Any], plan: Dict[str, Any]) -> Optional[str]:
+def _resolve_created_at(
+    *, suite: Dict[str, Any], plan: Dict[str, Any]
+) -> Optional[str]:
     created_at = suite.get("created_at") or suite.get("updated_at")
     if created_at:
         return str(created_at)
@@ -154,12 +173,27 @@ def _build_action_items(
 
     if cases_no_clusters:
         # Try to extract a likely reason from the first case with no clusters.
-        sample = next((r for r in case_rows if r.case_id in set(cases_no_clusters)), None)
+        sample = next(
+            (r for r in case_rows if r.case_id in set(cases_no_clusters)), None
+        )
         if sample:
-            m = _safe_read_json(Path(suite_dir) / "cases" / sample.case_id / out_dirname / "analysis_manifest.json") or {}
+            m = (
+                _safe_read_json(
+                    Path(suite_dir)
+                    / "cases"
+                    / sample.case_id
+                    / out_dirname
+                    / "analysis_manifest.json"
+                )
+                or {}
+            )
             ctx = m.get("context") if isinstance(m.get("context"), dict) else {}
             include_harness = ctx.get("include_harness")
-            exclude_prefixes = ctx.get("exclude_prefixes") if isinstance(ctx.get("exclude_prefixes"), list) else []
+            exclude_prefixes = (
+                ctx.get("exclude_prefixes")
+                if isinstance(ctx.get("exclude_prefixes"), list)
+                else []
+            )
             reason_bits: List[str] = []
             if include_harness is False:
                 reason_bits.append("include_harness=false")
@@ -214,20 +248,48 @@ def _build_pointers(
     )[:3]
 
     suite_tables = {
-        "triage_dataset_csv": _existing_rel(out_tables / "triage_dataset.csv", suite_dir=suite_dir),
-        "triage_eval_summary_json": _existing_rel(out_tables / "triage_eval_summary.json", suite_dir=suite_dir),
-        "triage_eval_by_case_csv": _existing_rel(out_tables / "triage_eval_by_case.csv", suite_dir=suite_dir),
-        "triage_eval_topk_csv": _existing_rel(out_tables / "triage_eval_topk.csv", suite_dir=suite_dir),
-        "triage_calibration_json": _existing_rel(analysis_dir / "triage_calibration.json", suite_dir=suite_dir),
-        "triage_calibration_report_csv": _existing_rel(out_tables / "triage_calibration_report.csv", suite_dir=suite_dir),
-        "triage_calibration_report_by_owasp_csv": _existing_rel(out_tables / "triage_calibration_report_by_owasp.csv", suite_dir=suite_dir),
-        "triage_eval_log": _existing_rel(analysis_dir / "triage_eval.log", suite_dir=suite_dir),
-        "qa_checklist_md": _existing_rel(analysis_dir / "qa_checklist.md", suite_dir=suite_dir),
-        "qa_checklist_json": _existing_rel(analysis_dir / "qa_checklist.json", suite_dir=suite_dir),
-        "qa_calibration_checklist_txt": _existing_rel(analysis_dir / "qa_calibration_checklist.txt", suite_dir=suite_dir),
-        "qa_manifest_json": _existing_rel(analysis_dir / "qa_manifest.json", suite_dir=suite_dir),
-        "qa_calibration_manifest_json": _existing_rel(analysis_dir / "qa_calibration_manifest.json", suite_dir=suite_dir),
-        "gt_tolerance_sweep_summary_csv": _existing_rel(analysis_dir / "gt_tolerance_sweep_summary.csv", suite_dir=suite_dir),
+        "triage_dataset_csv": _existing_rel(
+            out_tables / "triage_dataset.csv", suite_dir=suite_dir
+        ),
+        "triage_eval_summary_json": _existing_rel(
+            out_tables / "triage_eval_summary.json", suite_dir=suite_dir
+        ),
+        "triage_eval_by_case_csv": _existing_rel(
+            out_tables / "triage_eval_by_case.csv", suite_dir=suite_dir
+        ),
+        "triage_eval_topk_csv": _existing_rel(
+            out_tables / "triage_eval_topk.csv", suite_dir=suite_dir
+        ),
+        "triage_calibration_json": _existing_rel(
+            analysis_dir / "triage_calibration.json", suite_dir=suite_dir
+        ),
+        "triage_calibration_report_csv": _existing_rel(
+            out_tables / "triage_calibration_report.csv", suite_dir=suite_dir
+        ),
+        "triage_calibration_report_by_owasp_csv": _existing_rel(
+            out_tables / "triage_calibration_report_by_owasp.csv", suite_dir=suite_dir
+        ),
+        "triage_eval_log": _existing_rel(
+            analysis_dir / "triage_eval.log", suite_dir=suite_dir
+        ),
+        "qa_checklist_md": _existing_rel(
+            analysis_dir / "qa_checklist.md", suite_dir=suite_dir
+        ),
+        "qa_checklist_json": _existing_rel(
+            analysis_dir / "qa_checklist.json", suite_dir=suite_dir
+        ),
+        "qa_calibration_checklist_txt": _existing_rel(
+            analysis_dir / "qa_calibration_checklist.txt", suite_dir=suite_dir
+        ),
+        "qa_manifest_json": _existing_rel(
+            analysis_dir / "qa_manifest.json", suite_dir=suite_dir
+        ),
+        "qa_calibration_manifest_json": _existing_rel(
+            analysis_dir / "qa_calibration_manifest.json", suite_dir=suite_dir
+        ),
+        "gt_tolerance_sweep_summary_csv": _existing_rel(
+            analysis_dir / "gt_tolerance_sweep_summary.csv", suite_dir=suite_dir
+        ),
     }
 
     return {
@@ -279,10 +341,14 @@ def build_suite_report_model(inputs: SuiteReportInputs) -> Dict[str, Any]:
     # Calibration context
     triage_cal = inputs.triage_calibration
     min_support_by_owasp = inputs.min_support_by_owasp
-    owasp_support, owasp_fallback = _compute_owasp_support(triage_cal=triage_cal, min_support_by_owasp=min_support_by_owasp)
+    owasp_support, owasp_fallback = _compute_owasp_support(
+        triage_cal=triage_cal, min_support_by_owasp=min_support_by_owasp
+    )
 
     # Integrity notes (best-effort)
-    integrity = _load_gt_tolerance_integrity(suite_dir=suite_dir, analysis_dir=analysis_dir)
+    integrity = _load_gt_tolerance_integrity(
+        suite_dir=suite_dir, analysis_dir=analysis_dir
+    )
 
     action_items = _build_action_items(
         suite_dir=suite_dir,

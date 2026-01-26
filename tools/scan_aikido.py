@@ -59,10 +59,15 @@ def parse_args() -> argparse.Namespace:
         help="Cloud mode: branch name to select when multi-branch scanning is enabled in Aikido.",
     )
 
-
     # Local mode inputs.
-    parser.add_argument("--repo-path", required=False, help="Local repository path (required for --mode local).")
-    parser.add_argument("--repo-url", required=False, help="Optional repo URL (metadata only).")
+    parser.add_argument(
+        "--repo-path",
+        required=False,
+        help="Local repository path (required for --mode local).",
+    )
+    parser.add_argument(
+        "--repo-url", required=False, help="Optional repo URL (metadata only)."
+    )
     parser.add_argument(
         "--repositoryname",
         required=False,
@@ -90,15 +95,25 @@ def parse_args() -> argparse.Namespace:
         choices=["release", "pr"],
         help="Local scanner gating mode (default: release).",
     )
-    parser.add_argument("--base-commit-id", required=False, help="PR gating base commit (optional).")
-    parser.add_argument("--head-commit-id", required=False, help="PR gating head commit (optional).")
+    parser.add_argument(
+        "--base-commit-id", required=False, help="PR gating base commit (optional)."
+    )
+    parser.add_argument(
+        "--head-commit-id", required=False, help="PR gating head commit (optional)."
+    )
     parser.add_argument(
         "--force-create-repository-for-branch",
         action="store_true",
         help="Local scanner: create a separate Aikido repo per branch.",
     )
-    parser.add_argument("--no-snippets", action="store_true", help="Local scanner: do not upload code snippets.")
-    parser.add_argument("--debug", action="store_true", help="Local scanner: enable debug output.")
+    parser.add_argument(
+        "--no-snippets",
+        action="store_true",
+        help="Local scanner: do not upload code snippets.",
+    )
+    parser.add_argument(
+        "--debug", action="store_true", help="Local scanner: enable debug output."
+    )
     parser.add_argument(
         "--prefer-binary",
         action="store_true",
@@ -110,8 +125,16 @@ def parse_args() -> argparse.Namespace:
         help="Local scanner Docker image (default: aikidosecurity/local-scanner:latest).",
     )
 
-    parser.add_argument("--output-root", default="runs/aikido", help="Output root folder (default: runs/aikido)")
-    parser.add_argument("--skip-trigger", action="store_true", help="Skip triggering a scan; export latest issues.")
+    parser.add_argument(
+        "--output-root",
+        default="runs/aikido",
+        help="Output root folder (default: runs/aikido)",
+    )
+    parser.add_argument(
+        "--skip-trigger",
+        action="store_true",
+        help="Skip triggering a scan; export latest issues.",
+    )
     return parser.parse_args()
 
 

@@ -14,7 +14,6 @@ through scanner hooks declared in :mod:`pipeline.scanners`.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pipeline.core import build_scan_command, filter_scanners_for_track
@@ -25,7 +24,9 @@ from pipeline.suites.layout import SuitePaths
 from .model import GitContext, RunCaseRequest, ToolInvocation
 
 
-def merge_dicts(a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def merge_dicts(
+    a: Optional[Dict[str, Any]], b: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     if a:
         out.update(a)
@@ -44,7 +45,9 @@ def get_case_track(case: CaseSpec) -> Optional[str]:
         return None
 
 
-def apply_track_filter(scanners: Sequence[str], case_track: Optional[str]) -> Tuple[List[str], List[str], List[str]]:
+def apply_track_filter(
+    scanners: Sequence[str], case_track: Optional[str]
+) -> Tuple[List[str], List[str], List[str]]:
     """Filter scanners based on case track.
 
     Returns
@@ -61,13 +64,17 @@ def apply_track_filter(scanners: Sequence[str], case_track: Optional[str]) -> Tu
     notes: List[str] = []
 
     if skipped:
-        notes.append(f"⚠️  skipping scanners not in track={case_track!r}: {', '.join(skipped)}")
+        notes.append(
+            f"⚠️  skipping scanners not in track={case_track!r}: {', '.join(skipped)}"
+        )
 
     if filtered:
         return list(filtered), list(skipped), notes
 
     # If nothing matches, keep the original list (don't silently do nothing).
-    notes.append(f"⚠️  no scanners matched track={case_track!r}; running requested scanners")
+    notes.append(
+        f"⚠️  no scanners matched track={case_track!r}; running requested scanners"
+    )
     return list(scanners), list(skipped), notes
 
 
@@ -99,7 +106,9 @@ def build_scanner_extra_args(
     if info is not None:
         builder = getattr(info, "extra_args_builder", None)
         if builder is not None:
-            ctx = ScannerRunContext(git_branch=git_ctx.branch, git_commit=git_ctx.commit)
+            ctx = ScannerRunContext(
+                git_branch=git_ctx.branch, git_commit=git_ctx.commit
+            )
             built = builder(req, ctx) or {}
             if not isinstance(built, dict):
                 raise SystemExit(
@@ -109,12 +118,16 @@ def build_scanner_extra_args(
 
     # Suite output rooting (all scanners share --output-root)
     if suite_paths is not None:
-        extra_args = merge_dicts(extra_args, {"output-root": str(suite_paths.tool_runs_dir / scanner)})
+        extra_args = merge_dicts(
+            extra_args, {"output-root": str(suite_paths.tool_runs_dir / scanner)}
+        )
 
     return extra_args
 
 
-def build_scan_invocation(*, scanner: str, req: RunCaseRequest, extra_args: Dict[str, Any]) -> ToolInvocation:
+def build_scan_invocation(
+    *, scanner: str, req: RunCaseRequest, extra_args: Dict[str, Any]
+) -> ToolInvocation:
     """Build a concrete tool invocation for a scanner (command list only)."""
 
     cmd = build_scan_command(
@@ -138,13 +151,21 @@ def evaluate_git_context(
     warnings: List[str] = []
 
     if case.branch and actual_branch and case.branch != actual_branch:
-        warnings.append(f"case_context_branch_mismatch: expected={case.branch} actual={actual_branch}")
+        warnings.append(
+            f"case_context_branch_mismatch: expected={case.branch} actual={actual_branch}"
+        )
     if case.branch and not actual_branch:
-        warnings.append(f"case_context_branch_unknown: expected={case.branch} actual=None")
+        warnings.append(
+            f"case_context_branch_unknown: expected={case.branch} actual=None"
+        )
     if case.commit and actual_commit and case.commit != actual_commit:
-        warnings.append(f"case_context_commit_mismatch: expected={case.commit} actual={actual_commit}")
+        warnings.append(
+            f"case_context_commit_mismatch: expected={case.commit} actual={actual_commit}"
+        )
     if case.commit and not actual_commit:
-        warnings.append(f"case_context_commit_unknown: expected={case.commit} actual=None")
+        warnings.append(
+            f"case_context_commit_unknown: expected={case.commit} actual=None"
+        )
 
     return GitContext(branch=actual_branch, commit=actual_commit), warnings
 

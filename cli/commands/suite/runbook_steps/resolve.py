@@ -11,7 +11,6 @@ Suite runbook resolution steps:
 
 from __future__ import annotations
 
-import argparse
 import shutil
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -22,9 +21,17 @@ from pipeline.core import repo_id_from_repo_url
 from pipeline.scanners import DEFAULT_SCANNERS_CSV, SUPPORTED_SCANNERS
 from pipeline.suites.bundles import anchor_under_repo_root, safe_name
 from pipeline.suites.layout import new_suite_id
-from pipeline.suites.suite_definition import SuiteAnalysisDefaults, SuiteCase, SuiteDefinition
+from pipeline.suites.suite_definition import (
+    SuiteAnalysisDefaults,
+    SuiteCase,
+    SuiteDefinition,
+)
 from pipeline.suites.suite_py_loader import load_suite_py
-from pipeline.suites.suite_resolver import ResolvedSuiteRun, SuiteInputProvenance, resolve_suite_run
+from pipeline.suites.suite_resolver import (
+    ResolvedSuiteRun,
+    SuiteInputProvenance,
+    resolve_suite_run,
+)
 
 from ..materialize import (
     _build_suite_from_sources,
@@ -71,10 +78,14 @@ def validate_suite_args(ctx: SuiteRunContext) -> Optional[int]:
 
     # QA requires artifacts on disk.
     if args.dry_run:
-        print("❌ --qa-calibration cannot be used with --dry-run (needs artifacts to validate).")
+        print(
+            "❌ --qa-calibration cannot be used with --dry-run (needs artifacts to validate)."
+        )
         return 2
     if args.skip_analysis:
-        print("❌ --qa-calibration cannot be used with --skip-analysis (needs suite analysis + calibration).")
+        print(
+            "❌ --qa-calibration cannot be used with --skip-analysis (needs suite analysis + calibration)."
+        )
         return 2
 
     # Defensive: "latest" is reserved for selecting a previously-run suite.
@@ -86,7 +97,12 @@ def validate_suite_args(ctx: SuiteRunContext) -> Optional[int]:
     # Deterministic suite definition: disallow interactive prompting.
     # If no explicit suite inputs are provided, fall back to the example
     # OWASP micro-suite inputs if present.
-    if not (args.suite_file or args.cases_from or args.worktrees_root or getattr(args, "repo_url", None)):
+    if not (
+        args.suite_file
+        or args.cases_from
+        or args.worktrees_root
+        or getattr(args, "repo_url", None)
+    ):
         default_wt = _default_owasp_micro_suite_worktrees_root()
         default_csv = _default_owasp_micro_suite_cases_csv()
         if default_wt is not None:
@@ -110,7 +126,11 @@ def maybe_bootstrap_worktrees(ctx: SuiteRunContext) -> None:
 
     args = ctx.args
 
-    if not (getattr(args, "repo_url", None) and (not args.suite_file) and (not args.cases_from)):
+    if not (
+        getattr(args, "repo_url", None)
+        and (not args.suite_file)
+        and (not args.cases_from)
+    ):
         return
 
     branches = _parse_branches_spec(getattr(args, "branches", None))
@@ -123,11 +143,19 @@ def maybe_bootstrap_worktrees(ctx: SuiteRunContext) -> None:
             "(unless --qa-calibration is set, which derives branches from the QA scope)."
         )
 
-    default_root = ROOT_DIR / "repos" / "worktrees" / repo_id_from_repo_url(str(args.repo_url))
-    wt_root = Path(args.worktrees_root).expanduser() if getattr(args, "worktrees_root", None) else default_root
+    default_root = (
+        ROOT_DIR / "repos" / "worktrees" / repo_id_from_repo_url(str(args.repo_url))
+    )
+    wt_root = (
+        Path(args.worktrees_root).expanduser()
+        if getattr(args, "worktrees_root", None)
+        else default_root
+    )
     wt_root = anchor_under_repo_root(wt_root)
 
-    _bootstrap_worktrees_from_repo_url(repo_url=str(args.repo_url), branches=branches, worktrees_root=wt_root)
+    _bootstrap_worktrees_from_repo_url(
+        repo_url=str(args.repo_url), branches=branches, worktrees_root=wt_root
+    )
     args.worktrees_root = str(wt_root)
 
     if ctx.flags.qa_mode:
@@ -156,7 +184,9 @@ def load_or_build_suite_def(ctx: SuiteRunContext) -> SuiteDefinition:
     return _build_suite_interactively(args, repo_registry=ctx.repo_registry)
 
 
-def apply_qa_case_selection(ctx: SuiteRunContext, suite_def: SuiteDefinition) -> Tuple[SuiteDefinition, Optional[int]]:
+def apply_qa_case_selection(
+    ctx: SuiteRunContext, suite_def: SuiteDefinition
+) -> Tuple[SuiteDefinition, Optional[int]]:
     """Restrict the suite to the requested OWASP slice in QA mode."""
 
     if not ctx.flags.qa_mode:
@@ -166,7 +196,11 @@ def apply_qa_case_selection(ctx: SuiteRunContext, suite_def: SuiteDefinition) ->
 
     targets_list = _qa_target_owasp_ids(args)
     targets = set(targets_list)
-    scope_label = "custom" if getattr(args, "qa_owasp", None) else (getattr(args, "qa_scope", None) or "smoke")
+    scope_label = (
+        "custom"
+        if getattr(args, "qa_owasp", None)
+        else (getattr(args, "qa_scope", None) or "smoke")
+    )
 
     selected_cases: List[SuiteCase] = []
     skipped_case_ids: List[str] = []
@@ -212,12 +246,16 @@ def apply_qa_case_selection(ctx: SuiteRunContext, suite_def: SuiteDefinition) ->
     return suite_def, None
 
 
-def resolve_suite_run_and_dirs(ctx: SuiteRunContext, suite_def: SuiteDefinition) -> Tuple[Optional[ResolvedSuiteRun], Optional[int]]:
+def resolve_suite_run_and_dirs(
+    ctx: SuiteRunContext, suite_def: SuiteDefinition
+) -> Tuple[Optional[ResolvedSuiteRun], Optional[int]]:
     """Apply CLI overrides + resolve the suite run manifest on disk."""
 
     args = ctx.args
 
-    suite_id = str(args.suite_id) if args.suite_id else (suite_def.suite_id or new_suite_id())
+    suite_id = (
+        str(args.suite_id) if args.suite_id else (suite_def.suite_id or new_suite_id())
+    )
 
     scanners: List[str]
     if args.scanners:
@@ -241,7 +279,9 @@ def resolve_suite_run_and_dirs(ctx: SuiteRunContext, suite_def: SuiteDefinition)
         skip_analysis = bool(args.skip_analysis)
 
     if ctx.flags.qa_mode and skip_analysis:
-        print("❌ --qa-calibration cannot run with analysis skipped (suite_def.analysis.skip / --skip-analysis).")
+        print(
+            "❌ --qa-calibration cannot run with analysis skipped (suite_def.analysis.skip / --skip-analysis)."
+        )
         return None, 2
 
     suite_dir = (ctx.suite_root / safe_name(suite_id)).resolve()
@@ -264,8 +304,14 @@ def resolve_suite_run_and_dirs(ctx: SuiteRunContext, suite_def: SuiteDefinition)
     prov = SuiteInputProvenance(
         suite_file=suite_input_copy,
         cases_from_csv=(Path(args.cases_from).name if args.cases_from else None),
-        worktrees_root=(Path(args.worktrees_root).name if args.worktrees_root else None),
-        built_interactively=bool((not args.suite_file) and (not args.cases_from) and (not args.worktrees_root)),
+        worktrees_root=(
+            Path(args.worktrees_root).name if args.worktrees_root else None
+        ),
+        built_interactively=bool(
+            (not args.suite_file)
+            and (not args.cases_from)
+            and (not args.worktrees_root)
+        ),
     )
 
     analysis_defaults = SuiteAnalysisDefaults(
@@ -299,7 +345,9 @@ def resolve_suite_run_and_dirs(ctx: SuiteRunContext, suite_def: SuiteDefinition)
     return resolved_run, None
 
 
-def maybe_write_replay_file(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun) -> None:
+def maybe_write_replay_file(
+    ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun
+) -> None:
     """Optionally write a Python replay file for interactively built suites."""
 
     prov = ctx.provenance
@@ -315,11 +363,15 @@ def maybe_write_replay_file(ctx: SuiteRunContext, resolved_run: ResolvedSuiteRun
     suite_dir = resolved_run.suite_dir
     suite_id = resolved_run.suite_id
     scanners = list(ctx.scanners)
-    analysis_defaults = ctx.analysis_defaults or SuiteAnalysisDefaults(skip=False, tolerance=0, filter="")
+    analysis_defaults = ctx.analysis_defaults or SuiteAnalysisDefaults(
+        skip=False, tolerance=0, filter=""
+    )
 
     replay_dir = suite_dir / "replay"
     default_out = replay_dir / "replay_suite.py"
-    raw_out = _prompt_text("Replay file path (name or path)", default=str(default_out)).strip()
+    raw_out = _prompt_text(
+        "Replay file path (name or path)", default=str(default_out)
+    ).strip()
 
     # If the user types a bare name like "Test1" (no slashes), treat it as a filename
     # under suite_dir/replay/. This prevents accidental files being created in the repo root

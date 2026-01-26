@@ -39,7 +39,9 @@ from ..common.store_keys import StoreKeys
 def stage_consensus(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     clusters = ensure_location_clusters(ctx, store)
 
-    rows, summary = build_consensus_rows_and_summary(clusters, total_tools=len(ctx.tools))
+    rows, summary = build_consensus_rows_and_summary(
+        clusters, total_tools=len(ctx.tools)
+    )
 
     store.put(StoreKeys.CONSENSUS_ROWS, rows)
     store.put(StoreKeys.CONSENSUS_SUMMARY, summary)

@@ -68,15 +68,26 @@ ROOT_DIR = PIPELINE_ROOT_DIR  # repo root
 
 # Replace/add your preset repos here
 REPOS: Dict[str, Dict[str, str]] = {
-    "juice_shop": {"label": "Juice Shop", "repo_url": "https://github.com/juice-shop/juice-shop.git"},
-    "webgoat": {"label": "WebGoat", "repo_url": "https://github.com/WebGoat/WebGoat.git"},
+    "juice_shop": {
+        "label": "Juice Shop",
+        "repo_url": "https://github.com/juice-shop/juice-shop.git",
+    },
+    "webgoat": {
+        "label": "WebGoat",
+        "repo_url": "https://github.com/WebGoat/WebGoat.git",
+    },
     "dvwa": {"label": "DVWA", "repo_url": "https://github.com/digininja/DVWA.git"},
-    "owasp_benchmark": {"label": "OWASP BenchmarkJava", "repo_url": "https://github.com/OWASP/BenchmarkJava.git"},
+    "owasp_benchmark": {
+        "label": "OWASP BenchmarkJava",
+        "repo_url": "https://github.com/OWASP/BenchmarkJava.git",
+    },
 }
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Top-level CLI for SAST pipeline (Durinn).")
+    parser = argparse.ArgumentParser(
+        description="Top-level CLI for SAST pipeline (Durinn)."
+    )
 
     parser.add_argument(
         "--mode",
@@ -405,9 +416,10 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-
     # Repo selection
-    parser.add_argument("--repo-key", choices=sorted(REPOS.keys()), help="Preset repo key (recommended)")
+    parser.add_argument(
+        "--repo-key", choices=sorted(REPOS.keys()), help="Preset repo key (recommended)"
+    )
     parser.add_argument("--repo-url", help="Custom git repo URL")
     parser.add_argument("--repo-path", help="Local repo path (skip clone)")
 
@@ -426,7 +438,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-    parser.add_argument("--dry-run", action="store_true", help="Print commands but do not execute")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print commands but do not execute"
+    )
     parser.add_argument(
         "--quiet",
         action="store_true",

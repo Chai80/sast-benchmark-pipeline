@@ -53,5 +53,3 @@ def build_per_finding_metadata(
         "target_repo": target_repo,
         "scan": scan_info,
     }
-
-

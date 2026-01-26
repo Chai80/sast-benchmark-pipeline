@@ -17,11 +17,17 @@ from ..common.store_keys import StoreKeys
     kind="analysis",
     description="Cluster findings into location buckets and write a per-location tool matrix.",
     requires=(StoreKeys.FINDINGS_BY_TOOL,),
-    produces=(StoreKeys.LOCATION_ITEMS, StoreKeys.LOCATION_CLUSTERS, StoreKeys.LOCATION_MATRIX_ROWS),
+    produces=(
+        StoreKeys.LOCATION_ITEMS,
+        StoreKeys.LOCATION_CLUSTERS,
+        StoreKeys.LOCATION_MATRIX_ROWS,
+    ),
 )
 def stage_location_matrix(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     items = build_location_items(ctx, store)
-    clusters = cluster_locations(items, tolerance=ctx.tolerance, repo_name=ctx.repo_name)
+    clusters = cluster_locations(
+        items, tolerance=ctx.tolerance, repo_name=ctx.repo_name
+    )
     store.put(StoreKeys.LOCATION_CLUSTERS, clusters)
 
     rows = build_location_matrix_rows(clusters, tools=list(ctx.tools))

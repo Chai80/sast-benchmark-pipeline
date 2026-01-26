@@ -8,7 +8,6 @@ payloads that omit CWE/OWASP tags.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from tools.core import ROOT_DIR, read_json
@@ -35,7 +34,9 @@ def load_snyk_vendor_rule_index() -> VendorRuleIndex:
             return [str(x) for x in v if x is not None]
         return []
 
-    def put(idx: VendorRuleIndex, key: str, *, owasp2021: List[str], cwe_ids: List[str]) -> None:
+    def put(
+        idx: VendorRuleIndex, key: str, *, owasp2021: List[str], cwe_ids: List[str]
+    ) -> None:
         if not key:
             return
         if not (owasp2021 or cwe_ids):
@@ -65,9 +66,13 @@ def load_snyk_vendor_rule_index() -> VendorRuleIndex:
                     if not isinstance(info, dict):
                         continue
                     owasp2021 = as_str_list(
-                        info.get("owasp_top_10_2021") or info.get("owasp_2021") or info.get("owasp2021")
+                        info.get("owasp_top_10_2021")
+                        or info.get("owasp_2021")
+                        or info.get("owasp2021")
                     )
-                    cwe_ids = as_str_list(info.get("cwe_ids") or info.get("cwe") or info.get("cweIds"))
+                    cwe_ids = as_str_list(
+                        info.get("cwe_ids") or info.get("cwe") or info.get("cweIds")
+                    )
                     put(idx, rname, owasp2021=owasp2021, cwe_ids=cwe_ids)
                     put(idx, norm_key(rname), owasp2021=owasp2021, cwe_ids=cwe_ids)
 
@@ -79,8 +84,14 @@ def load_snyk_vendor_rule_index() -> VendorRuleIndex:
             if isinstance(v, list):
                 put(idx, k, owasp2021=[str(x) for x in v if x is not None], cwe_ids=[])
             elif isinstance(v, dict):
-                codes = as_str_list(v.get("owasp_2021") or v.get("owasp_top_10_2021") or v.get("owasp2021"))
-                cwe_ids = as_str_list(v.get("cwe_ids") or v.get("cwe") or v.get("cweIds"))
+                codes = as_str_list(
+                    v.get("owasp_2021")
+                    or v.get("owasp_top_10_2021")
+                    or v.get("owasp2021")
+                )
+                cwe_ids = as_str_list(
+                    v.get("cwe_ids") or v.get("cwe") or v.get("cweIds")
+                )
                 put(idx, k, owasp2021=codes, cwe_ids=cwe_ids)
                 if isinstance(v.get("name"), str) and v.get("name").strip():
                     put(idx, norm_key(v["name"]), owasp2021=codes, cwe_ids=cwe_ids)
@@ -92,8 +103,14 @@ def load_snyk_vendor_rule_index() -> VendorRuleIndex:
                     continue
                 rid = r.get("id") or r.get("rule_id")
                 name = r.get("name")
-                codes = as_str_list(r.get("owasp_2021") or r.get("owasp_top_10_2021") or r.get("owasp2021"))
-                cwe_ids = as_str_list(r.get("cwe_ids") or r.get("cwe") or r.get("cweIds"))
+                codes = as_str_list(
+                    r.get("owasp_2021")
+                    or r.get("owasp_top_10_2021")
+                    or r.get("owasp2021")
+                )
+                cwe_ids = as_str_list(
+                    r.get("cwe_ids") or r.get("cwe") or r.get("cweIds")
+                )
                 if isinstance(rid, str) and rid.strip():
                     put(idx, rid.strip(), owasp2021=codes, cwe_ids=cwe_ids)
                 if isinstance(name, str) and name.strip():
@@ -110,7 +127,9 @@ def load_snyk_vendor_owasp_2021_index() -> VendorRuleIndex:
     return load_snyk_vendor_rule_index()
 
 
-def vendor_rule_info(vendor_idx: VendorRuleIndex, rule_id: Optional[str], rule_name: Optional[str]) -> Tuple[List[str], List[str]]:
+def vendor_rule_info(
+    vendor_idx: VendorRuleIndex, rule_id: Optional[str], rule_name: Optional[str]
+) -> Tuple[List[str], List[str]]:
     if not vendor_idx:
         return [], []
 

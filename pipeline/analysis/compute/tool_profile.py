@@ -9,7 +9,9 @@ from collections import Counter
 from typing import Any, Dict, List, Mapping
 
 
-def build_tool_profile_rows(findings_by_tool: Mapping[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+def build_tool_profile_rows(
+    findings_by_tool: Mapping[str, List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
     """Build tool profile rows.
 
     Output schema matches `tool_profile.csv` / `tool_profile.json`.
@@ -17,7 +19,11 @@ def build_tool_profile_rows(findings_by_tool: Mapping[str, List[Dict[str, Any]]]
 
     rows: List[Dict[str, Any]] = []
     for tool, findings in findings_by_tool.items():
-        sev = Counter(str(f.get("severity") or "").upper().strip() for f in findings if isinstance(f, dict))
+        sev = Counter(
+            str(f.get("severity") or "").upper().strip()
+            for f in findings
+            if isinstance(f, dict)
+        )
 
         files = set()
         for f in findings:
@@ -45,7 +51,9 @@ def build_tool_profile_rows(findings_by_tool: Mapping[str, List[Dict[str, Any]]]
                 "medium": int(sev.get("MEDIUM", 0)),
                 "low": int(sev.get("LOW", 0)),
                 "unknown": int(sev.get("", 0)),
-                "types": ",".join([f"{k}:{v}" for k, v in types.most_common()]) if types else "",
+                "types": ",".join([f"{k}:{v}" for k, v in types.most_common()])
+                if types
+                else "",
             }
         )
 

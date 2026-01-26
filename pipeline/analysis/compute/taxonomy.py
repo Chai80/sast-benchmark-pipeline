@@ -79,9 +79,13 @@ def _extract_cwe_candidates(finding: Dict[str, Any]) -> List[Any]:
 def _choose_codes(resolved: Dict[str, Any], *, prefer: str = "canonical") -> List[str]:
     block = None
     if prefer == "vendor":
-        block = resolved.get("owasp_top_10_2021_vendor") or resolved.get("owasp_top_10_2021")
+        block = resolved.get("owasp_top_10_2021_vendor") or resolved.get(
+            "owasp_top_10_2021"
+        )
     else:
-        block = resolved.get("owasp_top_10_2021_canonical") or resolved.get("owasp_top_10_2021")
+        block = resolved.get("owasp_top_10_2021_canonical") or resolved.get(
+            "owasp_top_10_2021"
+        )
 
     if isinstance(block, dict):
         codes = block.get("codes") or []

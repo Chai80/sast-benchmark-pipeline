@@ -77,7 +77,11 @@ from .sources import case_scoring_track, choose_gt_source, find_case_dir, load_c
     kind="analysis",
     description="Optional GT scoring (markers/YAML) for a suite case.",
     requires=(StoreKeys.LOCATION_ITEMS,),
-    produces=(StoreKeys.GT_SCORE_ROWS, StoreKeys.GT_SCORE_SUMMARY, StoreKeys.GT_GAP_ROWS),
+    produces=(
+        StoreKeys.GT_SCORE_ROWS,
+        StoreKeys.GT_SCORE_SUMMARY,
+        StoreKeys.GT_GAP_ROWS,
+    ),
 )
 def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
     cfg = dict(ctx.config or {})
@@ -88,15 +92,25 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         gt_source_mode = "none"
 
     if gt_source_mode not in ("auto", "markers", "yaml", "none"):
-        store.add_warning(f"gt_score: unknown gt_source={gt_source_mode!r}; using 'auto'")
+        store.add_warning(
+            f"gt_score: unknown gt_source={gt_source_mode!r}; using 'auto'"
+        )
         gt_source_mode = "auto"
 
     if gt_source_mode == "none":
-        return {"status": "skipped", "reason": "gt_disabled", "gt_source_mode": gt_source_mode}
+        return {
+            "status": "skipped",
+            "reason": "gt_disabled",
+            "gt_source_mode": gt_source_mode,
+        }
 
     case_dir = find_case_dir(ctx)
     if not case_dir:
-        return {"status": "skipped", "reason": "not_suite_layout", "gt_source_mode": gt_source_mode}
+        return {
+            "status": "skipped",
+            "reason": "not_suite_layout",
+            "gt_source_mode": gt_source_mode,
+        }
 
     gt_dir = case_dir / "gt"
     case_json = load_case_json(case_dir)
@@ -124,12 +138,22 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
                 "gt_catalog_path": str(gt_catalog_path) if gt_catalog_path else None,
             }
         if gt_source_mode == "markers":
-            return {"status": "skipped", "reason": "no_gt_markers", "gt_source_mode": "markers"}
-        return {"status": "skipped", "reason": "no_gt", "gt_source_mode": gt_source_mode}
+            return {
+                "status": "skipped",
+                "reason": "no_gt_markers",
+                "gt_source_mode": "markers",
+            }
+        return {
+            "status": "skipped",
+            "reason": "no_gt",
+            "gt_source_mode": gt_source_mode,
+        }
 
     filtered_out_by_track = 0
     if scoring_track_n:
-        gt_items, filtered_out_by_track = filter_gt_items_by_track(gt_items, scoring_track_n)
+        gt_items, filtered_out_by_track = filter_gt_items_by_track(
+            gt_items, scoring_track_n
+        )
         if not gt_items:
             return {
                 "status": "skipped",
@@ -151,7 +175,15 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
     if gt_tol < 0:
         gt_tol = 0
 
-    rows, matched_gt_items, per_tool_matched, by_set_total, by_set_matched, by_track_total, by_track_matched = score_gt_items(
+    (
+        rows,
+        matched_gt_items,
+        per_tool_matched,
+        by_set_total,
+        by_set_matched,
+        by_track_total,
+        by_track_matched,
+    ) = score_gt_items(
         gt_items=gt_items,
         tool_locs=tool_locs,
         gt_tolerance=gt_tol,
@@ -160,7 +192,9 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
     total_gt_items = len(rows)
     tools = list(ctx.tools or ())
     per_tool_recall = {
-        str(t): (float(per_tool_matched.get(str(t), 0)) / float(total_gt_items)) if total_gt_items else 0.0
+        str(t): (float(per_tool_matched.get(str(t), 0)) / float(total_gt_items))
+        if total_gt_items
+        else 0.0
         for t in tools
     }
 
@@ -174,11 +208,16 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
         "filtered_out_by_track": int(filtered_out_by_track),
         "total_gt_items": int(total_gt_items),
         "matched_gt_items": int(matched_gt_items),
-        "match_rate": (float(matched_gt_items) / float(total_gt_items)) if total_gt_items else 0.0,
-        "per_tool_matched": {str(t): int(per_tool_matched.get(str(t), 0)) for t in tools},
+        "match_rate": (float(matched_gt_items) / float(total_gt_items))
+        if total_gt_items
+        else 0.0,
+        "per_tool_matched": {
+            str(t): int(per_tool_matched.get(str(t), 0)) for t in tools
+        },
         "per_tool_recall": {k: round(float(v), 6) for k, v in per_tool_recall.items()},
         "by_set": {
-            s: {"total": int(by_set_total[s]), "matched": int(by_set_matched[s])} for s in sorted(by_set_total.keys())
+            s: {"total": int(by_set_total[s]), "matched": int(by_set_matched[s])}
+            for s in sorted(by_set_total.keys())
         },
         "by_track": {
             tr: {"total": int(by_track_total[tr]), "matched": int(by_track_matched[tr])}
@@ -187,7 +226,9 @@ def stage_gt_score(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
     }
 
     # --- Gap queue --------------------------------------------------------
-    gap_rows, gap_summary = build_gap_queue(ctx, rows=rows, location_items=location_items)
+    gap_rows, gap_summary = build_gap_queue(
+        ctx, rows=rows, location_items=location_items
+    )
     summary["gap_summary"] = gap_summary
 
     # --- Write outputs ----------------------------------------------------

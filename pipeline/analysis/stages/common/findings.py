@@ -22,7 +22,9 @@ def load_normalized_json(path: Path) -> Dict[str, Any]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def load_findings_by_tool(ctx: AnalysisContext, store: ArtifactStore) -> Mapping[str, List[Dict[str, Any]]]:
+def load_findings_by_tool(
+    ctx: AnalysisContext, store: ArtifactStore
+) -> Mapping[str, List[Dict[str, Any]]]:
     """Load + filter findings for each tool (cached in store).
 
     Filtering order:

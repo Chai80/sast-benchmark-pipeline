@@ -5,16 +5,21 @@ import unittest
 from pathlib import Path
 
 
-from pipeline.analysis.qa.qa_calibration_runbook import all_ok, validate_calibration_suite_artifacts
+from pipeline.analysis.qa.qa_calibration_runbook import (
+    all_ok,
+    validate_calibration_suite_artifacts,
+)
 
 
 class TestQACalibrationRunbook(unittest.TestCase):
-    def _write_csv(self, path: Path, *, header: list[str], rows: list[dict[str, str]] | None = None) -> None:
+    def _write_csv(
+        self, path: Path, *, header: list[str], rows: list[dict[str, str]] | None = None
+    ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=header)
             w.writeheader()
-            for r in (rows or []):
+            for r in rows or []:
                 w.writerow(r)
 
     def test_validate_passes_when_all_artifacts_present(self) -> None:
@@ -54,7 +59,13 @@ class TestQACalibrationRunbook(unittest.TestCase):
             self._write_csv(
                 suite_dir / "analysis" / "_tables" / "triage_dataset.csv",
                 header=["suite_id", "case_id", "cluster_id"],
-                rows=[{"suite_id": "20260101T000000Z", "case_id": "case1", "cluster_id": "c1"}],
+                rows=[
+                    {
+                        "suite_id": "20260101T000000Z",
+                        "case_id": "case1",
+                        "cluster_id": "c1",
+                    }
+                ],
             )
 
             (suite_dir / "analysis").mkdir(parents=True, exist_ok=True)
@@ -72,18 +83,45 @@ class TestQACalibrationRunbook(unittest.TestCase):
             self._write_csv(
                 suite_dir / "analysis" / "_tables" / "triage_calibration_report.csv",
                 header=["tool", "tp", "fp", "p_smoothed", "weight"],
-                rows=[{"tool": "semgrep", "tp": "1", "fp": "0", "p_smoothed": "0.9", "weight": "1.0"}],
+                rows=[
+                    {
+                        "tool": "semgrep",
+                        "tp": "1",
+                        "fp": "0",
+                        "p_smoothed": "0.9",
+                        "weight": "1.0",
+                    }
+                ],
             )
 
-            (suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").write_text(
-                json.dumps({"strategies": ["baseline", "agreement", "calibrated_global", "calibrated"]}, indent=2),
+            (
+                suite_dir / "analysis" / "_tables" / "triage_eval_summary.json"
+            ).write_text(
+                json.dumps(
+                    {
+                        "strategies": [
+                            "baseline",
+                            "agreement",
+                            "calibrated_global",
+                            "calibrated",
+                        ]
+                    },
+                    indent=2,
+                ),
                 encoding="utf-8",
             )
 
             # Tool contribution / marginal value outputs (suite-level)
             self._write_csv(
                 suite_dir / "analysis" / "_tables" / "triage_tool_utility.csv",
-                header=["suite_id", "tool", "gt_ids_covered", "unique_gt_ids", "neg_clusters", "exclusive_neg_clusters"],
+                header=[
+                    "suite_id",
+                    "tool",
+                    "gt_ids_covered",
+                    "unique_gt_ids",
+                    "neg_clusters",
+                    "exclusive_neg_clusters",
+                ],
                 rows=[
                     {
                         "suite_id": "20260101T000000Z",
@@ -127,7 +165,12 @@ class TestQACalibrationRunbook(unittest.TestCase):
 
             # One case triage_queue.csv (schema check)
             self._write_csv(
-                suite_dir / "cases" / "case1" / "analysis" / "_tables" / "triage_queue.csv",
+                suite_dir
+                / "cases"
+                / "case1"
+                / "analysis"
+                / "_tables"
+                / "triage_queue.csv",
                 header=["rank", "triage_score_v1", "file_path"],
                 rows=[{"rank": "1", "triage_score_v1": "0.1", "file_path": "a.py"}],
             )
@@ -158,14 +201,24 @@ class TestQACalibrationRunbook(unittest.TestCase):
             self.assertIn("analysis/triage_calibration.json exists", by_name)
             self.assertFalse(by_name["analysis/triage_calibration.json exists"].ok)
 
-            self.assertIn("analysis/_tables/triage_calibration_report.csv exists", by_name)
-            self.assertFalse(by_name["analysis/_tables/triage_calibration_report.csv exists"].ok)
+            self.assertIn(
+                "analysis/_tables/triage_calibration_report.csv exists", by_name
+            )
+            self.assertFalse(
+                by_name["analysis/_tables/triage_calibration_report.csv exists"].ok
+            )
 
             self.assertIn("triage_eval_summary includes strategy calibrated", by_name)
-            self.assertFalse(by_name["triage_eval_summary includes strategy calibrated"].ok)
+            self.assertFalse(
+                by_name["triage_eval_summary includes strategy calibrated"].ok
+            )
 
-            self.assertIn("triage_eval_summary includes strategy calibrated_global", by_name)
-            self.assertFalse(by_name["triage_eval_summary includes strategy calibrated_global"].ok)
+            self.assertIn(
+                "triage_eval_summary includes strategy calibrated_global", by_name
+            )
+            self.assertFalse(
+                by_name["triage_eval_summary includes strategy calibrated_global"].ok
+            )
 
 
 if __name__ == "__main__":

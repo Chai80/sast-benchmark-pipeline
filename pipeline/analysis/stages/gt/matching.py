@@ -11,7 +11,9 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 from .normalize import coerce_int
 
 
-def tool_locations(location_items: Sequence[Mapping[str, Any]]) -> Dict[str, List[Tuple[str, int]]]:
+def tool_locations(
+    location_items: Sequence[Mapping[str, Any]],
+) -> Dict[str, List[Tuple[str, int]]]:
     """Build a map of tool -> [(file_path, line_number), ...]."""
     by_tool: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
     for it in location_items or []:
@@ -114,4 +116,12 @@ def score_gt_items(
             }
         )
 
-    return rows, matched_gt_items, per_tool_matched, by_set_total, by_set_matched, by_track_total, by_track_matched
+    return (
+        rows,
+        matched_gt_items,
+        per_tool_matched,
+        by_set_total,
+        by_set_matched,
+        by_track_total,
+        by_track_matched,
+    )

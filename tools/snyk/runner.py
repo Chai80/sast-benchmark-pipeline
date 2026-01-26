@@ -37,7 +37,9 @@ def snyk_version(snyk_bin: str) -> str:
     return (res.stdout or res.stderr).strip() or "unknown"
 
 
-def run_snyk_code_sarif(*, snyk_bin: str, repo_path: Path, out_sarif: Path) -> Tuple[int, float, str]:
+def run_snyk_code_sarif(
+    *, snyk_bin: str, repo_path: Path, out_sarif: Path
+) -> Tuple[int, float, str]:
     """Run: snyk code test --sarif --sarif-file-output <out_sarif>"""
     require_snyk_token()
     cmd = [
@@ -48,6 +50,11 @@ def run_snyk_code_sarif(*, snyk_bin: str, repo_path: Path, out_sarif: Path) -> T
         "--sarif-file-output",
         str(out_sarif),
     ]
-    verbose = os.environ.get("SAST_VERBOSE", "").strip().lower() in {"1", "true", "yes", "y"}
+    verbose = os.environ.get("SAST_VERBOSE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }
     res = run_cmd(cmd, cwd=repo_path, print_stderr=True, print_stdout=verbose)
     return res.exit_code, res.elapsed_seconds, res.command_str

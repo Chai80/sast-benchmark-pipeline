@@ -28,7 +28,9 @@ def is_security_finding(tool: str, finding: Dict[str, Any]) -> bool:
     return True
 
 
-def filter_findings(tool: str, findings: Iterable[Dict[str, Any]], *, mode: str = "security") -> List[Dict[str, Any]]:
+def filter_findings(
+    tool: str, findings: Iterable[Dict[str, Any]], *, mode: str = "security"
+) -> List[Dict[str, Any]]:
     mode = (mode or "security").lower().strip()
     out: List[Dict[str, Any]] = []
     for f in findings or []:

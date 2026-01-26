@@ -3,7 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipeline.suites.layout import SuitePaths, ensure_suite_dirs, get_suite_paths, write_latest_suite_pointer
+from pipeline.suites.layout import (
+    SuitePaths,
+    ensure_suite_dirs,
+    get_suite_paths,
+    write_latest_suite_pointer,
+)
 
 
 class TestSuitePathsLayout(unittest.TestCase):
@@ -11,7 +16,9 @@ class TestSuitePathsLayout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             suite_root = Path(td) / "runs" / "suites"
 
-            paths = get_suite_paths(case_id="juice shop", suite_id="test suite", suite_root=suite_root)
+            paths = get_suite_paths(
+                case_id="juice shop", suite_id="test suite", suite_root=suite_root
+            )
 
             self.assertIsInstance(paths, SuitePaths)
 
@@ -36,4 +43,6 @@ class TestSuitePathsLayout(unittest.TestCase):
             write_latest_suite_pointer(paths)
             latest_path = suite_root / "LATEST"
             self.assertTrue(latest_path.exists())
-            self.assertEqual(latest_path.read_text(encoding="utf-8").strip(), paths.suite_id)
+            self.assertEqual(
+                latest_path.read_text(encoding="utf-8").strip(), paths.suite_id
+            )

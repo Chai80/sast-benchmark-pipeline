@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+
 def _to_int(x: Any, default: int = 0) -> int:
     try:
         if x is None:
@@ -38,4 +39,3 @@ def _delta(a: Any, b: Any) -> Optional[float]:
     if aa is None or bb is None:
         return None
     return float(bb) - float(aa)
-

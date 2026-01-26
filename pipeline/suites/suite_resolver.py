@@ -38,13 +38,21 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pipeline.suites.bundles import anchor_under_repo_root, safe_name
 from pipeline.identifiers import repo_id_from_repo_url, sanitize_sonar_key_fragment
-from pipeline.suites.layout import ensure_suite_dirs, get_suite_paths, write_latest_suite_pointer
+from pipeline.suites.layout import (
+    ensure_suite_dirs,
+    get_suite_paths,
+    write_latest_suite_pointer,
+)
 from pipeline.models import CaseSpec, RepoSpec
-from pipeline.suites.suite_definition import SuiteAnalysisDefaults, SuiteCase, SuiteDefinition
+from pipeline.suites.suite_definition import (
+    SuiteAnalysisDefaults,
+    SuiteCase,
+    SuiteDefinition,
+)
 
 from tools.io import write_json
 
@@ -53,7 +61,9 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _derive_runs_repo_name(*, repo_url: Optional[str], repo_path: Optional[str], fallback: str) -> str:
+def _derive_runs_repo_name(
+    *, repo_url: Optional[str], repo_path: Optional[str], fallback: str
+) -> str:
     """Best-effort repo name used by scanners under legacy outputs."""
     if repo_url:
         last = repo_url.rstrip("/").split("/")[-1]
@@ -155,7 +165,9 @@ def resolve_suite_case(
         )
 
     # Improve runs_repo_name if omitted.
-    derived_runs_name = _derive_runs_repo_name(repo_url=repo_url, repo_path=repo_path, fallback=c.case_id)
+    derived_runs_name = _derive_runs_repo_name(
+        repo_url=repo_url, repo_path=repo_path, fallback=c.case_id
+    )
     runs_repo_name = c.runs_repo_name
     if not runs_repo_name or runs_repo_name == c.case_id:
         runs_repo_name = derived_runs_name
@@ -267,7 +279,10 @@ def write_suite_manifest(
                 "filter": str(analysis.filter),
                 "gt_required_default": analysis.gt_required_default,
             },
-            "cases": [_case_plan_entry(rc.suite_case, repo_id=rc.repo_id) for rc in resolved_cases],
+            "cases": [
+                _case_plan_entry(rc.suite_case, repo_id=rc.repo_id)
+                for rc in resolved_cases
+            ],
             "provenance": {
                 "suite_file": provenance.suite_file,
                 "cases_from_csv": provenance.cases_from_csv,
@@ -342,7 +357,7 @@ def resolve_suite_run(
     resolved: List[ResolvedSuiteCase] = []
     seen: set[str] = set()
 
-    for sc in (suite_def.cases or []):
+    for sc in suite_def.cases or []:
         resolved_sc, repo_id = resolve_suite_case(sc, repo_registry=repo_registry)
         cid = resolved_sc.case.case_id
         if cid in seen:
@@ -358,7 +373,9 @@ def resolve_suite_run(
     # subtly different layouts.
     if ensure_dirs:
         for rc in resolved:
-            paths = get_suite_paths(case_id=rc.suite_case.case.case_id, suite_id=sid, suite_root=root)
+            paths = get_suite_paths(
+                case_id=rc.suite_case.case.case_id, suite_id=sid, suite_root=root
+            )
             ensure_suite_dirs(paths)
             write_latest_suite_pointer(paths)
 

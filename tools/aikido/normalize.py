@@ -22,7 +22,11 @@ from typing import Any, Dict, List, Optional
 from tools.core import finalize_normalized_findings, load_cwe_to_owasp_map
 from tools.io import read_json, write_json
 from tools.normalize.classification import resolve_owasp_and_cwe
-from tools.normalize.common import build_per_finding_metadata, build_scan_info, build_target_repo
+from tools.normalize.common import (
+    build_per_finding_metadata,
+    build_scan_info,
+    build_target_repo,
+)
 from tools.normalize.extractors import (
     collect_tags_and_text,
     extract_cwe_candidates,
@@ -58,7 +62,12 @@ def _extract_raw_severity(issue: Dict[str, Any]) -> Any:
     """Pick a likely severity field from the vendor payload."""
     # Aikido exports typically include "severity" and sometimes "severity_score".
     # Keep this logic here (tool-specific); mapping is handled by extractors.map_severity.
-    return issue.get("severity") or issue.get("risk") or issue.get("level") or issue.get("severity_score")
+    return (
+        issue.get("severity")
+        or issue.get("risk")
+        or issue.get("level")
+        or issue.get("severity_score")
+    )
 
 
 def _build_finding(
@@ -150,7 +159,9 @@ def _coerce_issues_payload(payload: Any) -> List[Dict[str, Any]]:
                     return [x for x in v if isinstance(x, dict)]
 
     # PR gating modes sometimes expose new/existing issue lists.
-    if isinstance(payload.get("new"), list) and isinstance(payload.get("existing"), list):
+    if isinstance(payload.get("new"), list) and isinstance(
+        payload.get("existing"), list
+    ):
         new = [x for x in payload["new"] if isinstance(x, dict)]
         existing = [x for x in payload["existing"] if isinstance(x, dict)]
         return new + existing
@@ -158,7 +169,9 @@ def _coerce_issues_payload(payload: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def normalize_aikido_results(raw_results_path: Path, metadata: Dict[str, Any], normalized_path: Path) -> None:
+def normalize_aikido_results(
+    raw_results_path: Path, metadata: Dict[str, Any], normalized_path: Path
+) -> None:
     target_repo = build_target_repo(metadata)
     scan_info = build_scan_info(metadata, raw_results_path)
     per_finding_metadata = build_per_finding_metadata(
@@ -205,8 +218,11 @@ def normalize_aikido_results(raw_results_path: Path, metadata: Dict[str, Any], n
                     "metadata": per_finding_metadata,
                     "finding_id": f"aikido:parse_error:{issue.get('id')}",
                     "rule_id": _extract_rule_id(issue),
-                    "title": _extract_title(issue, issue.get("id")) or "Aikido issue (parse_error)",
-                    "severity": map_severity(_extract_raw_severity(issue), tool="aikido"),
+                    "title": _extract_title(issue, issue.get("id"))
+                    or "Aikido issue (parse_error)",
+                    "severity": map_severity(
+                        _extract_raw_severity(issue), tool="aikido"
+                    ),
                     "issue_type": "VULNERABILITY",
                     "file_path": None,
                     "line_number": None,

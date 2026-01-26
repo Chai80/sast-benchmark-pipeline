@@ -21,7 +21,9 @@ def _as_dict(x: Any) -> dict:
     return x if isinstance(x, dict) else {}
 
 
-def _case_spec_from_case_dir(case_dir: Path, *, default_track: Optional[str] = None) -> CaseSpec:
+def _case_spec_from_case_dir(
+    case_dir: Path, *, default_track: Optional[str] = None
+) -> CaseSpec:
     """Best-effort reconstruct a CaseSpec from <case_dir>/case.json.
 
     Analysis is mostly independent of repo identity, but using the recorded
@@ -44,7 +46,9 @@ def _case_spec_from_case_dir(case_dir: Path, *, default_track: Optional[str] = N
     branch = str(repo_obj.get("git_branch") or "").strip() or None
     commit = str(repo_obj.get("git_commit") or "").strip() or None
 
-    track = str(case_obj.get("track") or "").strip() or (str(default_track).strip() if default_track else None)
+    track = str(case_obj.get("track") or "").strip() or (
+        str(default_track).strip() if default_track else None
+    )
 
     tags_any = case_obj.get("tags")
     tags = dict(tags_any) if isinstance(tags_any, dict) else {}
@@ -59,7 +63,6 @@ def _case_spec_from_case_dir(case_dir: Path, *, default_track: Optional[str] = N
         track=track,
         tags=tags,
     )
-
 
 
 def _maybe_warn_gt_scoring(metric: str, gt_source: str) -> None:
@@ -78,8 +81,12 @@ def _maybe_warn_gt_scoring(metric: str, gt_source: str) -> None:
     if gt_src in {"", "none"}:
         return
 
-    print("\nℹ️  GT scoring note: gt_score is intended for benchmark/test suites (cases with GT markers or gt_catalog.yaml).")
-    print("    If you're analyzing a real repo without ground truth, pass --gt-source none to skip gt_score.")
+    print(
+        "\nℹ️  GT scoring note: gt_score is intended for benchmark/test suites (cases with GT markers or gt_catalog.yaml)."
+    )
+    print(
+        "    If you're analyzing a real repo without ground truth, pass --gt-source none to skip gt_score."
+    )
 
 
 def run_analyze(
@@ -136,13 +143,17 @@ def run_analyze_suite_all_cases(
 
     metric = str(getattr(args, "metric", "") or "hotspots").strip()
     if metric != "suite":
-        raise SystemExit(f"run_analyze_suite_all_cases requires --metric suite (got: {metric!r})")
+        raise SystemExit(
+            f"run_analyze_suite_all_cases requires --metric suite (got: {metric!r})"
+        )
 
     _maybe_warn_gt_scoring(metric, str(getattr(args, "gt_source", "auto")))
 
     if getattr(args, "analysis_out_dir", None):
         # In multi-case mode, a single output dir is ambiguous and risks collisions.
-        print("\nWARNING: --analysis-out-dir is ignored when analyzing ALL cases in a suite.")
+        print(
+            "\nWARNING: --analysis-out-dir is ignored when analyzing ALL cases in a suite."
+        )
         print("         Outputs will be written to each case's <case_dir>/analysis/.")
 
     if getattr(args, "out", None):
@@ -164,7 +175,9 @@ def run_analyze_suite_all_cases(
         print("\n" + "=" * 72)
         print(f"Analyze case {idx}/{len(case_ids)}: {cid}")
 
-        case_spec = _case_spec_from_case_dir(case_dir, default_track=getattr(args, "track", None))
+        case_spec = _case_spec_from_case_dir(
+            case_dir, default_track=getattr(args, "track", None)
+        )
 
         req = AnalyzeRequest(
             metric="suite",
@@ -196,16 +209,16 @@ def run_analyze_suite_all_cases(
     print(f"Suite index: {idx_path}")
 
     if readme_path.exists():
-
         print(f"Suite README: {readme_path}")
 
     else:
-
         print(f"Suite README (not found): {readme_path}")
 
     print(f"Per-case outputs: {Path(suite_dir) / 'cases' / '<case_id>' / 'analysis'}")
 
-    print(f"Case tables:     {Path(suite_dir) / 'cases' / '<case_id>' / 'analysis' / '_tables'}")
+    print(
+        f"Case tables:     {Path(suite_dir) / 'cases' / '<case_id>' / 'analysis' / '_tables'}"
+    )
 
     print(f"\nWrote suite case index: {idx_path}")
 

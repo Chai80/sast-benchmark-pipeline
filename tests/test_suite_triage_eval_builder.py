@@ -9,7 +9,9 @@ from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
 
 class TestSuiteTriageEvalBuilder(unittest.TestCase):
-    def _write_csv(self, path: Path, *, header: list[str], rows: list[dict[str, str]]) -> None:
+    def _write_csv(
+        self, path: Path, *, header: list[str], rows: list[dict[str, str]]
+    ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=header)
@@ -24,7 +26,9 @@ class TestSuiteTriageEvalBuilder(unittest.TestCase):
             "summary": {"total_gt_items": len(gt_ids)},
             "rows": [{"gt_id": gid} for gid in gt_ids],
         }
-        (gt_dir / "gt_score.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        (gt_dir / "gt_score.json").write_text(
+            json.dumps(payload, indent=2), encoding="utf-8"
+        )
 
     def test_macro_vs_micro_scoring(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -59,7 +63,7 @@ class TestSuiteTriageEvalBuilder(unittest.TestCase):
                         "suite_id": suite_id,
                         "case_id": "case_one",
                         "cluster_id": "c2",
-                        "tools_json": "[\"snyk\"]",
+                        "tools_json": '["snyk"]',
                         "tool_count": "1",
                         "max_severity_rank": "3",
                         "finding_count": "1",
@@ -74,7 +78,7 @@ class TestSuiteTriageEvalBuilder(unittest.TestCase):
                         "suite_id": suite_id,
                         "case_id": "case_one",
                         "cluster_id": "c1",
-                        "tools_json": "[\"semgrep\",\"snyk\"]",
+                        "tools_json": '["semgrep","snyk"]',
                         "tool_count": "2",
                         "max_severity_rank": "3",
                         "finding_count": "2",
@@ -82,13 +86,13 @@ class TestSuiteTriageEvalBuilder(unittest.TestCase):
                         "start_line": "20",
                         "triage_rank": "2",
                         "gt_overlap": "1",
-                        "gt_overlap_ids_json": "[\"GT-1\"]",
+                        "gt_overlap_ids_json": '["GT-1"]',
                     },
                     {
                         "suite_id": suite_id,
                         "case_id": "case_one",
                         "cluster_id": "c3",
-                        "tools_json": "[\"semgrep\"]",
+                        "tools_json": '["semgrep"]',
                         "tool_count": "1",
                         "max_severity_rank": "2",
                         "finding_count": "1",
@@ -96,7 +100,7 @@ class TestSuiteTriageEvalBuilder(unittest.TestCase):
                         "start_line": "30",
                         "triage_rank": "3",
                         "gt_overlap": "1",
-                        "gt_overlap_ids_json": "[\"GT-2\"]",
+                        "gt_overlap_ids_json": '["GT-2"]',
                     },
                 ],
             )
@@ -112,7 +116,7 @@ class TestSuiteTriageEvalBuilder(unittest.TestCase):
                         "suite_id": suite_id,
                         "case_id": "case_two",
                         "cluster_id": "c1",
-                        "tools_json": "[\"sonar\"]",
+                        "tools_json": '["sonar"]',
                         "tool_count": "1",
                         "max_severity_rank": "3",
                         "finding_count": "1",
@@ -120,7 +124,7 @@ class TestSuiteTriageEvalBuilder(unittest.TestCase):
                         "start_line": "1",
                         "triage_rank": "1",
                         "gt_overlap": "1",
-                        "gt_overlap_ids_json": "[\"GT-3\"]",
+                        "gt_overlap_ids_json": '["GT-3"]',
                     }
                 ],
             )
@@ -137,22 +141,38 @@ class TestSuiteTriageEvalBuilder(unittest.TestCase):
             micro = ev.get("micro") or {}
 
             # Baseline: case1 precision@1=0, case2 precision@1=1 -> macro=0.5, micro=0.5
-            self.assertAlmostEqual(float(macro["baseline"]["1"]["precision"]), 0.5, places=6)
-            self.assertAlmostEqual(float(micro["baseline"]["1"]["precision"]), 0.5, places=6)
+            self.assertAlmostEqual(
+                float(macro["baseline"]["1"]["precision"]), 0.5, places=6
+            )
+            self.assertAlmostEqual(
+                float(micro["baseline"]["1"]["precision"]), 0.5, places=6
+            )
 
             # Baseline coverage@1: case1 covers 0/2, case2 covers 1/1 -> macro=(0+1)/2=0.5
-            self.assertAlmostEqual(float(macro["baseline"]["1"]["gt_coverage"]), 0.5, places=6)
+            self.assertAlmostEqual(
+                float(macro["baseline"]["1"]["gt_coverage"]), 0.5, places=6
+            )
             # Micro coverage pools GT totals: covered=1, total=3 -> 0.333333...
-            self.assertAlmostEqual(float(micro["baseline"]["1"]["gt_coverage"]), 1.0 / 3.0, places=6)
+            self.assertAlmostEqual(
+                float(micro["baseline"]["1"]["gt_coverage"]), 1.0 / 3.0, places=6
+            )
 
             # Agreement: case1 precision@1=1, case2 precision@1=1 -> macro=1, micro=1
-            self.assertAlmostEqual(float(macro["agreement"]["1"]["precision"]), 1.0, places=6)
-            self.assertAlmostEqual(float(micro["agreement"]["1"]["precision"]), 1.0, places=6)
+            self.assertAlmostEqual(
+                float(macro["agreement"]["1"]["precision"]), 1.0, places=6
+            )
+            self.assertAlmostEqual(
+                float(micro["agreement"]["1"]["precision"]), 1.0, places=6
+            )
 
             # Agreement coverage@1: case1 covers 1/2=0.5, case2 covers 1/1=1 -> macro=0.75
-            self.assertAlmostEqual(float(macro["agreement"]["1"]["gt_coverage"]), 0.75, places=6)
+            self.assertAlmostEqual(
+                float(macro["agreement"]["1"]["gt_coverage"]), 0.75, places=6
+            )
             # Micro: covered=2, total=3 -> 0.666666...
-            self.assertAlmostEqual(float(micro["agreement"]["1"]["gt_coverage"]), 2.0 / 3.0, places=6)
+            self.assertAlmostEqual(
+                float(micro["agreement"]["1"]["gt_coverage"]), 2.0 / 3.0, places=6
+            )
 
 
 if __name__ == "__main__":

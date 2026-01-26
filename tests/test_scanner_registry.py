@@ -22,7 +22,11 @@ class TestScannerRegistry(unittest.TestCase):
     def test_default_scanners_csv_matches_list(self) -> None:
         self.assertTrue(DEFAULT_SCANNERS, "DEFAULT_SCANNERS should not be empty")
         self.assertEqual(DEFAULT_SCANNERS_CSV, ",".join(DEFAULT_SCANNERS))
-        self.assertEqual(len(DEFAULT_SCANNERS), len(set(DEFAULT_SCANNERS)), "DEFAULT_SCANNERS should not contain duplicates")
+        self.assertEqual(
+            len(DEFAULT_SCANNERS),
+            len(set(DEFAULT_SCANNERS)),
+            "DEFAULT_SCANNERS should not contain duplicates",
+        )
         for s in DEFAULT_SCANNERS:
             self.assertIn(s, SUPPORTED_SCANNERS)
 
@@ -35,13 +39,21 @@ class TestScannerRegistry(unittest.TestCase):
 
     def test_scanner_tracks_are_non_empty_and_lowercase(self) -> None:
         for key, tracks in SCANNER_TRACKS.items():
-            self.assertTrue(tracks, f"Scanner {key!r} should declare at least one track")
+            self.assertTrue(
+                tracks, f"Scanner {key!r} should declare at least one track"
+            )
             for t in tracks:
-                self.assertEqual(t, t.lower(), f"Track {t!r} for scanner {key!r} should be lowercase")
+                self.assertEqual(
+                    t, t.lower(), f"Track {t!r} for scanner {key!r} should be lowercase"
+                )
 
     def test_scanner_target_modes_are_declared(self) -> None:
         for key, mode in SCANNER_TARGET_MODES.items():
-            self.assertIn(mode, {"repo", "git-ref"}, f"Unexpected target_mode for {key!r}: {mode!r}")
+            self.assertIn(
+                mode,
+                {"repo", "git-ref"},
+                f"Unexpected target_mode for {key!r}: {mode!r}",
+            )
 
     def test_scanner_required_env_and_hooks(self) -> None:
         # Sonar should declare env requirements and a hook to derive project-key

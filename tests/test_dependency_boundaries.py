@@ -25,7 +25,9 @@ def iter_py_files(package_dir: Path) -> Iterable[Path]:
         yield p
 
 
-def find_forbidden_imports(py_file: Path, forbidden_roots: Tuple[str, ...]) -> List[str]:
+def find_forbidden_imports(
+    py_file: Path, forbidden_roots: Tuple[str, ...]
+) -> List[str]:
     src = py_file.read_text(encoding="utf-8", errors="ignore")
     tree = ast.parse(src, filename=str(py_file))
 
@@ -67,5 +69,8 @@ class TestDependencyBoundaries(unittest.TestCase):
                     problems.append(f"{rel} imports forbidden modules: {bad}")
 
         if problems:
-            msg = "Forbidden imports detected (violates dependency direction):\n" + "\n".join(problems)
+            msg = (
+                "Forbidden imports detected (violates dependency direction):\n"
+                + "\n".join(problems)
+            )
             self.fail(msg)

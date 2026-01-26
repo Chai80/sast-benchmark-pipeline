@@ -16,9 +16,12 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pipeline.analysis.io.config_receipts import load_scanner_config
 from pipeline.analysis.io.meta import read_json_if_exists
-from pipeline.analysis.suite.suite_triage_calibration import tool_weights_from_calibration
+from pipeline.analysis.suite.suite_triage_calibration import (
+    tool_weights_from_calibration,
+)
 
 from .diff import _to_float, _to_int
+
 
 def _load_csv_rows(path: Path) -> List[Dict[str, str]]:
     p = Path(path)
@@ -100,7 +103,10 @@ def _load_suite_artifacts(suite_dir: Path) -> Tuple[SuiteArtifacts, List[str]]:
     tables_dir = analysis_dir / "_tables"
 
     qa_manifest_path = _find_first_existing(
-        [analysis_dir / "qa_manifest.json", analysis_dir / "qa_calibration_manifest.json"]
+        [
+            analysis_dir / "qa_manifest.json",
+            analysis_dir / "qa_calibration_manifest.json",
+        ]
     )
     qa_manifest = read_json_if_exists(qa_manifest_path) if qa_manifest_path else None
 
@@ -113,11 +119,15 @@ def _load_suite_artifacts(suite_dir: Path) -> Tuple[SuiteArtifacts, List[str]]:
         if isinstance(qa_manifest, Mapping):
             inputs = qa_manifest.get("inputs")
             if isinstance(inputs, Mapping) and isinstance(inputs.get("scanners"), list):
-                expected_scanners = [str(x).strip() for x in inputs.get("scanners") if str(x).strip()]
+                expected_scanners = [
+                    str(x).strip() for x in inputs.get("scanners") if str(x).strip()
+                ]
         if not expected_scanners and isinstance(suite_json, Mapping):
             plan = suite_json.get("plan")
             if isinstance(plan, Mapping) and isinstance(plan.get("scanners"), list):
-                expected_scanners = [str(x).strip() for x in plan.get("scanners") if str(x).strip()]
+                expected_scanners = [
+                    str(x).strip() for x in plan.get("scanners") if str(x).strip()
+                ]
     except Exception:
         expected_scanners = []
 
@@ -215,7 +225,9 @@ def _dataset_counts(dataset_csv: Optional[Path]) -> Dict[str, Any]:
         else:
             neg += 1
 
-        tools = _parse_tools_any(str(r.get("tools_json") or ""), str(r.get("tools") or ""))
+        tools = _parse_tools_any(
+            str(r.get("tools_json") or ""), str(r.get("tools") or "")
+        )
         for t in tools:
             tool_cluster_counts[t] = int(tool_cluster_counts.get(t, 0)) + 1
 
@@ -229,7 +241,9 @@ def _dataset_counts(dataset_csv: Optional[Path]) -> Dict[str, Any]:
     }
 
 
-def _load_calibration_weights(cal_path: Optional[Path]) -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]:
+def _load_calibration_weights(
+    cal_path: Optional[Path],
+) -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]:
     """Return (global_weights, weights_by_owasp).
 
     weights_by_owasp is best-effort from triage_calibration.json v2 shape.
@@ -287,7 +301,9 @@ def _load_tool_utility(tool_utility_csv: Optional[Path]) -> Dict[str, Dict[str, 
     return out
 
 
-def _load_tool_marginal(tool_marginal_csv: Optional[Path]) -> Dict[Tuple[str, str, int], Dict[str, Any]]:
+def _load_tool_marginal(
+    tool_marginal_csv: Optional[Path],
+) -> Dict[Tuple[str, str, int], Dict[str, Any]]:
     """Best-effort loader for triage_tool_marginal.csv (PR6).
 
     Returns dict keyed by (tool, strategy, k) with selected delta metrics.

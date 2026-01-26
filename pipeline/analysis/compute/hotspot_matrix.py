@@ -11,7 +11,9 @@ from typing import Any, Dict, List, Sequence
 from pipeline.analysis.stages.common.severity import max_severity
 
 
-def build_hotspot_matrix_rows(clusters: Sequence[Dict[str, Any]], *, tools: Sequence[str]) -> List[Dict[str, Any]]:
+def build_hotspot_matrix_rows(
+    clusters: Sequence[Dict[str, Any]], *, tools: Sequence[str]
+) -> List[Dict[str, Any]]:
     """Build ranked rows for `hotspot_matrix.csv`/`hotspot_matrix.json`."""
 
     tools_l = list(tools)

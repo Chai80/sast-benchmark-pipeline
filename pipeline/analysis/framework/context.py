@@ -31,9 +31,6 @@ def _derive_suite_case_ids(out_dir: Path) -> Tuple[Optional[str], Optional[str]]
     return None, None
 
 
- 
-
-
 @dataclass(frozen=True)
 class AnalysisContext:
     """Immutable analysis job packet.
@@ -165,7 +162,9 @@ class AnalysisContext:
             "exclude_prefixes": list(self.exclude_prefixes or ()),
             "include_harness": bool(self.include_harness),
             "formats": list(self.formats),
-            "normalized_paths": {k: str(v) for k, v in (self.normalized_paths or {}).items()},
+            "normalized_paths": {
+                k: str(v) for k, v in (self.normalized_paths or {}).items()
+            },
             "suite_id": self.suite_id,
             "case_id": self.case_id,
             "config": dict(self.config or {}),

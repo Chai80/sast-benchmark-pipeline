@@ -16,7 +16,9 @@ from ..common.store_keys import StoreKeys
     description="Detect tools with zero findings (after filtering).",
     produces=(StoreKeys.FINDINGS_BY_TOOL, StoreKeys.DIAGNOSTICS_EMPTY_RUNS),
 )
-def stage_diagnostics_empty(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
+def stage_diagnostics_empty(
+    ctx: AnalysisContext, store: ArtifactStore
+) -> Dict[str, Any]:
     fb = load_findings_by_tool(ctx, store)
     empties = [tool for tool, findings in fb.items() if not findings]
     report = {"tools": list(ctx.tools), "empty_tools": empties}

@@ -13,7 +13,7 @@ extended independently.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from pipeline.analysis.framework import AnalysisContext
 from sast_benchmark.gt.markers import extract_gt_markers
@@ -68,7 +68,9 @@ def _try_load_yaml(path: Path) -> Tuple[Optional[Any], Optional[str]]:
         return None, str(e)
 
 
-def load_gt_catalog_yaml(gt_dir: Path) -> Tuple[Optional[Path], List[Dict[str, Any]], Optional[str]]:
+def load_gt_catalog_yaml(
+    gt_dir: Path,
+) -> Tuple[Optional[Path], List[Dict[str, Any]], Optional[str]]:
     """Load a YAML GT catalog from gt_catalog.yaml or gt_catalog.yml.
 
     Returns (path, items, error).
@@ -121,7 +123,9 @@ def load_gt_markers_json(gt_dir: Path) -> List[Dict[str, Any]]:
     return items
 
 
-def extract_markers_from_repo(case_json: Mapping[str, Any]) -> Tuple[Optional[Path], List[Dict[str, Any]]]:
+def extract_markers_from_repo(
+    case_json: Mapping[str, Any],
+) -> Tuple[Optional[Path], List[Dict[str, Any]]]:
     """Extract DURINN_GT markers by scanning the repo path from case.json."""
     repo_path = None
     try:
@@ -145,7 +149,9 @@ def choose_gt_source(
     *,
     gt_dir: Path,
     case_json: Mapping[str, Any],
-) -> Tuple[Optional[str], List[Dict[str, Any]], Optional[Path], Optional[Dict[str, Any]]]:
+) -> Tuple[
+    Optional[str], List[Dict[str, Any]], Optional[Path], Optional[Dict[str, Any]]
+]:
     """Choose + load raw GT items for a case.
 
     Parameters
@@ -176,7 +182,16 @@ def choose_gt_source(
         gt_catalog_path, raw_items, err = load_gt_catalog_yaml(gt_dir)
         if gt_catalog_path is None:
             # required in yaml mode
-            return None, [], None, {"status": "skipped", "reason": "no_gt_catalog_yaml", "gt_source_mode": "yaml"}
+            return (
+                None,
+                [],
+                None,
+                {
+                    "status": "skipped",
+                    "reason": "no_gt_catalog_yaml",
+                    "gt_source_mode": "yaml",
+                },
+            )
         if err:
             return (
                 None,
@@ -207,7 +222,16 @@ def choose_gt_source(
 
     if gt_source_mode not in ("auto", "markers"):
         # Callers validate; keep conservative behavior.
-        return None, [], None, {"status": "skipped", "reason": "no_gt", "gt_source_mode": str(gt_source_mode)}
+        return (
+            None,
+            [],
+            None,
+            {
+                "status": "skipped",
+                "reason": "no_gt",
+                "gt_source_mode": str(gt_source_mode),
+            },
+        )
 
     # 1) Captured marker catalog, if present
     raw_items = load_gt_markers_json(gt_dir)
@@ -222,7 +246,16 @@ def choose_gt_source(
             gt_source_used = "markers"
 
     if gt_source_mode == "markers" and not raw_items:
-        return None, [], None, {"status": "skipped", "reason": "no_gt_markers", "gt_source_mode": "markers"}
+        return (
+            None,
+            [],
+            None,
+            {
+                "status": "skipped",
+                "reason": "no_gt_markers",
+                "gt_source_mode": "markers",
+            },
+        )
 
     # 3) YAML fallback (auto only)
     if gt_source_mode == "auto" and not raw_items:
@@ -236,7 +269,9 @@ def choose_gt_source(
                     "status": "skipped",
                     "reason": "gt_catalog_yaml_error",
                     "gt_source_mode": "auto",
-                    "gt_catalog_path": str(gt_catalog_path) if gt_catalog_path else None,
+                    "gt_catalog_path": str(gt_catalog_path)
+                    if gt_catalog_path
+                    else None,
                     "error": err,
                 },
             )
@@ -244,6 +279,11 @@ def choose_gt_source(
             gt_source_used = "yaml"
 
     if not raw_items:
-        return None, [], gt_catalog_path, {"status": "skipped", "reason": "no_gt", "gt_source_mode": gt_source_mode}
+        return (
+            None,
+            [],
+            gt_catalog_path,
+            {"status": "skipped", "reason": "no_gt", "gt_source_mode": gt_source_mode},
+        )
 
     return gt_source_used, raw_items, gt_catalog_path, None

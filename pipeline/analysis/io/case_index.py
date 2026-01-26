@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
-from tools.io import write_json
+from .write_artifacts import write_json, write_text
 
 
 def _now_iso() -> str:
@@ -64,22 +64,26 @@ def build_case_index(*, suite_dir: Path, case_ids: Sequence[str]) -> Dict[str, A
             "tool_runs_dir": _exists(case_dir / "tool_runs"),
             "scans_dir": _exists(case_dir / "scans"),
             "gt_dir": _exists(gt_dir),
-
             # Common analysis artifacts
             "analysis_manifest_json": _exists(analysis_dir / "analysis_manifest.json"),
             "benchmark_pack_json": _exists(analysis_dir / "benchmark_pack.json"),
-            "hotspot_drilldown_pack_json": _exists(analysis_dir / "hotspot_drilldown_pack.json"),
-
+            "hotspot_drilldown_pack_json": _exists(
+                analysis_dir / "hotspot_drilldown_pack.json"
+            ),
             # Tables (triage)
             "triage_features_csv": _exists_any(
-                [tables_dir / "triage_features.csv", analysis_dir / "triage_features.csv"]
+                [
+                    tables_dir / "triage_features.csv",
+                    analysis_dir / "triage_features.csv",
+                ]
             ),
             "triage_queue_csv": _exists_any(
                 [tables_dir / "triage_queue.csv", analysis_dir / "triage_queue.csv"]
             ),
-
             # GT artifacts
-            "gt_catalog_yaml": _exists_any([gt_dir / "gt_catalog.yaml", gt_dir / "gt_catalog.yml"]),
+            "gt_catalog_yaml": _exists_any(
+                [gt_dir / "gt_catalog.yaml", gt_dir / "gt_catalog.yml"]
+            ),
             "gt_score_json": _exists(gt_dir / "gt_score.json"),
             "gt_score_csv": _exists(gt_dir / "gt_score.csv"),
         }
@@ -156,7 +160,9 @@ def _render_suite_readme(payload: dict, *, index_path: Path) -> str:
             triage_queue = _yesno(exists.get("triage_queue_csv"))
             manifest = _yesno(exists.get("analysis_manifest_json"))
             gt_catalog = _yesno(exists.get("gt_catalog_yaml"))
-            gt_score = _yesno(bool(exists.get("gt_score_json")) or bool(exists.get("gt_score_csv")))
+            gt_score = _yesno(
+                bool(exists.get("gt_score_json")) or bool(exists.get("gt_score_csv"))
+            )
 
             lines.append(
                 f"- {cid}: triage_features={triage_features} triage_queue={triage_queue} "
@@ -167,7 +173,9 @@ def _render_suite_readme(payload: dict, *, index_path: Path) -> str:
     lines.append("Tip")
     lines.append("---")
     lines.append("Open one case's triage queue:")
-    lines.append("  head -n 5 runs/suites/<suite_id>/cases/<case_id>/analysis/_tables/triage_queue.csv")
+    lines.append(
+        "  head -n 5 runs/suites/<suite_id>/cases/<case_id>/analysis/_tables/triage_queue.csv"
+    )
     lines.append("")
     return "\n".join(lines) + "\n"
 

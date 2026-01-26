@@ -47,7 +47,9 @@ _DURINN_MARKER_RE = re.compile(r"\bDURINN_GT\b", re.IGNORECASE)
 _KV_RE = re.compile(r"([a-zA-Z_][a-zA-Z0-9_-]*)\s*=\s*([^\s,;]+)")
 
 # Lightweight start/end blocks: `GT:<ID>_START` / `GT:<ID>_END`
-_GT_BLOCK_RE = re.compile(r"\bGT\s*:\s*(?P<id>[A-Za-z0-9_]+)_(?P<tag>START|END)\b", re.IGNORECASE)
+_GT_BLOCK_RE = re.compile(
+    r"\bGT\s*:\s*(?P<id>[A-Za-z0-9_]+)_(?P<tag>START|END)\b", re.IGNORECASE
+)
 
 # Optional: derive OWASP category from common IDs (e.g., OWASP2021_A03_01 -> A03)
 _OWASP_FROM_ID_RE = re.compile(r"\bOWASP\w*_A(?P<num>\d{2})\b", re.IGNORECASE)
@@ -112,7 +114,13 @@ def _safe_relpath(p: Path, root: Path) -> str:
 
 
 def _normalize_track(kv: Dict[str, str]) -> str:
-    return kv.get("track") or kv.get("category") or kv.get("type") or kv.get("kind") or "sast"
+    return (
+        kv.get("track")
+        or kv.get("category")
+        or kv.get("type")
+        or kv.get("kind")
+        or "sast"
+    )
 
 
 def _normalize_set(kv: Dict[str, str]) -> str:
@@ -215,7 +223,15 @@ def extract_gt_markers(
                     # Preserve additional metadata if present (e.g., owasp=A03).
                     # We intentionally do not overwrite the canonical keys above.
                     for k, v in kv.items():
-                        if k in {"id", "track", "category", "type", "kind", "set", "scope"}:
+                        if k in {
+                            "id",
+                            "track",
+                            "category",
+                            "type",
+                            "kind",
+                            "set",
+                            "scope",
+                        }:
                             continue
                         if k not in item:
                             item[k] = v
@@ -284,5 +300,11 @@ def extract_gt_markers(
     items = kv_items + block_items
 
     # Deterministic order for diffable outputs.
-    items.sort(key=lambda it: (str(it.get("file") or ""), int(it.get("start_line") or 0), str(it.get("id") or "")))
+    items.sort(
+        key=lambda it: (
+            str(it.get("file") or ""),
+            int(it.get("start_line") or 0),
+            str(it.get("id") or ""),
+        )
+    )
     return items

@@ -43,3 +43,12 @@ def stage_triage(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]:
         store.add_artifact("triage_queue_json", out_json)
 
     return meta
+
+
+# Re-export compute-level symbols for backwards compatibility.
+__all__ = [
+    "TRIAGE_QUEUE_FIELDNAMES",
+    "TRIAGE_QUEUE_SCHEMA_VERSION",
+    "rank_triage_rows",
+    "stage_triage",
+]

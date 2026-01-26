@@ -7,7 +7,9 @@ from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
 
 
 class TestSuiteTriageDatasetBuilder(unittest.TestCase):
-    def _write_csv(self, path: Path, *, header: list[str], rows: list[dict[str, str]]) -> None:
+    def _write_csv(
+        self, path: Path, *, header: list[str], rows: list[dict[str, str]]
+    ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=header)
@@ -58,12 +60,12 @@ class TestSuiteTriageDatasetBuilder(unittest.TestCase):
                         "schema_version": "triage_features_v1",
                         "generated_at": "2026-01-01T00:00:00Z",
                         "repo_name": "repo1",
-                        "tools_json": "[\"semgrep\",\"snyk\"]",
+                        "tools_json": '["semgrep","snyk"]',
                         "tools": "semgrep,snyk",
                         "tool_count": "2",
                         "suite_tool_count": "4",
                         "agreement_tool_ratio": "0.5",
-                        "tool_counts_json": "{\"semgrep\":1,\"snyk\":1}",
+                        "tool_counts_json": '{"semgrep":1,"snyk":1}',
                         "finding_count": "2",
                         "severity_high_count": "1",
                         "severity_medium_count": "0",
@@ -71,7 +73,7 @@ class TestSuiteTriageDatasetBuilder(unittest.TestCase):
                         "severity_unknown_count": "0",
                         "gt_overlap": "1",
                         "gt_overlap_count": "1",
-                        "gt_overlap_ids_json": "[\"GT-1\"]",
+                        "gt_overlap_ids_json": '["GT-1"]',
                         "gt_overlap_ids": "GT-1",
                     }
                 ],
@@ -90,12 +92,12 @@ class TestSuiteTriageDatasetBuilder(unittest.TestCase):
                         "schema_version": "triage_features_v1",
                         "generated_at": "2026-01-01T00:00:00Z",
                         "repo_name": "repo2",
-                        "tools_json": "[\"sonar\"]",
+                        "tools_json": '["sonar"]',
                         "tools": "sonar",
                         "tool_count": "1",
                         "suite_tool_count": "4",
                         "agreement_tool_ratio": "0.25",
-                        "tool_counts_json": "{\"sonar\":1}",
+                        "tool_counts_json": '{"sonar":1}',
                         "finding_count": "1",
                         "severity_high_count": "0",
                         "severity_medium_count": "1",
@@ -111,7 +113,11 @@ class TestSuiteTriageDatasetBuilder(unittest.TestCase):
 
             # Case 3: empty triage_features.csv (header only)
             case3 = cases_dir / "case_three"
-            self._write_csv(case3 / "analysis" / "_tables" / "triage_features.csv", header=header, rows=[])
+            self._write_csv(
+                case3 / "analysis" / "_tables" / "triage_features.csv",
+                header=header,
+                rows=[],
+            )
 
             # Case 4: missing triage_features.csv entirely
             (cases_dir / "case_four").mkdir(parents=True, exist_ok=True)
@@ -124,7 +130,9 @@ class TestSuiteTriageDatasetBuilder(unittest.TestCase):
             self.assertIn("case_three", summary.get("empty_cases") or [])
 
             out_csv = Path(str(summary.get("out_csv")))
-            self.assertTrue(out_csv.exists(), "Expected triage_dataset.csv to be written")
+            self.assertTrue(
+                out_csv.exists(), "Expected triage_dataset.csv to be written"
+            )
 
             with out_csv.open("r", newline="", encoding="utf-8") as f:
                 reader = csv.DictReader(f)

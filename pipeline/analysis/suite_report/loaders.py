@@ -11,9 +11,10 @@ for compute/render helpers.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 from .model import CaseRow, SuiteReportInputs, _CaseScanSummary
+
 
 def _read_json(path: Path) -> Any:
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -134,8 +135,6 @@ def _count_normalized_findings(normalized_json_path: Path) -> Optional[int]:
     return None
 
 
-
-
 # ---------------------------------------------------------------------------
 # Integrity helpers (GT tolerance ambiguity)
 # ---------------------------------------------------------------------------
@@ -163,7 +162,9 @@ def _read_csv_dict_rows(path: Path) -> List[Dict[str, str]]:
         return [dict(r) for r in csv.DictReader(f) if isinstance(r, dict)]
 
 
-def _load_gt_tolerance_integrity(*, suite_dir: Path, analysis_dir: Path) -> Dict[str, Any]:
+def _load_gt_tolerance_integrity(
+    *, suite_dir: Path, analysis_dir: Path
+) -> Dict[str, Any]:
     """Load a lightweight ambiguity summary from gt_tolerance_sweep_summary.csv (if present).
 
     This is read-only and does not change scoring; it's used only to surface potential
@@ -179,7 +180,10 @@ def _load_gt_tolerance_integrity(*, suite_dir: Path, analysis_dir: Path) -> Dict
     try:
         rows = _read_csv_dict_rows(summary_csv)
     except Exception:
-        return {"evidence": evidence, "warnings": ["failed_to_parse_gt_tolerance_sweep_summary"]}
+        return {
+            "evidence": evidence,
+            "warnings": ["failed_to_parse_gt_tolerance_sweep_summary"],
+        }
 
     if not rows:
         return {"evidence": evidence, "warnings": ["empty_gt_tolerance_sweep_summary"]}
@@ -219,7 +223,9 @@ def _load_gt_tolerance_integrity(*, suite_dir: Path, analysis_dir: Path) -> Dict
 
     warnings: List[str] = []
     if many_to_one > 0:
-        warnings.append(f"many_to_one_clusters={many_to_one} (clusters overlap multiple GT IDs; may inflate TPs)")
+        warnings.append(
+            f"many_to_one_clusters={many_to_one} (clusters overlap multiple GT IDs; may inflate TPs)"
+        )
     if one_to_many > 0:
         warnings.append(
             f"one_to_many_gt_ids={one_to_many} (GT IDs overlap multiple clusters; may indicate tolerance too large)"
@@ -236,6 +242,8 @@ def _load_gt_tolerance_integrity(*, suite_dir: Path, analysis_dir: Path) -> Dict
         "gt_ambiguity": ambiguity,
         "warnings": warnings,
     }
+
+
 def _load_topk_csv(suite_dir: Path, out_dirname: str) -> Optional[List[Dict[str, Any]]]:
     p = suite_dir / out_dirname / "_tables" / "triage_eval_topk.csv"
     if not p.exists():
@@ -248,7 +256,10 @@ def _load_topk_csv(suite_dir: Path, out_dirname: str) -> Optional[List[Dict[str,
     except Exception:
         return None
 
-def _extract_scanners_requested(*, suite: Dict[str, Any], plan: Dict[str, Any]) -> List[str]:
+
+def _extract_scanners_requested(
+    *, suite: Dict[str, Any], plan: Dict[str, Any]
+) -> List[str]:
     scanners_requested: List[str] = []
     if isinstance(plan.get("scanners"), list):
         scanners_requested = [str(x) for x in plan.get("scanners") if x]
@@ -281,19 +292,33 @@ def load_suite_report_inputs(
     qa_scope: Optional[str] = None
     qa_no_reanalyze: Optional[bool] = None
     if isinstance(qa_manifest, dict):
-        qa_inputs = qa_manifest.get("inputs") if isinstance(qa_manifest.get("inputs"), dict) else {}
+        qa_inputs = (
+            qa_manifest.get("inputs")
+            if isinstance(qa_manifest.get("inputs"), dict)
+            else {}
+        )
         qa_cfg = qa_inputs.get("qa") if isinstance(qa_inputs.get("qa"), dict) else {}
         qa_scope = qa_cfg.get("scope")
         qa_no_reanalyze = qa_cfg.get("no_reanalyze")
 
-    qa_cal_manifest = _safe_read_json(analysis_dir / "qa_calibration_manifest.json") or {}
-    qa_result = qa_cal_manifest.get("result") if isinstance(qa_cal_manifest.get("result"), dict) else {}
+    qa_cal_manifest = (
+        _safe_read_json(analysis_dir / "qa_calibration_manifest.json") or {}
+    )
+    qa_result = (
+        qa_cal_manifest.get("result")
+        if isinstance(qa_cal_manifest.get("result"), dict)
+        else {}
+    )
 
     # Calibration artifacts (if present)
     triage_cal = _safe_read_json(analysis_dir / "triage_calibration.json") or {}
     min_support_by_owasp: Optional[int] = None
     if isinstance(triage_cal, dict):
-        scoring = triage_cal.get("scoring") if isinstance(triage_cal.get("scoring"), dict) else {}
+        scoring = (
+            triage_cal.get("scoring")
+            if isinstance(triage_cal.get("scoring"), dict)
+            else {}
+        )
         m = scoring.get("min_support_by_owasp")
         min_support_by_owasp = int(m) if isinstance(m, int) else None
 
@@ -310,8 +335,12 @@ def load_suite_report_inputs(
         scanners_requested=scanners_requested,
         qa_manifest=qa_manifest if isinstance(qa_manifest, dict) else {},
         qa_scope=str(qa_scope) if isinstance(qa_scope, str) else None,
-        qa_no_reanalyze=bool(qa_no_reanalyze) if isinstance(qa_no_reanalyze, bool) else None,
-        qa_calibration_manifest=qa_cal_manifest if isinstance(qa_cal_manifest, dict) else {},
+        qa_no_reanalyze=bool(qa_no_reanalyze)
+        if isinstance(qa_no_reanalyze, bool)
+        else None,
+        qa_calibration_manifest=qa_cal_manifest
+        if isinstance(qa_cal_manifest, dict)
+        else {},
         qa_result=qa_result if isinstance(qa_result, dict) else {},
         triage_calibration=triage_cal if isinstance(triage_cal, dict) else {},
         min_support_by_owasp=min_support_by_owasp,
@@ -385,7 +414,9 @@ def _collect_case_rows(
                     gt_score_json=_rel(case_dir / "gt" / "gt_score.json", suite_dir)
                     if (case_dir / "gt" / "gt_score.json").exists()
                     else None,
-                    gt_gap_queue_csv=_rel(case_dir / "gt" / "gt_gap_queue.csv", suite_dir)
+                    gt_gap_queue_csv=_rel(
+                        case_dir / "gt" / "gt_gap_queue.csv", suite_dir
+                    )
                     if (case_dir / "gt" / "gt_gap_queue.csv").exists()
                     else None,
                     hotspot_pack_json=None,
@@ -394,14 +425,26 @@ def _collect_case_rows(
             )
             continue
 
-        ctx = manifest.get("context") if isinstance(manifest.get("context"), dict) else {}
+        ctx = (
+            manifest.get("context") if isinstance(manifest.get("context"), dict) else {}
+        )
         cfg = ctx.get("config") if isinstance(ctx.get("config"), dict) else {}
-        requested_tools = cfg.get("requested_tools") if isinstance(cfg.get("requested_tools"), list) else list(scanners_requested)
+        requested_tools = (
+            cfg.get("requested_tools")
+            if isinstance(cfg.get("requested_tools"), list)
+            else list(scanners_requested)
+        )
         requested_tools = [str(x) for x in (requested_tools or []) if x]
 
-        normalized_paths = ctx.get("normalized_paths") if isinstance(ctx.get("normalized_paths"), dict) else {}
+        normalized_paths = (
+            ctx.get("normalized_paths")
+            if isinstance(ctx.get("normalized_paths"), dict)
+            else {}
+        )
         tools_present = sorted([str(t) for t in normalized_paths.keys()])
-        tools_missing = sorted([t for t in requested_tools if t not in set(tools_present)])
+        tools_missing = sorted(
+            [t for t in requested_tools if t not in set(tools_present)]
+        )
 
         tools_used_union.update(tools_present)
         tools_missing_union.update(tools_missing)
@@ -419,7 +462,9 @@ def _collect_case_rows(
 
         gap_total: Optional[int] = None
         try:
-            gap_summary = gt.get("gap_summary") if isinstance(gt.get("gap_summary"), dict) else {}
+            gap_summary = (
+                gt.get("gap_summary") if isinstance(gt.get("gap_summary"), dict) else {}
+            )
             gap_total = int(gap_summary.get("gap_total"))
         except Exception:
             gap_total = None
@@ -438,10 +483,20 @@ def _collect_case_rows(
         warnings = [str(w) for w in (manifest.get("warnings") or []) if w]
         warnings_short = [_shorten_warning(w) for w in warnings[:3]]
 
-        artifacts = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), dict) else {}
-        triage_queue_csv = _normalize_artifact_path(artifacts.get("triage_queue_csv"), suite_dir=suite_dir)
-        triage_queue_json = _normalize_artifact_path(artifacts.get("triage_queue_json"), suite_dir=suite_dir)
-        hotspot_pack = _normalize_artifact_path(artifacts.get("hotspot_drilldown_pack"), suite_dir=suite_dir)
+        artifacts = (
+            manifest.get("artifacts")
+            if isinstance(manifest.get("artifacts"), dict)
+            else {}
+        )
+        triage_queue_csv = _normalize_artifact_path(
+            artifacts.get("triage_queue_csv"), suite_dir=suite_dir
+        )
+        triage_queue_json = _normalize_artifact_path(
+            artifacts.get("triage_queue_json"), suite_dir=suite_dir
+        )
+        hotspot_pack = _normalize_artifact_path(
+            artifacts.get("hotspot_drilldown_pack"), suite_dir=suite_dir
+        )
 
         gt_score_path = case_dir / "gt" / "gt_score.json"
         gt_gap_csv = case_dir / "gt" / "gt_gap_queue.csv"
@@ -467,15 +522,21 @@ def _collect_case_rows(
                 triage_rows=triage_rows,
                 gt_matched=gt_matched,
                 gt_total=gt_total,
-                match_rate=float(match_rate) if isinstance(match_rate, (int, float)) else None,
+                match_rate=float(match_rate)
+                if isinstance(match_rate, (int, float))
+                else None,
                 gap_total=gap_total,
                 top_severity=str(top_sev) if top_sev else None,
                 warnings=warnings_short,
                 analysis_manifest=_rel(manifest_path, suite_dir),
                 triage_queue_csv=triage_queue_csv,
                 triage_queue_json=triage_queue_json,
-                gt_score_json=_rel(gt_score_path, suite_dir) if gt_score_path.exists() else None,
-                gt_gap_queue_csv=_rel(gt_gap_csv, suite_dir) if gt_gap_csv.exists() else None,
+                gt_score_json=_rel(gt_score_path, suite_dir)
+                if gt_score_path.exists()
+                else None,
+                gt_gap_queue_csv=_rel(gt_gap_csv, suite_dir)
+                if gt_gap_csv.exists()
+                else None,
                 hotspot_pack_json=hotspot_pack,
                 tool_findings=tool_findings,
             )

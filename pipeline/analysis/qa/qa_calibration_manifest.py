@@ -99,7 +99,9 @@ class GTTolerancePolicyRecord:
             },
             "auto": {
                 "enabled": bool(self.auto_enabled),
-                "min_fraction": float(self.auto_min_fraction) if self.auto_min_fraction is not None else None,
+                "min_fraction": float(self.auto_min_fraction)
+                if self.auto_min_fraction is not None
+                else None,
                 "selection_path": self.selection_path,
                 "warnings": list(self.selection_warnings or []),
             },
@@ -180,7 +182,9 @@ def build_qa_calibration_manifest(
         "artifacts": artifacts_rel,
         "result": {
             "exit_code": int(exit_code),
-            "checklist_pass": bool(checklist_pass) if checklist_pass is not None else None,
+            "checklist_pass": bool(checklist_pass)
+            if checklist_pass is not None
+            else None,
         },
     }
     return payload
@@ -371,7 +375,6 @@ def _best_effort_update_suite_json_gt_tolerance(
         return
 
 
-
 def write_qa_calibration_manifest(
     *,
     suite_dir: Path,
@@ -401,7 +404,7 @@ def write_qa_calibration_manifest(
     write_json(out_path, dict(manifest))
 
     # Optional compatibility aliases.
-    for alias in (legacy_aliases or ()):  # type: ignore[truthy-bool]
+    for alias in legacy_aliases or ():  # type: ignore[truthy-bool]
         a = str(alias).strip()
         if not a:
             continue
@@ -417,14 +420,18 @@ def write_qa_calibration_manifest(
     # Also record scanner configuration into suite.json so humans browsing
     # runs/suites/... can attribute drift to profile/config changes.
     try:
-        _best_effort_update_suite_json_scanner_config(suite_dir=suite_dir, manifest=manifest)
+        _best_effort_update_suite_json_scanner_config(
+            suite_dir=suite_dir, manifest=manifest
+        )
     except Exception:
         pass
 
     # Also record the effective GT tolerance into suite.json so humans
     # browsing runs/suites/... don't confuse analysis tolerance with gt_tolerance.
     try:
-        _best_effort_update_suite_json_gt_tolerance(suite_dir=suite_dir, manifest=manifest)
+        _best_effort_update_suite_json_gt_tolerance(
+            suite_dir=suite_dir, manifest=manifest
+        )
     except Exception:
         pass
 

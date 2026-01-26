@@ -26,7 +26,11 @@ from pipeline.suites.legacy_import import import_legacy_repo_to_suite
 
 def _parse_tools(args) -> list[str]:
     # Prefer --tools (analyze-style), fallback to --scanners (benchmark-style).
-    raw = getattr(args, "tools", None) or getattr(args, "scanners", None) or DEFAULT_SCANNERS_CSV
+    raw = (
+        getattr(args, "tools", None)
+        or getattr(args, "scanners", None)
+        or DEFAULT_SCANNERS_CSV
+    )
     tools = [t for t in parse_csv(str(raw)) if t in SUPPORTED_SCANNERS]
     if not tools:
         raise SystemExit("No valid tools specified. Pass --tools semgrep,snyk,...")
@@ -72,7 +76,9 @@ def run_import_legacy(
         fallback=str(repo_label or "repo"),
     )
     if not runs_repo_name:
-        raise SystemExit("Unable to determine runs_repo_name. Pass --runs-repo-name <repo_folder>.")
+        raise SystemExit(
+            "Unable to determine runs_repo_name. Pass --runs-repo-name <repo_folder>."
+        )
 
     case_id = getattr(args, "case_id", None) or runs_repo_name
 
@@ -102,13 +108,17 @@ def run_import_legacy(
     print(f"  Suite dir: {res.suite_dir}")
     print(f"  Case id  : {res.case_id}")
     print(f"  Case dir : {res.case_dir}")
-    print(f"  Tools    : {', '.join(res.imported_tools) if res.imported_tools else '(none)'}")
+    print(
+        f"  Tools    : {', '.join(res.imported_tools) if res.imported_tools else '(none)'}"
+    )
 
     if res.missing_tools:
         print(f"  ⚠️  Missing tools (no runs found): {', '.join(res.missing_tools)}")
 
     print("\nNext:")
-    print(f"  python sast_cli.py --mode analyze --metric suite --suite-id {res.suite_id}")
+    print(
+        f"  python sast_cli.py --mode analyze --metric suite --suite-id {res.suite_id}"
+    )
 
     # Non-zero only if nothing imported.
     return 0 if res.imported_tools else 2

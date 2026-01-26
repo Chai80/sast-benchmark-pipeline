@@ -48,8 +48,6 @@ from pipeline.suites.bundles import (
 )
 
 
-
-
 @dataclass(frozen=True)
 class SuitePaths:
     """Computed filesystem paths for one case inside one suite.
@@ -120,6 +118,7 @@ def _to_bundle_paths(sp: SuitePaths) -> BundlePaths:
         case_json_path=sp.case_json_path,
     )
 
+
 def new_suite_id() -> str:
     """Generate a new suite id (sortable UTC timestamp)."""
     return new_bundle_id()
@@ -132,9 +131,10 @@ def get_suite_paths(
     suite_root: Union[str, Path] = "runs/suites",
 ) -> SuitePaths:
     """Compute filesystem paths for one case inside one suite."""
-    bundle = get_bundle_paths(target=case_id, bundle_id=suite_id, bundle_root=suite_root)
+    bundle = get_bundle_paths(
+        target=case_id, bundle_id=suite_id, bundle_root=suite_root
+    )
     return _to_suite_paths(bundle)
-
 
 
 def ensure_suite_dirs(paths: SuitePaths) -> None:
@@ -150,6 +150,7 @@ def write_latest_suite_pointer(paths: SuitePaths) -> None:
 def update_suite_artifacts(paths: SuitePaths, case_manifest: Dict[str, Any]) -> None:
     """Update suite-level README / suite.json / summary.csv (best-effort)."""
     _update_suite_artifacts(_to_bundle_paths(paths), case_manifest)
+
 
 def resolve_case_dir(
     *,
@@ -210,7 +211,9 @@ def resolve_case_dir(
     if not cases_dir.exists() or not cases_dir.is_dir():
         raise FileNotFoundError(f"Cases dir not found: {cases_dir}")
 
-    available: Sequence[str] = sorted([p.name for p in cases_dir.iterdir() if p.is_dir()])
+    available: Sequence[str] = sorted(
+        [p.name for p in cases_dir.iterdir() if p.is_dir()]
+    )
     if not available:
         raise FileNotFoundError(f"No case directories found under: {cases_dir}")
 
@@ -246,7 +249,9 @@ def resolve_case_dir(
     )
 
 
-def discover_repo_dir(output_root: Path, prefer: Optional[str] = None) -> Optional[Path]:
+def discover_repo_dir(
+    output_root: Path, prefer: Optional[str] = None
+) -> Optional[Path]:
     """Backwards-compatible wrapper for :func:`sast_benchmark.io.layout.discover_repo_dir`."""
     return _discover_repo_dir(output_root, prefer)
 

@@ -28,7 +28,19 @@ def stage_pairwise(ctx: AnalysisContext, store: ArtifactStore) -> Dict[str, Any]
     out_json = Path(ctx.out_dir) / "pairwise_agreement.json"
 
     if "csv" in ctx.formats:
-        write_csv(out_csv, rows, fieldnames=["tool_a", "tool_b", "clusters_a", "clusters_b", "intersection", "union", "jaccard"])
+        write_csv(
+            out_csv,
+            rows,
+            fieldnames=[
+                "tool_a",
+                "tool_b",
+                "clusters_a",
+                "clusters_b",
+                "intersection",
+                "union",
+                "jaccard",
+            ],
+        )
         store.add_artifact("pairwise_agreement_csv", out_csv)
     if "json" in ctx.formats:
         write_json(out_json, rows)

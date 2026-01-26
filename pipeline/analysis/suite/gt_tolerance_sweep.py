@@ -48,10 +48,12 @@ import math
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from pipeline.analysis.io.write_artifacts import write_csv, write_json
-from pipeline.analysis.suite.suite_triage_calibration import tool_weights_from_calibration
+from pipeline.analysis.suite.suite_triage_calibration import (
+    tool_weights_from_calibration,
+)
 from pipeline.orchestrator import AnalyzeRequest
 from pipeline.pipeline import SASTBenchmarkPipeline
 from pipeline.suites.bundles import safe_name
@@ -113,7 +115,9 @@ def parse_gt_tolerance_candidates(raw: Any) -> List[int]:
     return out or list(DEFAULT_GT_TOLERANCE_CANDIDATES)
 
 
-def disable_suite_calibration(suite_dir: Path, *, out_dirname: str = "analysis") -> Optional[Path]:
+def disable_suite_calibration(
+    suite_dir: Path, *, out_dirname: str = "analysis"
+) -> Optional[Path]:
     """Temporarily disable suite-level triage calibration.
 
     Per-case analysis (triage_queue stage) will automatically pick up
@@ -284,11 +288,17 @@ def _compute_dataset_overlap_stats(dataset_csv: Path) -> DatasetOverlapStats:
             if len(uniq) > 1:
                 clusters_multi_gt += 1
             for gid in uniq:
-                gt_id_to_cluster_count[gid] = int(gt_id_to_cluster_count.get(gid, 0)) + 1
+                gt_id_to_cluster_count[gid] = (
+                    int(gt_id_to_cluster_count.get(gid, 0)) + 1
+                )
 
     gt_ids_covered = len(gt_id_to_cluster_count)
-    gt_ids_multi_cluster = sum(1 for _gid, c in gt_id_to_cluster_count.items() if int(c) > 1)
-    max_clusters_per_gt_id = max([int(c) for c in gt_id_to_cluster_count.values()], default=0)
+    gt_ids_multi_cluster = sum(
+        1 for _gid, c in gt_id_to_cluster_count.items() if int(c) > 1
+    )
+    max_clusters_per_gt_id = max(
+        [int(c) for c in gt_id_to_cluster_count.values()], default=0
+    )
 
     rate = (float(pos) / float(total)) if total else 0.0
 
@@ -315,7 +325,11 @@ def _extract_macro_metrics(
 
     out: Dict[str, float] = {}
 
-    macro = triage_eval_summary.get("macro") if isinstance(triage_eval_summary, dict) else None
+    macro = (
+        triage_eval_summary.get("macro")
+        if isinstance(triage_eval_summary, dict)
+        else None
+    )
     if not isinstance(macro, dict):
         return out
 
@@ -330,9 +344,13 @@ def _extract_macro_metrics(
             p = k_obj.get("precision")
             c = k_obj.get("gt_coverage")
             if p is not None:
-                out[f"macro_precision_{strat}_k{k}"] = float(_safe_float(p, default=0.0))
+                out[f"macro_precision_{strat}_k{k}"] = float(
+                    _safe_float(p, default=0.0)
+                )
             if c is not None:
-                out[f"macro_gt_coverage_{strat}_k{k}"] = float(_safe_float(c, default=0.0))
+                out[f"macro_gt_coverage_{strat}_k{k}"] = float(
+                    _safe_float(c, default=0.0)
+                )
 
     # Calibrated vs baseline deltas (only where both exist).
     for k in ks:
@@ -342,9 +360,13 @@ def _extract_macro_metrics(
         c_base = out.get(f"macro_gt_coverage_baseline_k{k}")
 
         if p_cal is not None and p_base is not None:
-            out[f"delta_macro_precision_calibrated_vs_baseline_k{k}"] = float(f"{(p_cal - p_base):.6f}")
+            out[f"delta_macro_precision_calibrated_vs_baseline_k{k}"] = float(
+                f"{(p_cal - p_base):.6f}"
+            )
         if c_cal is not None and c_base is not None:
-            out[f"delta_macro_gt_coverage_calibrated_vs_baseline_k{k}"] = float(f"{(c_cal - c_base):.6f}")
+            out[f"delta_macro_gt_coverage_calibrated_vs_baseline_k{k}"] = float(
+                f"{(c_cal - c_base):.6f}"
+            )
 
     return out
 
@@ -425,7 +447,9 @@ def run_gt_tolerance_sweep(
     """
 
     from pipeline.analysis.suite.suite_triage_dataset import build_triage_dataset
-    from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibration
+    from pipeline.analysis.suite.suite_triage_calibration import (
+        build_triage_calibration,
+    )
     from pipeline.analysis.suite.suite_triage_eval import build_triage_eval
 
     suite_dir = Path(suite_dir).resolve()
@@ -489,10 +513,14 @@ def run_gt_tolerance_sweep(
 
         # Build suite-level artifacts for THIS tolerance.
         ds = build_triage_dataset(suite_dir=suite_dir, suite_id=str(suite_id))
-        cal = build_triage_calibration(suite_dir=suite_dir, suite_id=str(suite_id))
-        ev = build_triage_eval(suite_dir=suite_dir, suite_id=str(suite_id), include_tool_marginal=False)
+        build_triage_calibration(suite_dir=suite_dir, suite_id=str(suite_id))
+        ev = build_triage_eval(
+            suite_dir=suite_dir, suite_id=str(suite_id), include_tool_marginal=False
+        )
 
-        dataset_csv = Path(str(ds.get("out_csv") or (analysis_dir / "_tables" / "triage_dataset.csv"))).resolve()
+        dataset_csv = Path(
+            str(ds.get("out_csv") or (analysis_dir / "_tables" / "triage_dataset.csv"))
+        ).resolve()
 
         stats = _compute_dataset_overlap_stats(dataset_csv)
 
@@ -526,7 +554,9 @@ def run_gt_tolerance_sweep(
                             "tp": _safe_int(r.get("tp"), 0),
                             "fp": _safe_int(r.get("fp"), 0),
                             "p_smoothed": _safe_float(r.get("p_smoothed"), 0.0),
-                            "weight": _safe_float(r.get("weight"), float(weights.get(tool, 0.0))),
+                            "weight": _safe_float(
+                                r.get("weight"), float(weights.get(tool, 0.0))
+                            ),
                         }
                     )
             except Exception:
@@ -551,7 +581,9 @@ def run_gt_tolerance_sweep(
 
         # Snapshot suite-level artifacts
         snap_dir = sweeps_dir / f"gt_tol_{int(t)}"
-        _snapshot_suite_analysis(suite_dir=suite_dir, snapshot_dir=snap_dir, out_dirname=out_dirname)
+        _snapshot_suite_analysis(
+            suite_dir=suite_dir, snapshot_dir=snap_dir, out_dirname=out_dirname
+        )
         snapshots.append({"gt_tolerance": int(t), "snapshot_dir": str(snap_dir)})
 
         row: Dict[str, Any] = {
@@ -562,23 +594,19 @@ def run_gt_tolerance_sweep(
             "gt_overlap_0": int(stats.gt_overlap_0),
             "gt_overlap_rate": float(stats.gt_overlap_rate),
             "gt_ids_covered": int(stats.gt_ids_covered),
-
             # Explicit ambiguity fields (aliases make the meaning obvious).
             # - many_to_one: a single cluster overlaps multiple GT IDs
             # - one_to_many: a single GT ID overlaps multiple clusters
             "many_to_one_clusters": int(stats.clusters_multi_gt),
             "one_to_many_gt_ids": int(stats.gt_ids_multi_cluster),
-
             "clusters_multi_gt": int(stats.clusters_multi_gt),
             "gt_ids_multi_cluster": int(stats.gt_ids_multi_cluster),
             "max_clusters_per_gt_id": int(stats.max_clusters_per_gt_id),
             "max_gt_ids_per_cluster": int(stats.max_gt_ids_per_cluster),
-
             # Warning summary (stable strings, safe to parse).
             "gt_ambiguity_warning": 1 if amb_warnings else 0,
             "gt_ambiguity_warning_count": int(len(amb_warnings)),
             "gt_ambiguity_warnings_json": json.dumps(amb_warnings, ensure_ascii=False),
-
             "snapshot_dir": str(snap_dir),
         }
         row.update(metrics)
@@ -593,14 +621,20 @@ def run_gt_tolerance_sweep(
 
     # Stable sort by gt_tolerance
     rows_out.sort(key=lambda r: int(r.get("gt_tolerance", 0)))
-    tool_rows_out.sort(key=lambda r: (int(r.get("gt_tolerance", 0)), str(r.get("tool") or "")))
+    tool_rows_out.sort(
+        key=lambda r: (int(r.get("gt_tolerance", 0)), str(r.get("tool") or ""))
+    )
 
     out_report_csv = tables_dir / "gt_tolerance_sweep_report.csv"
     out_tool_csv = tables_dir / "gt_tolerance_sweep_tool_stats.csv"
     out_json = analysis_dir / "gt_tolerance_sweep.json"
 
     write_csv(out_report_csv, rows_out)
-    write_csv(out_tool_csv, tool_rows_out, fieldnames=["gt_tolerance", "tool", "tp", "fp", "p_smoothed", "weight"])
+    write_csv(
+        out_tool_csv,
+        tool_rows_out,
+        fieldnames=["gt_tolerance", "tool", "tp", "fp", "p_smoothed", "weight"],
+    )
 
     payload: Dict[str, Any] = {
         "schema_version": "gt_tolerance_sweep_v1",
@@ -623,7 +657,9 @@ def run_gt_tolerance_sweep(
     return payload
 
 
-def select_gt_tolerance_auto(rows: Sequence[Mapping[str, Any]], *, min_fraction: float = 0.95) -> Dict[str, Any]:
+def select_gt_tolerance_auto(
+    rows: Sequence[Mapping[str, Any]], *, min_fraction: float = 0.95
+) -> Dict[str, Any]:
     """Select a gt_tolerance deterministically from sweep rows.
 
     Strategy (v1)
@@ -674,7 +710,9 @@ def select_gt_tolerance_auto(rows: Sequence[Mapping[str, Any]], *, min_fraction:
             rc_filter_applied = True
             warnings.append("Auto selection filtered to candidates with analysis_rc=0")
         else:
-            warnings.append("All sweep candidates had analysis_rc>0; selecting among all candidates anyway")
+            warnings.append(
+                "All sweep candidates had analysis_rc>0; selecting among all candidates anyway"
+            )
 
     max_pos = max(int(_safe_int(r.get("gt_overlap_1"), 0)) for r in rr_used)
 
@@ -702,7 +740,9 @@ def select_gt_tolerance_auto(rows: Sequence[Mapping[str, Any]], *, min_fraction:
     if chosen_row is None:
         # Fallback: pick smallest tolerance
         chosen_row = dict(rr_used[0])
-        warnings.append("Auto selection could not satisfy threshold; defaulting to smallest candidate")
+        warnings.append(
+            "Auto selection could not satisfy threshold; defaulting to smallest candidate"
+        )
 
     chosen = int(_safe_int(chosen_row.get("gt_tolerance"), 0))
 
@@ -748,7 +788,9 @@ def write_gt_tolerance_selection(
     payload: Dict[str, Any] = {
         "schema_version": "gt_tolerance_selection_v1",
         "suite_id": str(suite_dir.name),
-        "selected_gt_tolerance": int(_safe_int(selection.get("selected_gt_tolerance"), 0)),
+        "selected_gt_tolerance": int(
+            _safe_int(selection.get("selected_gt_tolerance"), 0)
+        ),
         "selection": dict(selection),
     }
 

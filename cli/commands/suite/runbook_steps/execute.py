@@ -8,7 +8,6 @@ from __future__ import annotations
 import sys
 
 from pipeline.orchestrator import RunRequest
-from pipeline.suites.bundles import safe_name
 from pipeline.suites.suite_resolver import ResolvedSuiteRun
 
 from .model import SuiteRunContext

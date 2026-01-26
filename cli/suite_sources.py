@@ -28,6 +28,8 @@ from pipeline.suites.suite_definition import SuiteCase, SuiteCaseOverrides
 # ---------------------------------------------------------------------------
 _OWASP_RANGE_RE = re.compile(r"(?i)^A?(\d{1,2})\s*(?:-|\.\.)\s*A?(\d{1,2})$")
 _OWASP_TOKEN_RE = re.compile(r"(?i)^A?(\d{1,2})$")
+
+
 def _parse_branches_spec(raw: Optional[str]) -> List[str]:
     """Parse a branch specification into a deterministic list.
     - CSV: "A03,A07" or "main,dev"
@@ -47,7 +49,7 @@ def _parse_branches_spec(raw: Optional[str]) -> List[str]:
         # Strip common remote/ref prefixes.
         for pref in ("refs/remotes/origin/", "refs/heads/", "origin/"):
             if t.startswith(pref):
-                t = t[len(pref):]
+                t = t[len(pref) :]
         # Expand OWASP-ish ranges (safe guard: endpoints 1..10 only).
         expanded: List[str] = []
         m_range = _OWASP_RANGE_RE.match(t)
@@ -61,7 +63,11 @@ def _parse_branches_spec(raw: Optional[str]) -> List[str]:
                 expanded = [t]
         else:
             m_tok = _OWASP_TOKEN_RE.match(t)
-            if m_tok and 1 <= int(m_tok.group(1)) <= 10 and str(t).upper().startswith("A"):
+            if (
+                m_tok
+                and 1 <= int(m_tok.group(1)) <= 10
+                and str(t).upper().startswith("A")
+            ):
                 expanded = [f"A{int(m_tok.group(1)):02d}"]
             else:
                 expanded = [t]
@@ -73,6 +79,8 @@ def _parse_branches_spec(raw: Optional[str]) -> List[str]:
                 seen.add(b2)
                 out.append(b2)
     return out
+
+
 def _run_git(*, cwd: Path, argv: List[str]) -> None:
     """Run a git command and raise a friendly error on failure."""
     cmd = ["git"] + list(argv)
@@ -85,7 +93,10 @@ def _run_git(*, cwd: Path, argv: List[str]) -> None:
             msg += f"\n{out}"
         raise SystemExit(msg)
 
-def _resolve_branch_token_to_origin_branch(token: str, *, origin_branches: List[str]) -> str:
+
+def _resolve_branch_token_to_origin_branch(
+    token: str, *, origin_branches: List[str]
+) -> str:
     """Resolve a user token like 'A01' to a real origin branch name.
 
     Rules (in order):
@@ -114,7 +125,9 @@ def _resolve_branch_token_to_origin_branch(token: str, *, origin_branches: List[
     if m:
         n = int(m.group(1))
         needle = f"a{n:02d}"
-        pat = re.compile(rf"(^|[^0-9a-z]){re.escape(needle)}([^0-9a-z]|$)", re.IGNORECASE)
+        pat = re.compile(
+            rf"(^|[^0-9a-z]){re.escape(needle)}([^0-9a-z]|$)", re.IGNORECASE
+        )
         matches = [b for b in origin_branches if pat.search(b)]
         if len(matches) == 1:
             return matches[0]
@@ -137,6 +150,8 @@ def _resolve_branch_token_to_origin_branch(token: str, *, origin_branches: List[
         f"Branch token '{t}' is ambiguous. Matches: {matches[:10]}{'...' if len(matches) > 10 else ''}. "
         f"Pass the full branch name via --branches."
     )
+
+
 def _run_git_capture(*, cwd: Path, argv: List[str]) -> str:
     """Run a git command and return stdout (stripped)."""
     cmd = ["git"] + list(argv)
@@ -158,12 +173,12 @@ def _list_origin_remote_branches(*, base: Path) -> List[str]:
         argv=["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"],
     )
     branches: List[str] = []
-    for line in (out.splitlines() if out else []):
+    for line in out.splitlines() if out else []:
         s = (line or "").strip()
         if not s or s.endswith("/HEAD"):
             continue
         if s.startswith("origin/"):
-            s = s[len("origin/"):]
+            s = s[len("origin/") :]
         branches.append(s)
     # deterministic ordering
     return sorted(set(branches))
@@ -212,7 +227,11 @@ def _resolve_remote_branch_for_token(*, token: str, remote_branches: List[str]) 
 
     if len(matches) == 0:
         hint = ", ".join(remote_branches[:15])
-        more = "" if len(remote_branches) <= 15 else f" ... (+{len(remote_branches) - 15} more)"
+        more = (
+            ""
+            if len(remote_branches) <= 15
+            else f" ... (+{len(remote_branches) - 15} more)"
+        )
         raise SystemExit(
             f"Could not resolve branch token '{t}' to a remote branch under origin/.\n"
             "Hint: pass --branches with exact remote branch names (or a token that uniquely matches).\n"
@@ -225,7 +244,11 @@ def _resolve_remote_branch_for_token(*, token: str, remote_branches: List[str]) 
         f"Branch token '{t}' is ambiguous; multiple remote branches matched: {preview}{more}.\n"
         "Hint: pass --branches with exact remote branch names."
     )
-def _bootstrap_worktrees_from_repo_url(*, repo_url: str, branches: List[str], worktrees_root: Path) -> Path:
+
+
+def _bootstrap_worktrees_from_repo_url(
+    *, repo_url: str, branches: List[str], worktrees_root: Path
+) -> Path:
     """Ensure a worktrees root exists for repo_url and contains the requested branches.
 
     Filesystem-first and idempotent:
@@ -242,7 +265,9 @@ def _bootstrap_worktrees_from_repo_url(*, repo_url: str, branches: List[str], wo
     base = root / "_base"
     if not (base / ".git").exists():
         print(f"📥 cloning repo for suite worktrees: {repo_url} -> {base}")
-        p = subprocess.run(["git", "clone", repo_url, str(base)], capture_output=True, text=True)
+        p = subprocess.run(
+            ["git", "clone", repo_url, str(base)], capture_output=True, text=True
+        )
         if p.returncode != 0:
             out = (p.stdout or "") + (p.stderr or "")
             raise SystemExit(f"git clone failed for {repo_url}:\n{out.strip()}")
@@ -268,14 +293,19 @@ def _bootstrap_worktrees_from_repo_url(*, repo_url: str, branches: List[str], wo
             continue
 
         # Resolve token (e.g. 'A01') to an actual remote branch name (possibly verbose).
-        resolved = _resolve_branch_token_to_origin_branch(token, origin_branches=origin_branches)
+        resolved = _resolve_branch_token_to_origin_branch(
+            token, origin_branches=origin_branches
+        )
         origin_ref = f"origin/{resolved}"
 
         # -B makes reruns idempotent: create or reset local branch <token> to point at origin_ref.
         print(f"🌿 worktree add: {token} -> {wt_dir} (from {origin_ref})")
-        _run_git(cwd=base, argv=["worktree", "add", "-B", token, str(wt_dir), origin_ref])
+        _run_git(
+            cwd=base, argv=["worktree", "add", "-B", token, str(wt_dir), origin_ref]
+        )
 
     return root
+
 
 def _discover_git_checkouts_under(root: Path) -> List[Path]:
     """Return top-level git checkouts under a root (ignores nested submodules).
@@ -286,7 +316,7 @@ def _discover_git_checkouts_under(root: Path) -> List[Path]:
     if not root.exists():
         return []
     candidates: set[Path] = set()
-    for git_entry in root.rglob('.git'):
+    for git_entry in root.rglob(".git"):
         try:
             parent = git_entry.parent
         except Exception:
@@ -302,14 +332,18 @@ def _discover_git_checkouts_under(root: Path) -> List[Path]:
             continue
         kept.append(c)
     return sorted(kept, key=lambda p: p.as_posix())
+
+
 def _case_id_from_pathlike(rel: str) -> str:
     """Derive a stable case_id from a relative path / branch name.
     We use '__' for path separators to avoid collisions between:
       - 'a/b'  -> 'a__b'
       - 'a_b'  -> 'a_b'
     """
-    rel = (rel or '').strip().replace('\\\\', '/').strip('/')
-    return safe_name(rel.replace('/', '__') or 'case')
+    rel = (rel or "").strip().replace("\\\\", "/").strip("/")
+    return safe_name(rel.replace("/", "__") or "case")
+
+
 def _suite_case_from_repo_path(
     *,
     case_id: str,
@@ -336,6 +370,8 @@ def _suite_case_from_repo_path(
         tags=tags or {},
     )
     return SuiteCase(case=c, overrides=overrides or SuiteCaseOverrides())
+
+
 def _load_suite_cases_from_csv(csv_path: Path) -> List[SuiteCase]:
     """Load SuiteCase entries from a CSV file.
     Supported formats
@@ -355,12 +391,12 @@ def _load_suite_cases_from_csv(csv_path: Path) -> List[SuiteCase]:
     if not p.exists():
         raise SystemExit(f"Cases CSV not found: {p}")
     rows: list[list[str]] = []
-    with p.open('r', encoding='utf-8', newline='') as f:
+    with p.open("r", encoding="utf-8", newline="") as f:
         reader = csv.reader(f)
         for row in reader:
             if not row:
                 continue
-            if row and row[0].strip().startswith('#'):
+            if row and row[0].strip().startswith("#"):
                 continue
             cleaned = [c.strip() for c in row]
             if all(not c for c in cleaned):
@@ -369,8 +405,9 @@ def _load_suite_cases_from_csv(csv_path: Path) -> List[SuiteCase]:
     if not rows:
         return []
     header = [c.lower() for c in rows[0]]
-    has_header = 'repo_path' in header or 'repo_url' in header or 'repo_key' in header
+    has_header = "repo_path" in header or "repo_url" in header or "repo_key" in header
     out: list[SuiteCase] = []
+
     def parse_tags(raw: str) -> dict:
         if not raw:
             return {}
@@ -379,22 +416,23 @@ def _load_suite_cases_from_csv(csv_path: Path) -> List[SuiteCase]:
             return v if isinstance(v, dict) else {}
         except Exception:
             return {}
+
     if has_header:
         keys = header
         for r in rows[1:]:
-            d = {keys[i]: (r[i] if i < len(r) else '') for i in range(len(keys))}
-            case_id = d.get('case_id') or ''
-            repo_path = d.get('repo_path') or ''
-            repo_url = d.get('repo_url') or ''
-            repo_key = d.get('repo_key') or ''
-            label = d.get('label') or None
-            branch = d.get('branch') or None
-            commit = d.get('commit') or None
-            track = d.get('track') or None
-            tags = parse_tags(d.get('tags') or d.get('tags_json') or '')
+            d = {keys[i]: (r[i] if i < len(r) else "") for i in range(len(keys))}
+            case_id = d.get("case_id") or ""
+            repo_path = d.get("repo_path") or ""
+            repo_url = d.get("repo_url") or ""
+            repo_key = d.get("repo_key") or ""
+            label = d.get("label") or None
+            branch = d.get("branch") or None
+            commit = d.get("commit") or None
+            track = d.get("track") or None
+            tags = parse_tags(d.get("tags") or d.get("tags_json") or "")
             overrides = SuiteCaseOverrides(
-                sonar_project_key=(d.get('sonar_project_key') or None),
-                aikido_git_ref=(d.get('aikido_git_ref') or None),
+                sonar_project_key=(d.get("sonar_project_key") or None),
+                aikido_git_ref=(d.get("aikido_git_ref") or None),
             )
             if repo_path:
                 rp = Path(repo_path).expanduser().resolve()
@@ -412,7 +450,10 @@ def _load_suite_cases_from_csv(csv_path: Path) -> List[SuiteCase]:
                 # Patch in commit if present
                 if commit:
                     c = sc.case
-                    sc = SuiteCase(case=CaseSpec(**{**c.__dict__, 'commit': commit}), overrides=sc.overrides)
+                    sc = SuiteCase(
+                        case=CaseSpec(**{**c.__dict__, "commit": commit}),
+                        overrides=sc.overrides,
+                    )
                 out.append(sc)
                 continue
             # URL/key-based case (rare in micro-suites; supported for completeness)
@@ -421,8 +462,10 @@ def _load_suite_cases_from_csv(csv_path: Path) -> List[SuiteCase]:
                     case_id = repo_key or repo_id_from_repo_url(repo_url)
                 cid = safe_name(case_id)
                 lbl = label or cid
-                runs_repo_name = safe_name(d.get('runs_repo_name') or cid)
-                repo = RepoSpec(repo_key=repo_key or None, repo_url=repo_url or None, repo_path=None)
+                runs_repo_name = safe_name(d.get("runs_repo_name") or cid)
+                repo = RepoSpec(
+                    repo_key=repo_key or None, repo_url=repo_url or None, repo_path=None
+                )
                 case = CaseSpec(
                     case_id=cid,
                     runs_repo_name=runs_repo_name,
@@ -441,24 +484,32 @@ def _load_suite_cases_from_csv(csv_path: Path) -> List[SuiteCase]:
         if len(r) == 1:
             repo_path = r[0]
             rp = Path(repo_path).expanduser().resolve()
-            out.append(_suite_case_from_repo_path(case_id=rp.name, repo_path=rp, label=rp.name, branch=None))
+            out.append(
+                _suite_case_from_repo_path(
+                    case_id=rp.name, repo_path=rp, label=rp.name, branch=None
+                )
+            )
             continue
         case_id = r[0]
-        repo_path = r[1] if len(r) > 1 else ''
+        repo_path = r[1] if len(r) > 1 else ""
         label = r[2] if len(r) > 2 else None
         branch = r[3] if len(r) > 3 else None
         track = r[4] if len(r) > 4 else None
-        tags = parse_tags(r[5] if len(r) > 5 else '')
+        tags = parse_tags(r[5] if len(r) > 5 else "")
         rp = Path(repo_path).expanduser().resolve()
-        out.append(_suite_case_from_repo_path(
-            case_id=case_id,
-            repo_path=rp,
-            label=label,
-            branch=branch,
-            track=track,
-            tags=tags,
-        ))
+        out.append(
+            _suite_case_from_repo_path(
+                case_id=case_id,
+                repo_path=rp,
+                label=label,
+                branch=branch,
+                track=track,
+                tags=tags,
+            )
+        )
     return out
+
+
 def _load_suite_cases_from_worktrees_root(worktrees_root: Path) -> List[SuiteCase]:
     root = Path(worktrees_root).expanduser().resolve()
     repos = _discover_git_checkouts_under(root)
@@ -469,13 +520,17 @@ def _load_suite_cases_from_worktrees_root(worktrees_root: Path) -> List[SuiteCas
         except Exception:
             rel = repo_dir.name
         case_id = _case_id_from_pathlike(rel)
-        out.append(_suite_case_from_repo_path(
-            case_id=case_id,
-            repo_path=repo_dir,
-            label=rel,
-            branch=rel,
-        ))
+        out.append(
+            _suite_case_from_repo_path(
+                case_id=case_id,
+                repo_path=repo_dir,
+                label=rel,
+                branch=rel,
+            )
+        )
     return out
+
+
 def _resolve_repo_for_suite_case_interactive(
     *,
     repo_registry: Dict[str, Dict[str, str]],
@@ -492,7 +547,9 @@ def _resolve_repo_for_suite_case_interactive(
         },
     )
     if source == "preset":
-        key = choose_from_menu("Choose a preset repo:", {k: v["label"] for k, v in repo_registry.items()})
+        key = choose_from_menu(
+            "Choose a preset repo:", {k: v["label"] for k, v in repo_registry.items()}
+        )
         entry = repo_registry[key]
         repo_url = entry.get("repo_url")
         label = entry.get("label", key)

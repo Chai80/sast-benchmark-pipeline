@@ -25,7 +25,6 @@ from pipeline.analysis.io.discovery import find_latest_normalized_json
 from pipeline.analysis.io.organize_outputs import organize_analysis_outputs
 
 
-
 def _suite_case_dir_from_out_dir(out_dir: Path) -> Optional[Path]:
     """Return the <case_dir> if out_dir matches the v2 suite layout.
 
@@ -195,7 +194,6 @@ def _enforce_gt_required(
         return
 
 
-
 def run_suite(
     *,
     repo_name: str,
@@ -262,7 +260,9 @@ def run_suite(
     normalized_paths: Dict[str, Path] = {}
     for tool in requested_tools:
         try:
-            p = find_latest_normalized_json(runs_dir=runs_dir, tool=tool, repo_name=repo_name)
+            p = find_latest_normalized_json(
+                runs_dir=runs_dir, tool=tool, repo_name=repo_name
+            )
             normalized_paths[tool] = p
             used_tools.append(tool)
         except FileNotFoundError:
@@ -306,20 +306,40 @@ def run_suite(
         store.add_warning(f"Missing tools skipped: {', '.join(missing_tools)}")
 
     stage_results = []
-    stage_results += run_pipeline(ctx, stage_names=PIPELINES["benchmark"], store=store, continue_on_error=True)
-    stage_results += run_pipeline(ctx, stage_names=PIPELINES["reporting"], store=store, continue_on_error=True)
+    stage_results += run_pipeline(
+        ctx, stage_names=PIPELINES["benchmark"], store=store, continue_on_error=True
+    )
+    stage_results += run_pipeline(
+        ctx, stage_names=PIPELINES["reporting"], store=store, continue_on_error=True
+    )
     if run_diagnostics:
-        stage_results += run_pipeline(ctx, stage_names=PIPELINES["diagnostics"], store=store, continue_on_error=True)
+        stage_results += run_pipeline(
+            ctx,
+            stage_names=PIPELINES["diagnostics"],
+            store=store,
+            continue_on_error=True,
+        )
 
     # Enforce suite-declared GT requirements (Policy B).
     # Local-only: we only enforce when the suite manifest recorded a repo_path.
     try:
-        gt_req = bool((ctx.config or {}).get("gt_required")) if (ctx.config or {}).get("gt_required") is not None else False
+        gt_req = (
+            bool((ctx.config or {}).get("gt_required"))
+            if (ctx.config or {}).get("gt_required") is not None
+            else False
+        )
         repo_path = (ctx.config or {}).get("gt_required_repo_path")
         if gt_req and repo_path and case_dir:
-            _enforce_gt_required(case_dir=case_dir, stage_results=stage_results, store=store, gt_required=True)
+            _enforce_gt_required(
+                case_dir=case_dir,
+                stage_results=stage_results,
+                store=store,
+                gt_required=True,
+            )
         elif gt_req and not repo_path:
-            store.add_warning("gt_required was set, but suite.json did not record a repo_path for this case; skipping enforcement (local-only policy)")
+            store.add_warning(
+                "gt_required was set, but suite.json did not record a repo_path for this case; skipping enforcement (local-only policy)"
+            )
     except Exception:
         pass
 
@@ -344,7 +364,9 @@ def run_suite(
             # Non-fatal: the pack remains usable even if the artifacts index is stale.
             pass
 
-    manifest_path = write_analysis_manifest(ctx, stage_results=stage_results, store=store)
+    manifest_path = write_analysis_manifest(
+        ctx, stage_results=stage_results, store=store
+    )
 
     # Compact stage status for the returned summary.
     stages_summary = [

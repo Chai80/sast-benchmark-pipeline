@@ -21,7 +21,9 @@ class TestSuiteCompareReport(unittest.TestCase):
             for r in rows:
                 w.writerow(r)
 
-    def _mk_suite(self, root: Path, suite_id: str, *, gt_tol: int, prec1: float) -> Path:
+    def _mk_suite(
+        self, root: Path, suite_id: str, *, gt_tol: int, prec1: float
+    ) -> Path:
         suite_dir = root / "runs" / "suites" / suite_id
         (suite_dir / "cases" / "case_one").mkdir(parents=True, exist_ok=True)
         out_tables = suite_dir / "analysis" / "_tables"
@@ -40,8 +42,20 @@ class TestSuiteCompareReport(unittest.TestCase):
         # Minimal dataset
         ds_header = ["suite_id", "case_id", "cluster_id", "tools_json", "gt_overlap"]
         ds_rows = [
-            {"suite_id": suite_id, "case_id": "case_one", "cluster_id": "c1", "tools_json": "[\"semgrep\"]", "gt_overlap": "1"},
-            {"suite_id": suite_id, "case_id": "case_one", "cluster_id": "c2", "tools_json": "[\"sonar\"]", "gt_overlap": "0"},
+            {
+                "suite_id": suite_id,
+                "case_id": "case_one",
+                "cluster_id": "c1",
+                "tools_json": '["semgrep"]',
+                "gt_overlap": "1",
+            },
+            {
+                "suite_id": suite_id,
+                "case_id": "case_one",
+                "cluster_id": "c2",
+                "tools_json": '["sonar"]',
+                "gt_overlap": "0",
+            },
         ]
         self._write_csv(out_tables / "triage_dataset.csv", ds_header, ds_rows)
 
@@ -83,8 +97,18 @@ class TestSuiteCompareReport(unittest.TestCase):
                 "gt_tolerance_policy": {
                     "initial_gt_tolerance": gt_tol,
                     "effective_gt_tolerance": gt_tol,
-                    "sweep": {"enabled": False, "candidates": [], "report_csv": None, "payload_json": None},
-                    "auto": {"enabled": False, "min_fraction": None, "selection_path": None, "warnings": []},
+                    "sweep": {
+                        "enabled": False,
+                        "candidates": [],
+                        "report_csv": None,
+                        "payload_json": None,
+                    },
+                    "auto": {
+                        "enabled": False,
+                        "min_fraction": None,
+                        "selection_path": None,
+                        "warnings": [],
+                    },
                 }
             },
         }
@@ -109,7 +133,9 @@ class TestSuiteCompareReport(unittest.TestCase):
             suite_a = self._mk_suite(root, "20260101T000000Z", gt_tol=0, prec1=0.5)
             suite_b = self._mk_suite(root, "20260102T000000Z", gt_tol=3, prec1=0.8)
 
-            summary = build_suite_compare_report(suite_dir_a=suite_a, suite_dir_b=suite_b)
+            summary = build_suite_compare_report(
+                suite_dir_a=suite_a, suite_dir_b=suite_b
+            )
             out_csv = Path(str(summary["out_csv"]))
             out_json = Path(str(summary["out_json"]))
 
@@ -118,15 +144,26 @@ class TestSuiteCompareReport(unittest.TestCase):
 
             payload = json.loads(out_json.read_text(encoding="utf-8"))
             self.assertEqual(payload.get("schema_version"), "suite_compare_report_v1")
-            self.assertEqual(payload.get("suite_a", {}).get("suite_id"), "20260101T000000Z")
-            self.assertEqual(payload.get("suite_b", {}).get("suite_id"), "20260102T000000Z")
+            self.assertEqual(
+                payload.get("suite_a", {}).get("suite_id"), "20260101T000000Z"
+            )
+            self.assertEqual(
+                payload.get("suite_b", {}).get("suite_id"), "20260102T000000Z"
+            )
 
             # Spot-check that policy delta shows up in the CSV.
             with out_csv.open("r", newline="", encoding="utf-8") as f:
                 rows = list(csv.DictReader(f))
 
-            tol_rows = [r for r in rows if r.get("section") == "policy" and r.get("name") == "effective_gt_tolerance"]
-            self.assertTrue(tol_rows, "Expected a policy row for effective_gt_tolerance")
+            tol_rows = [
+                r
+                for r in rows
+                if r.get("section") == "policy"
+                and r.get("name") == "effective_gt_tolerance"
+            ]
+            self.assertTrue(
+                tol_rows, "Expected a policy row for effective_gt_tolerance"
+            )
             self.assertEqual(tol_rows[0].get("a"), "0")
             self.assertEqual(tol_rows[0].get("b"), "3")
 
@@ -148,7 +185,6 @@ class TestSuiteCompareReport(unittest.TestCase):
             self.assertEqual(Path(str(latest)).name, "20260102T000000Z")
             self.assertEqual(Path(str(prev)).name, "20260101T000000Z")
 
-
     def test_resolve_suite_dir_ref_latestqa_previousqa(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -161,11 +197,23 @@ class TestSuiteCompareReport(unittest.TestCase):
             (b / "cases").mkdir(parents=True)
 
             # Tag them as QA via suite_kind
-            (a / "suite.json").write_text(json.dumps({"suite_id": "20260101T000000Z", "suite_kind": "qa_calibration"}), encoding="utf-8")
-            (b / "suite.json").write_text(json.dumps({"suite_id": "20260102T000000Z", "suite_kind": "qa_calibration"}), encoding="utf-8")
+            (a / "suite.json").write_text(
+                json.dumps(
+                    {"suite_id": "20260101T000000Z", "suite_kind": "qa_calibration"}
+                ),
+                encoding="utf-8",
+            )
+            (b / "suite.json").write_text(
+                json.dumps(
+                    {"suite_id": "20260102T000000Z", "suite_kind": "qa_calibration"}
+                ),
+                encoding="utf-8",
+            )
 
             # Pointer
-            (suite_root / "LATEST_QA").write_text("20260102T000000Z\n", encoding="utf-8")
+            (suite_root / "LATEST_QA").write_text(
+                "20260102T000000Z\n", encoding="utf-8"
+            )
 
             latest = resolve_suite_dir_ref(suite_root, "latestqa")
             prev = resolve_suite_dir_ref(suite_root, "previousqa")

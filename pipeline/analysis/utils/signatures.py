@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
 from .path_norm import normalize_file_path
 
@@ -76,7 +76,13 @@ def cluster_locations(
                 numbered.append(it)
 
         if unknown:
-            tools = sorted({str(it.get("tool") or "") for it in unknown if it.get("tool") is not None})
+            tools = sorted(
+                {
+                    str(it.get("tool") or "")
+                    for it in unknown
+                    if it.get("tool") is not None
+                }
+            )
             clusters.append(
                 {
                     "cluster_id": f"{fp}:unknown",
@@ -110,7 +116,13 @@ def cluster_locations(
                 current["end_line"] = max(int(current["end_line"]), en)
             else:
                 # finalize current
-                tools = sorted({str(x.get("tool") or "") for x in current["items"] if x.get("tool") is not None})
+                tools = sorted(
+                    {
+                        str(x.get("tool") or "")
+                        for x in current["items"]
+                        if x.get("tool") is not None
+                    }
+                )
                 cid = f"{fp}:{current['start_line']}-{current['end_line']}"
                 clusters.append(
                     {
@@ -131,7 +143,13 @@ def cluster_locations(
                 }
 
         if current is not None:
-            tools = sorted({str(x.get("tool") or "") for x in current["items"] if x.get("tool") is not None})
+            tools = sorted(
+                {
+                    str(x.get("tool") or "")
+                    for x in current["items"]
+                    if x.get("tool") is not None
+                }
+            )
             cid = f"{fp}:{current['start_line']}-{current['end_line']}"
             clusters.append(
                 {
@@ -146,5 +164,11 @@ def cluster_locations(
             )
 
     # Stable sort: most-agreed first, then by file/line.
-    clusters.sort(key=lambda c: (-int(c.get("tool_count", 0)), str(c.get("file_path")), int(c.get("start_line") or 0)))
+    clusters.sort(
+        key=lambda c: (
+            -int(c.get("tool_count", 0)),
+            str(c.get("file_path")),
+            int(c.get("start_line") or 0),
+        )
+    )
     return clusters

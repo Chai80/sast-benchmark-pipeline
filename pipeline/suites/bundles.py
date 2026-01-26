@@ -130,8 +130,8 @@ class BundlePaths:
     """Computed filesystem paths for one case inside one suite."""
 
     bundle_root: Path
-    target: str            # case id (sanitized)
-    bundle_id: str         # suite id (sanitized)
+    target: str  # case id (sanitized)
+    bundle_id: str  # suite id (sanitized)
 
     # Suite-level
     suite_dir: Path
@@ -303,12 +303,16 @@ def _ensure_suite_json(paths: BundlePaths) -> None:
     write_json(paths.suite_json_path, data)
 
 
-def _load_json(path: Path, *, warn: Optional[Callable[[str], None]] = None) -> Optional[Dict[str, Any]]:
+def _load_json(
+    path: Path, *, warn: Optional[Callable[[str], None]] = None
+) -> Optional[Dict[str, Any]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             if warn:
-                warn(f"JSON at {path} did not parse to an object; got {type(data).__name__}. Ignoring.")
+                warn(
+                    f"JSON at {path} did not parse to an object; got {type(data).__name__}. Ignoring."
+                )
             return None
         return data
     except Exception as e:
@@ -325,10 +329,19 @@ def _update_suite_json(
 ) -> None:
     paths.suite_dir.mkdir(parents=True, exist_ok=True)
 
-    data = _load_json(paths.suite_json_path, warn=warn) if paths.suite_json_path.exists() else None
+    data = (
+        _load_json(paths.suite_json_path, warn=warn)
+        if paths.suite_json_path.exists()
+        else None
+    )
     if not data:
         now = datetime.now(timezone.utc).isoformat()
-        data = {"suite_id": paths.bundle_id, "created_at": now, "updated_at": now, "cases": {}}
+        data = {
+            "suite_id": paths.bundle_id,
+            "created_at": now,
+            "updated_at": now,
+            "cases": {},
+        }
 
     data["suite_id"] = paths.bundle_id
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -336,10 +349,7 @@ def _update_suite_json(
     # Case identifier: prefer the explicit case id (matches cases/<case_id>/).
     # NOTE: Using runs_repo_name here breaks micro-suite branch runs because many
     # cases can share the same repo name.
-    case_id = (
-        (case_manifest.get("case") or {}).get("id")
-        or paths.case_dir.name
-    )
+    case_id = (case_manifest.get("case") or {}).get("id") or paths.case_dir.name
 
     repo_name = (case_manifest.get("repo") or {}).get("runs_repo_name")
 
@@ -368,13 +378,17 @@ def _update_suite_json(
     write_json(paths.suite_json_path, data)
 
 
-def _write_suite_summary(paths: BundlePaths, *, warn: Optional[Callable[[str], None]] = None) -> None:
+def _write_suite_summary(
+    paths: BundlePaths, *, warn: Optional[Callable[[str], None]] = None
+) -> None:
     """Write suite_dir/summary.csv with one row per case (best-effort)."""
     rows = []
     if not paths.cases_dir.exists():
         return
 
-    for case_dir in sorted([p for p in paths.cases_dir.iterdir() if p.is_dir()], key=lambda p: p.name):
+    for case_dir in sorted(
+        [p for p in paths.cases_dir.iterdir() if p.is_dir()], key=lambda p: p.name
+    ):
         # v2 preferred
         mpath = case_dir / "case.json"
         # v1 fallback
@@ -394,12 +408,18 @@ def _write_suite_summary(paths: BundlePaths, *, warn: Optional[Callable[[str], N
 
         tool_runs = m.get("tool_runs") or m.get("scans") or {}
         ok = [t for t, v in tool_runs.items() if (v or {}).get("exit_code") == 0]
-        failed = [t for t, v in tool_runs.items() if (v or {}).get("exit_code") not in (0, None)]
+        failed = [
+            t
+            for t, v in tool_runs.items()
+            if (v or {}).get("exit_code") not in (0, None)
+        ]
 
         analysis_ran = bool(m.get("analysis"))
         rel_case = str(case_dir.relative_to(paths.suite_dir))
         triage_csv = case_dir / "analysis" / "triage_queue.csv"
-        rel_triage = str(triage_csv.relative_to(paths.suite_dir)) if triage_csv.exists() else ""
+        rel_triage = (
+            str(triage_csv.relative_to(paths.suite_dir)) if triage_csv.exists() else ""
+        )
 
         rows.append(
             {
@@ -419,7 +439,16 @@ def _write_suite_summary(paths: BundlePaths, *, warn: Optional[Callable[[str], N
     with paths.suite_summary_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["case", "finished", "requested", "ok", "failed", "analysis", "case_dir", "triage_queue"],
+            fieldnames=[
+                "case",
+                "finished",
+                "requested",
+                "ok",
+                "failed",
+                "analysis",
+                "case_dir",
+                "triage_queue",
+            ],
         )
         writer.writeheader()
         writer.writerows(rows)

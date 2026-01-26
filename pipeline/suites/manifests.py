@@ -33,11 +33,9 @@ suite-named API for new call sites.
 
 from __future__ import annotations
 
-import os
 import platform
 import subprocess
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
 from pipeline.core import ROOT_DIR as REPO_ROOT

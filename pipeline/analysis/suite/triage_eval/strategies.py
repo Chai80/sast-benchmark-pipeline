@@ -18,6 +18,7 @@ from pipeline.analysis.suite.suite_triage_calibration import (
 
 from .metrics import _to_float, _to_int, _tools_for_row
 
+
 def _key_file_path(r: Dict[str, str]) -> str:
     return str(r.get("file_path") or "")
 
@@ -26,7 +27,9 @@ def _key_start_line(r: Dict[str, str]) -> int:
     return _to_int(r.get("start_line"), 0)
 
 
-def _rank_baseline(rows: List[Dict[str, str]], *, use_triage_rank: bool = True) -> List[Dict[str, str]]:
+def _rank_baseline(
+    rows: List[Dict[str, str]], *, use_triage_rank: bool = True
+) -> List[Dict[str, str]]:
     """Baseline ranking.
 
     Prefer triage_rank if present *and allowed*. Otherwise, mirror triage_queue tie-breaks.
@@ -38,7 +41,9 @@ def _rank_baseline(rows: List[Dict[str, str]], *, use_triage_rank: bool = True) 
     baseline metrics uncontaminated.
     """
     # If at least one row has a positive triage_rank, use it.
-    any_rank = bool(use_triage_rank) and any(_to_int(r.get("triage_rank"), 0) > 0 for r in rows)
+    any_rank = bool(use_triage_rank) and any(
+        _to_int(r.get("triage_rank"), 0) > 0 for r in rows
+    )
     if any_rank:
         return sorted(rows, key=lambda r: _to_int(r.get("triage_rank"), 10**9))
 
@@ -73,7 +78,9 @@ def _rank_agreement(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
     )
 
 
-def _load_suite_calibration(suite_dir: Path, *, out_dirname: str = "analysis") -> Optional[Dict[str, Any]]:
+def _load_suite_calibration(
+    suite_dir: Path, *, out_dirname: str = "analysis"
+) -> Optional[Dict[str, Any]]:
     """Load suite-level triage calibration if present (best-effort)."""
 
     p = Path(suite_dir) / out_dirname / "triage_calibration.json"
@@ -83,7 +90,9 @@ def _load_suite_calibration(suite_dir: Path, *, out_dirname: str = "analysis") -
         return None
 
 
-def _rank_calibrated(rows: List[Dict[str, str]], *, cal: Mapping[str, Any]) -> List[Dict[str, str]]:
+def _rank_calibrated(
+    rows: List[Dict[str, str]], *, cal: Mapping[str, Any]
+) -> List[Dict[str, str]]:
     """Calibrated ranking (v1).
 
     Sort primarily by triage_score_v1 desc, then fall back to the legacy
@@ -91,8 +100,16 @@ def _rank_calibrated(rows: List[Dict[str, str]], *, cal: Mapping[str, Any]) -> L
     """
 
     scoring = cal.get("scoring") if isinstance(cal, dict) else None
-    agreement_lambda = float(scoring.get("agreement_lambda", 0.0)) if isinstance(scoring, dict) else 0.0
-    min_support_by_owasp = int(scoring.get("min_support_by_owasp", 10)) if isinstance(scoring, dict) else 10
+    agreement_lambda = (
+        float(scoring.get("agreement_lambda", 0.0))
+        if isinstance(scoring, dict)
+        else 0.0
+    )
+    min_support_by_owasp = (
+        int(scoring.get("min_support_by_owasp", 10))
+        if isinstance(scoring, dict)
+        else 10
+    )
     sb = scoring.get("severity_bonus") if isinstance(scoring, dict) else None
     if not isinstance(sb, dict):
         sb = {"HIGH": 0.25, "MEDIUM": 0.10, "LOW": 0.0, "UNKNOWN": 0.0}
@@ -110,7 +127,9 @@ def _rank_calibrated(rows: List[Dict[str, str]], *, cal: Mapping[str, Any]) -> L
 
         oid = str(rr.get("owasp_id") or "").strip().upper()
         if oid not in weights_cache:
-            weights_cache[oid] = tool_weights_for_owasp(cal, owasp_id=(oid or None), min_support=min_support_by_owasp)
+            weights_cache[oid] = tool_weights_for_owasp(
+                cal, owasp_id=(oid or None), min_support=min_support_by_owasp
+            )
         weights = weights_cache[oid]
 
         try:
@@ -141,8 +160,9 @@ def _rank_calibrated(rows: List[Dict[str, str]], *, cal: Mapping[str, Any]) -> L
     )
 
 
-
-def _rank_calibrated_global(rows: List[Dict[str, str]], *, cal: Mapping[str, Any]) -> List[Dict[str, str]]:
+def _rank_calibrated_global(
+    rows: List[Dict[str, str]], *, cal: Mapping[str, Any]
+) -> List[Dict[str, str]]:
     """Calibrated ranking using *global* tool weights only.
 
     This matches ``triage_score_v1`` but always uses the suite-level *global*
@@ -155,15 +175,25 @@ def _rank_calibrated_global(rows: List[Dict[str, str]], *, cal: Mapping[str, Any
     """
 
     scoring = cal.get("scoring") if isinstance(cal, dict) else None
-    agreement_lambda = float(scoring.get("agreement_lambda", 0.0)) if isinstance(scoring, dict) else 0.0
-    min_support_by_owasp = int(scoring.get("min_support_by_owasp", 10)) if isinstance(scoring, dict) else 10
+    agreement_lambda = (
+        float(scoring.get("agreement_lambda", 0.0))
+        if isinstance(scoring, dict)
+        else 0.0
+    )
+    min_support_by_owasp = (
+        int(scoring.get("min_support_by_owasp", 10))
+        if isinstance(scoring, dict)
+        else 10
+    )
     sb = scoring.get("severity_bonus") if isinstance(scoring, dict) else None
     if not isinstance(sb, dict):
         sb = {"HIGH": 0.25, "MEDIUM": 0.10, "LOW": 0.0, "UNKNOWN": 0.0}
     sev_bonus: Dict[str, float] = {str(k).upper(): float(v) for k, v in sb.items()}
 
     # Global weights for the whole suite.
-    weights = tool_weights_for_owasp(cal, owasp_id=None, min_support=min_support_by_owasp)
+    weights = tool_weights_for_owasp(
+        cal, owasp_id=None, min_support=min_support_by_owasp
+    )
 
     scored: List[Dict[str, str]] = []
     for r in rows:

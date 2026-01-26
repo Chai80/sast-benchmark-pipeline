@@ -209,7 +209,9 @@ def build_triage_dataset(
         try:
             rows, header = _read_csv_rows(tf_path)
         except Exception as e:
-            read_errors.append({"case_id": case_id, "path": str(tf_path), "error": str(e)})
+            read_errors.append(
+                {"case_id": case_id, "path": str(tf_path), "error": str(e)}
+            )
             continue
 
         observed_fieldnames = _merge_fieldnames(observed_fieldnames, header)
@@ -235,7 +237,10 @@ def build_triage_dataset(
                 r["case_id"] = case_id
 
             # Best-effort backfill schema_version for legacy rows.
-            if TRIAGE_FEATURES_SCHEMA_VERSION and not str(r.get("schema_version") or "").strip():
+            if (
+                TRIAGE_FEATURES_SCHEMA_VERSION
+                and not str(r.get("schema_version") or "").strip()
+            ):
                 r["schema_version"] = TRIAGE_FEATURES_SCHEMA_VERSION
 
             aggregated.append(r)
@@ -248,13 +253,18 @@ def build_triage_dataset(
     out_summary = out_dir / "triage_dataset_build.json"
 
     # Build schema even if there are zero rows so downstream code has a stable file to read.
-    fieldnames = _stable_output_fieldnames(observed_fieldnames or (TRIAGE_FEATURES_FIELDNAMES or []))
+    fieldnames = _stable_output_fieldnames(
+        observed_fieldnames or (TRIAGE_FEATURES_FIELDNAMES or [])
+    )
 
     write_csv_table(
         out_csv,
         aggregated,
         fieldnames=fieldnames,
-        sort_key=lambda r: (str(r.get("case_id") or ""), str(r.get("cluster_id") or "")),
+        sort_key=lambda r: (
+            str(r.get("case_id") or ""),
+            str(r.get("cluster_id") or ""),
+        ),
     )
 
     summary: Dict[str, Any] = {
@@ -297,13 +307,17 @@ def build_triage_dataset(
             lines.append("")
             lines.append(f"read_errors ({len(read_errors)}):")
             for e in read_errors:
-                lines.append(f"  - {e.get('case_id')}: {e.get('path')} :: {e.get('error')}")
+                lines.append(
+                    f"  - {e.get('case_id')}: {e.get('path')} :: {e.get('error')}"
+                )
 
         if schema_mismatch_cases:
             lines.append("")
             lines.append(f"schema_mismatch_cases ({len(schema_mismatch_cases)}):")
             for e in schema_mismatch_cases:
-                lines.append(f"  - {e.get('case_id')}: schema_version={e.get('schema_version')}")
+                lines.append(
+                    f"  - {e.get('case_id')}: schema_version={e.get('schema_version')}"
+                )
 
         write_text(out_log, "\n".join(lines) + "\n")
     except Exception:

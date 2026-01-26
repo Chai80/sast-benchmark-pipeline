@@ -28,6 +28,7 @@ from .model import TriageEvalBuildRequest, TriageEvalPaths
 
 logger = logging.getLogger(__name__)
 
+
 def _now_iso() -> str:
     # Keep the raw ISO timestamp (including microseconds) for backwards
     # compatibility with existing artifacts.
@@ -64,7 +65,9 @@ def build_triage_eval(
     sid = req.suite_id_effective
 
     # --- Load inputs -------------------------------------------------
-    dataset_csv, _rows, by_case = load_triage_dataset(suite_dir=suite_dir, dataset_relpath=req.dataset_relpath)
+    dataset_csv, _rows, by_case = load_triage_dataset(
+        suite_dir=suite_dir, dataset_relpath=req.dataset_relpath
+    )
     cases_dir, case_ids = resolve_case_ids(suite_dir=suite_dir, by_case=by_case)
     cal, strategies = load_strategies(suite_dir=suite_dir, out_dirname=req.out_dirname)
 
@@ -121,9 +124,13 @@ def build_triage_eval(
         "out_by_case_csv": str(paths.out_by_case_csv),
         "out_summary_json": str(paths.out_summary_json),
         "out_tool_utility_csv": str(paths.out_tool_csv),
-        "out_tool_marginal_csv": (str(paths.out_tool_marginal_csv) if computed.tool_marginal_rows else ""),
+        "out_tool_marginal_csv": (
+            str(paths.out_tool_marginal_csv) if computed.tool_marginal_rows else ""
+        ),
         "out_topk_csv": str(paths.out_topk_csv),
-        "out_deltas_by_case_csv": (str(paths.out_deltas_by_case_csv) if computed.deltas_by_case_rows else ""),
+        "out_deltas_by_case_csv": (
+            str(paths.out_deltas_by_case_csv) if computed.deltas_by_case_rows else ""
+        ),
         "out_readme_md": "" if readme_path is None else str(readme_path),
     }
 

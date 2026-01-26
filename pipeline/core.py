@@ -17,10 +17,31 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
-from pipeline.identifiers import derive_sonar_project_key, repo_id_from_repo_url, sanitize_sonar_key_fragment
-from pipeline.scanners import SCANNER_SCRIPTS, SCANNER_TARGET_MODES, SCANNER_TRACKS, SUPPORTED_SCANNERS
+from pipeline.identifiers import (
+    derive_sonar_project_key,
+    repo_id_from_repo_url,
+    sanitize_sonar_key_fragment,
+)
+from pipeline.scanners import (
+    SCANNER_SCRIPTS,
+    SCANNER_TARGET_MODES,
+    SCANNER_TRACKS,
+    SUPPORTED_SCANNERS,
+)
+
+__all__ = [
+    "PYTHON",
+    "ROOT_DIR",
+    "TOOLS_DIR",
+    "filter_scanners_for_track",
+    "script_path",
+    "build_scan_command",
+    "derive_sonar_project_key",
+    "repo_id_from_repo_url",
+    "sanitize_sonar_key_fragment",
+]
 
 
 # Use the same interpreter that imports this module (CLI inherits it).
@@ -34,7 +55,9 @@ TOOLS_DIR: Path = ROOT_DIR / "tools"
 # centralized in :mod:`pipeline.scanners` to avoid drift across CLI/execution/analysis.
 
 
-def filter_scanners_for_track(scanners: Sequence[str], track: str) -> tuple[list[str], list[str]]:
+def filter_scanners_for_track(
+    scanners: Sequence[str], track: str
+) -> tuple[list[str], list[str]]:
     """Filter a scanner list to only those that support the given track.
 
     Returns (kept, skipped). Unknown tracks are treated as "no filter".
@@ -64,7 +87,9 @@ def filter_scanners_for_track(scanners: Sequence[str], track: str) -> tuple[list
 def script_path(scanner: str) -> Path:
     """Return the tools/scan_*.py path for a scanner."""
     if scanner not in SUPPORTED_SCANNERS:
-        raise ValueError(f"Unsupported scanner: {scanner!r}. Supported: {sorted(SUPPORTED_SCANNERS)}")
+        raise ValueError(
+            f"Unsupported scanner: {scanner!r}. Supported: {sorted(SUPPORTED_SCANNERS)}"
+        )
     p = TOOLS_DIR / SCANNER_SCRIPTS[scanner]
     if not p.exists():
         raise FileNotFoundError(f"Scanner script not found: {p}")

@@ -8,13 +8,14 @@ Usage:
 The output .py will export:
   SUITE_DEF = SuiteDefinition.from_dict(SUITE_RAW)
 """
+
 from __future__ import annotations
 
 import pprint
 import sys
 from pathlib import Path
 
-from pipeline.suites.suite_definition import SuiteDefinition, load_suite_yaml
+from pipeline.suites.suite_definition import load_suite_yaml
 
 
 def main(argv: list[str]) -> int:
@@ -32,7 +33,9 @@ def main(argv: list[str]) -> int:
     try:
         suite_def = load_suite_yaml(src)
     except ModuleNotFoundError as e:
-        print("PyYAML is required for migration only. Install it with: pip install pyyaml")
+        print(
+            "PyYAML is required for migration only. Install it with: pip install pyyaml"
+        )
         print(f"Details: {e}")
         return 2
 

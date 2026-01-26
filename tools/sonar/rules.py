@@ -78,7 +78,9 @@ def build_owasp_block(raw_codes: List[str], year: str) -> Optional[Dict[str, Any
     return {"codes": norm_codes, "categories": categories}
 
 
-def parse_rule_classification(*, rule_key: str, rules_show_json: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def parse_rule_classification(
+    *, rule_key: str, rules_show_json: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
     """Parse `/api/rules/show` JSON into a normalized classification dict.
 
     SonarCloud returns classifications under `rule.securityStandards`.
@@ -115,8 +117,20 @@ def parse_rule_classification(*, rule_key: str, rules_show_json: Dict[str, Any])
             cwe_ids.append(s_upper)
 
         # Sonar might return "A1"/"A3" etc. We'll canonicalize in build_owasp_block.
-        owasp2017_codes.extend([str(x).strip() for x in (security_standards.get("OWASP Top 10 2017", []) or []) if str(x).strip()])
-        owasp2021_codes.extend([str(x).strip() for x in (security_standards.get("OWASP Top 10 2021", []) or []) if str(x).strip()])
+        owasp2017_codes.extend(
+            [
+                str(x).strip()
+                for x in (security_standards.get("OWASP Top 10 2017", []) or [])
+                if str(x).strip()
+            ]
+        )
+        owasp2021_codes.extend(
+            [
+                str(x).strip()
+                for x in (security_standards.get("OWASP Top 10 2021", []) or [])
+                if str(x).strip()
+            ]
+        )
 
     elif isinstance(security_standards, list):
         for entry in security_standards:
@@ -128,7 +142,11 @@ def parse_rule_classification(*, rule_key: str, rules_show_json: Dict[str, Any])
             if low.startswith("cwe:"):
                 cwe = s.split(":", 1)[1].strip()
                 if cwe:
-                    cwe_ids.append(f"CWE-{cwe}" if not cwe.upper().startswith("CWE-") else cwe.upper())
+                    cwe_ids.append(
+                        f"CWE-{cwe}"
+                        if not cwe.upper().startswith("CWE-")
+                        else cwe.upper()
+                    )
                 continue
 
             # OWASP Top 10 standards

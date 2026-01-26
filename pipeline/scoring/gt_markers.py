@@ -13,4 +13,6 @@ Prefer importing from:
 This module remains for backwards compatibility with older code paths.
 """
 
-from sast_benchmark.gt.markers import extract_gt_markers  # re-export
+from sast_benchmark.gt.markers import extract_gt_markers
+
+__all__ = ["extract_gt_markers"]

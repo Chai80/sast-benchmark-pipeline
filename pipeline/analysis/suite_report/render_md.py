@@ -22,7 +22,9 @@ def _fmt_ptr(k: str, p: Optional[str]) -> str:
     return f"- {k}: `{p}`"
 
 
-def _render_header_lines(*, sid: str, created_at: str, generated_at: Any, scanners_requested: Sequence[Any]) -> List[str]:
+def _render_header_lines(
+    *, sid: str, created_at: str, generated_at: Any, scanners_requested: Sequence[Any]
+) -> List[str]:
     lines: List[str] = []
 
     lines.append(f"# Suite report: `{sid}`")
@@ -30,7 +32,9 @@ def _render_header_lines(*, sid: str, created_at: str, generated_at: Any, scanne
         lines.append(f"- created_at: `{created_at}`")
     lines.append(f"- generated_at: `{generated_at}`")
     if scanners_requested:
-        lines.append(f"- scanners_requested: {', '.join([f'`{s}`' for s in scanners_requested])}")
+        lines.append(
+            f"- scanners_requested: {', '.join([f'`{s}`' for s in scanners_requested])}"
+        )
     lines.append("")
 
     return lines
@@ -53,13 +57,19 @@ def _render_execution_summary_lines(
     lines.append(f"- cases_total: **{cases_total}**")
     lines.append(f"- cases_analyzed_ok: **{cases_ok}**")
     if missing_outputs:
-        lines.append(f"- cases_missing_outputs: {', '.join([f'`{c}`' for c in missing_outputs])}")
+        lines.append(
+            f"- cases_missing_outputs: {', '.join([f'`{c}`' for c in missing_outputs])}"
+        )
     if no_clusters:
-        lines.append(f"- cases_no_clusters: {', '.join([f'`{c}`' for c in no_clusters])}")
+        lines.append(
+            f"- cases_no_clusters: {', '.join([f'`{c}`' for c in no_clusters])}"
+        )
     if tools_used:
         lines.append(f"- tools_used_union: {', '.join([f'`{t}`' for t in tools_used])}")
     if tools_missing:
-        lines.append(f"- tools_missing_union: {', '.join([f'`{t}`' for t in tools_missing])}")
+        lines.append(
+            f"- tools_missing_union: {', '.join([f'`{t}`' for t in tools_missing])}"
+        )
 
     if empty_tool_cases:
         lines.append("")
@@ -86,7 +96,9 @@ def _render_action_items_lines(action_items: Sequence[Any]) -> List[str]:
     return lines
 
 
-def _render_results_highlights_lines(top_gap_cases: Sequence[Any], top_sev_cases: Sequence[Any]) -> List[str]:
+def _render_results_highlights_lines(
+    top_gap_cases: Sequence[Any], top_sev_cases: Sequence[Any]
+) -> List[str]:
     lines: List[str] = []
 
     # Results highlights (always present)
@@ -104,7 +116,9 @@ def _render_results_highlights_lines(top_gap_cases: Sequence[Any], top_sev_cases
             gap_total = r.get("gap_total")
             score = r.get("gt_score_json")
             gapq = r.get("gt_gap_queue_csv")
-            lines.append(f"- `{cid}`: gap_total={gap_total} | gt_score: `{score}` | gt_gap_queue: `{gapq}`")
+            lines.append(
+                f"- `{cid}`: gap_total={gap_total} | gt_score: `{score}` | gt_gap_queue: `{gapq}`"
+            )
 
     if top_sev_cases:
         lines.append("")
@@ -171,7 +185,9 @@ def _render_calibration_support_lines(
     if isinstance(min_support_by_owasp, int):
         lines.append(f"- min_support_by_owasp: `{min_support_by_owasp}`")
     if owasp_fallback:
-        lines.append(f"- owasp_fallback: {', '.join([f'`{x}`' for x in owasp_fallback])}")
+        lines.append(
+            f"- owasp_fallback: {', '.join([f'`{x}`' for x in owasp_fallback])}"
+        )
     lines.append("")
     lines.append("| OWASP | cases | clusters | gt_positive_clusters |")
     lines.append("|---|---:|---:|---:|")
@@ -185,7 +201,9 @@ def _render_calibration_support_lines(
     return lines
 
 
-def _render_qa_lines(*, qa_scope: Any, qa_no_reanalyze: Any, qa_result: Dict[str, Any]) -> List[str]:
+def _render_qa_lines(
+    *, qa_scope: Any, qa_no_reanalyze: Any, qa_result: Dict[str, Any]
+) -> List[str]:
     lines: List[str] = []
 
     lines.append("")
@@ -223,7 +241,11 @@ def _render_integrity_notes_lines(integrity: Dict[str, Any]) -> List[str]:
     if not integrity:
         return []
 
-    notes = integrity.get("gt_ambiguity") if isinstance(integrity.get("gt_ambiguity"), dict) else {}
+    notes = (
+        integrity.get("gt_ambiguity")
+        if isinstance(integrity.get("gt_ambiguity"), dict)
+        else {}
+    )
     if not notes:
         return []
 
@@ -251,9 +273,13 @@ def _render_integrity_notes_lines(integrity: Dict[str, Any]) -> List[str]:
     if items:
         lines.append("- " + ", ".join(items))
 
-    warnings = integrity.get("warnings") if isinstance(integrity.get("warnings"), list) else []
+    warnings = (
+        integrity.get("warnings") if isinstance(integrity.get("warnings"), list) else []
+    )
     if warnings:
-        lines.append(f"- warnings: {', '.join([str(w) for w in warnings if str(w).strip()])}")
+        lines.append(
+            f"- warnings: {', '.join([str(w) for w in warnings if str(w).strip()])}"
+        )
 
     return lines
 
@@ -262,11 +288,21 @@ def _render_markdown(report: Dict[str, Any]) -> str:
     suite = report.get("suite") if isinstance(report.get("suite"), dict) else {}
     plan = report.get("plan") if isinstance(report.get("plan"), dict) else {}
     exec_ = report.get("execution") if isinstance(report.get("execution"), dict) else {}
-    triage_eval = report.get("triage_eval") if isinstance(report.get("triage_eval"), dict) else {}
-    calibration = report.get("calibration") if isinstance(report.get("calibration"), dict) else {}
+    triage_eval = (
+        report.get("triage_eval") if isinstance(report.get("triage_eval"), dict) else {}
+    )
+    calibration = (
+        report.get("calibration") if isinstance(report.get("calibration"), dict) else {}
+    )
     qa = report.get("qa") if isinstance(report.get("qa"), dict) else {}
-    pointers = report.get("pointers") if isinstance(report.get("pointers"), dict) else {}
-    action_items = report.get("action_items") if isinstance(report.get("action_items"), list) else []
+    pointers = (
+        report.get("pointers") if isinstance(report.get("pointers"), dict) else {}
+    )
+    action_items = (
+        report.get("action_items")
+        if isinstance(report.get("action_items"), list)
+        else []
+    )
 
     sid = suite.get("suite_id") or ""
     created_at = suite.get("created_at") or ""
@@ -281,21 +317,45 @@ def _render_markdown(report: Dict[str, Any]) -> str:
     tools_missing = exec_.get("tools_missing_union") or []
     empty_tool_cases = exec_.get("empty_tool_cases") or {}
 
-    macro = triage_eval.get("macro") if isinstance(triage_eval.get("macro"), dict) else {}
+    macro = (
+        triage_eval.get("macro") if isinstance(triage_eval.get("macro"), dict) else {}
+    )
 
     min_support_by_owasp = calibration.get("min_support_by_owasp")
-    owasp_support = calibration.get("owasp_support") if isinstance(calibration.get("owasp_support"), dict) else {}
-    owasp_fallback = calibration.get("owasp_fallback") if isinstance(calibration.get("owasp_fallback"), list) else []
+    owasp_support = (
+        calibration.get("owasp_support")
+        if isinstance(calibration.get("owasp_support"), dict)
+        else {}
+    )
+    owasp_fallback = (
+        calibration.get("owasp_fallback")
+        if isinstance(calibration.get("owasp_fallback"), list)
+        else []
+    )
 
     qa_scope = qa.get("scope")
     qa_no_reanalyze = qa.get("no_reanalyze")
     qa_result = qa.get("result") if isinstance(qa.get("result"), dict) else {}
 
-    top_gap_cases = pointers.get("top_gt_gap_cases") if isinstance(pointers.get("top_gt_gap_cases"), list) else []
-    top_sev_cases = pointers.get("top_severity_cases") if isinstance(pointers.get("top_severity_cases"), list) else []
-    suite_tables = pointers.get("suite_tables") if isinstance(pointers.get("suite_tables"), dict) else {}
+    top_gap_cases = (
+        pointers.get("top_gt_gap_cases")
+        if isinstance(pointers.get("top_gt_gap_cases"), list)
+        else []
+    )
+    top_sev_cases = (
+        pointers.get("top_severity_cases")
+        if isinstance(pointers.get("top_severity_cases"), list)
+        else []
+    )
+    suite_tables = (
+        pointers.get("suite_tables")
+        if isinstance(pointers.get("suite_tables"), dict)
+        else {}
+    )
 
-    integrity = report.get("integrity") if isinstance(report.get("integrity"), dict) else {}
+    integrity = (
+        report.get("integrity") if isinstance(report.get("integrity"), dict) else {}
+    )
 
     lines: List[str] = []
 
@@ -335,7 +395,11 @@ def _render_markdown(report: Dict[str, Any]) -> str:
         )
     )
 
-    lines.extend(_render_qa_lines(qa_scope=qa_scope, qa_no_reanalyze=qa_no_reanalyze, qa_result=qa_result))
+    lines.extend(
+        _render_qa_lines(
+            qa_scope=qa_scope, qa_no_reanalyze=qa_no_reanalyze, qa_result=qa_result
+        )
+    )
 
     lines.extend(_render_pointers_lines(suite_tables))
 

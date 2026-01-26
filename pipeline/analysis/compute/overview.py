@@ -32,17 +32,23 @@ def analyze_latest_hotspots_for_repo(
 
     runs_dir = Path(runs_dir)
 
-    file_to_tool_counts: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    file_to_tool_counts: Dict[str, Dict[str, int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
     tool_to_files: Dict[str, set[str]] = defaultdict(set)
     tool_to_findings_count: Dict[str, int] = defaultdict(int)
 
     used_tools: List[str] = []
 
-    exclude_prefixes = tuple([str(p).strip() for p in (exclude_prefixes or ()) if str(p).strip()])
+    exclude_prefixes = tuple(
+        [str(p).strip() for p in (exclude_prefixes or ()) if str(p).strip()]
+    )
 
     for tool in tools:
         try:
-            norm_path = find_latest_normalized_json(runs_dir=runs_dir, tool=tool, repo_name=repo_name)
+            norm_path = find_latest_normalized_json(
+                runs_dir=runs_dir, tool=tool, repo_name=repo_name
+            )
         except FileNotFoundError:
             continue
         data = load_normalized_json(norm_path)
@@ -87,7 +93,11 @@ def analyze_latest_hotspots_for_repo(
     by_tool: Dict[str, Any] = {}
     for tool in used_tools:
         files_for_tool = sorted(tool_to_files.get(tool) or [])
-        unique_files = [fp for fp in files_for_tool if (file_to_tool_counts.get(fp) and len(file_to_tool_counts[fp]) == 1)]
+        unique_files = [
+            fp
+            for fp in files_for_tool
+            if (file_to_tool_counts.get(fp) and len(file_to_tool_counts[fp]) == 1)
+        ]
         by_tool[tool] = {
             "findings": int(tool_to_findings_count.get(tool, 0)),
             "files": len(files_for_tool),

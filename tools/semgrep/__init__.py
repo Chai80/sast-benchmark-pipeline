@@ -17,7 +17,13 @@ from tools.core import (
     write_json,
 )
 
-from .runner import SEMGREP_FALLBACKS, prepare_run_paths, run_semgrep, semgrep_version, RunPaths
+from .runner import (
+    SEMGREP_FALLBACKS,
+    prepare_run_paths,
+    run_semgrep,
+    semgrep_version,
+    RunPaths,
+)
 from .normalize import normalize_semgrep_results
 
 

@@ -134,7 +134,12 @@ def materialize_case_gt_catalog(
         # 2) Fallback: compile from in-repo markers.
         markers = extract_gt_markers(repo_root)
         if not markers:
-            return {"wrote": False, "source": None, "item_count": 0, "gt_catalog_path": None}
+            return {
+                "wrote": False,
+                "source": None,
+                "item_count": 0,
+                "gt_catalog_path": None,
+            }
 
         # Canonical, minimal schema. Extra per-item keys are preserved.
         doc: Dict[str, Any] = {
@@ -149,7 +154,9 @@ def materialize_case_gt_catalog(
 
         # Optional: write a JSON twin for diff/debug tooling (not used by analysis today).
         try:
-            (out_gt_dir / "gt_catalog.json").write_text(json.dumps(doc, indent=2, sort_keys=False), encoding="utf-8")
+            (out_gt_dir / "gt_catalog.json").write_text(
+                json.dumps(doc, indent=2, sort_keys=False), encoding="utf-8"
+            )
         except Exception:
             pass
 
@@ -168,4 +175,9 @@ def materialize_case_gt_catalog(
     except Exception as e:
         if warnings is not None:
             warnings.append(f"gt_catalog_materialize_failed: {e}")
-        return {"wrote": False, "source": None, "item_count": 0, "gt_catalog_path": None}
+        return {
+            "wrote": False,
+            "source": None,
+            "item_count": 0,
+            "gt_catalog_path": None,
+        }

@@ -32,14 +32,12 @@ PIPELINES: Dict[str, List[str]] = {
         # DS-friendly export (cluster feature table)
         "triage_features",
     ],
-
     # Optional diagnostics (not run by default)
     "diagnostics": [
         "diagnostics_case_context",
         "diagnostics_schema",
         "diagnostics_empty_runs",
     ],
-
     # Reporting / export stages
     "reporting": [
         "benchmark_pack",

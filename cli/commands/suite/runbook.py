@@ -14,11 +14,16 @@ this module. We keep those names here by re-exporting the new step functions.
 from __future__ import annotations
 
 import argparse
-from typing import Dict, Optional
+from typing import Dict
 
 from pipeline.pipeline import SASTBenchmarkPipeline
 
-from .runbook_steps.model import GTToleranceSweepState, ROOT_DIR, SuiteFlags, SuiteRunContext
+from .runbook_steps.model import (
+    GTToleranceSweepState,
+    ROOT_DIR,
+    SuiteFlags,
+    SuiteRunContext,
+)
 from .runbook_steps.execute import run_suite_cases
 from .runbook_steps.qa import build_suite_artifacts, post_run_aggregation_and_qa
 from .runbook_steps.resolve import (
@@ -49,7 +54,9 @@ def run_suite_runbook(
         print("❌ Suite mode requires suite layout (do not use --no-suite).")
         return 2
 
-    ctx = SuiteRunContext.from_args(args=args, pipeline=pipeline, repo_registry=repo_registry)
+    ctx = SuiteRunContext.from_args(
+        args=args, pipeline=pipeline, repo_registry=repo_registry
+    )
 
     early_exit = validate_suite_args(ctx)
     if early_exit is not None:

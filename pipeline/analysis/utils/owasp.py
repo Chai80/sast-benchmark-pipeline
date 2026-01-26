@@ -121,4 +121,3 @@ __all__ = [
     "OWASP_TOP10_2021_TITLES",
     "infer_owasp",
 ]
-
