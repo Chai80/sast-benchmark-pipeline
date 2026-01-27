@@ -23,6 +23,7 @@ from pipeline.analysis.framework.pipelines import PIPELINES
 from pipeline.analysis.framework.runner import run_pipeline, write_analysis_manifest
 from pipeline.analysis.io.discovery import find_latest_normalized_json
 from pipeline.analysis.io.organize_outputs import organize_analysis_outputs
+from pipeline.suites.layout import find_case_dir, suite_dir_from_case_dir
 
 
 def _suite_case_dir_from_out_dir(out_dir: Path) -> Optional[Path]:
@@ -30,15 +31,12 @@ def _suite_case_dir_from_out_dir(out_dir: Path) -> Optional[Path]:
 
     Expected:
       runs/suites/<suite_id>/cases/<case_id>/analysis/
+
+    We accept paths *within* the case (e.g., analysis subdirs) and walk upward
+    until we find .../cases/<case_id>/.
     """
     try:
-        out_dir = Path(out_dir)
-        if out_dir.name != "analysis":
-            return None
-        case_dir = out_dir.parent
-        if case_dir.parent.name != "cases":
-            return None
-        return case_dir
+        return find_case_dir(out_dir)
     except Exception:
         return None
 
@@ -59,8 +57,9 @@ def _load_gt_policy_from_suite_manifest(case_dir: Path) -> Dict[str, Any]:
         "case_repo_path": None,
     }
     try:
-        suite_dir = case_dir.parent.parent if case_dir.parent.name == "cases" else None
-        if not suite_dir:
+        try:
+            suite_dir = suite_dir_from_case_dir(case_dir)
+        except ValueError:
             return out
         suite_json = suite_dir / "suite.json"
         if not suite_json.exists():
