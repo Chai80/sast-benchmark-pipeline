@@ -74,7 +74,7 @@ A) OWNERSHIP / LAYERING  (where everything belongs)
 | (Boundary) Analysis layer                                                        |
 |  modules: pipeline/analysis/analyze_suite.py (per-case analysis entrypoint)     |
 |           pipeline/analysis/framework/*, pipeline/analysis/stages/*              |
-|           pipeline/analysis/exports/*, pipeline/scoring/*                        |
+|           pipeline/analysis/exports/*, experiments/gt_scoring/*                        |
 |           pipeline/analysis/qa_calibration_runbook/ (suite-scoped QA helper; wrapper: pipeline/analysis/qa/qa_calibration_runbook.py)  |
 |           pipeline/analysis/suite_triage_*.py (dataset/calibration/eval)         |
 |                                                                                  |

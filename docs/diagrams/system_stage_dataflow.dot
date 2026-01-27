@@ -197,7 +197,7 @@ digraph G {
         <TR><TD ALIGN="LEFT"><B>5) Per-case analysis</B> <FONT POINT-SIZE="9">(optional)</FONT></TD></TR>
         <TR><TD ALIGN="LEFT"><FONT FACE="Courier" POINT-SIZE="9">
           pipeline/analysis/* (framework/stages/exports)<BR/>
-          pipeline/scoring/* (GT matching + scoring)
+          experiments/gt_scoring/* (experimental GT scoring)
         </FONT></TD></TR>
       </TABLE>
     >
