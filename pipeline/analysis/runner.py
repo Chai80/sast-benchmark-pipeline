@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from pipeline.analysis.framework import AnalysisContext, ArtifactStore
 from pipeline.analysis.framework.pipelines import PIPELINES
-from pipeline.analysis.framework.runner import run_pipeline, write_analysis_manifest
+from pipeline.analysis.framework.stage_engine import run_pipeline, write_analysis_manifest
 from pipeline.analysis.io.discovery import find_latest_normalized_json
 from pipeline.analysis.io.organize_outputs import organize_analysis_outputs
 
