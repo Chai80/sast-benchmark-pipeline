@@ -31,7 +31,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from tools.io import read_json
+from tools.io import read_json, write_json as _write_json
+
+# Re-export for scanner packages that historically imported `write_json` from tools.core.
+write_json = _write_json
 
 from sast_benchmark.domain.finding import FindingNormalized
 
