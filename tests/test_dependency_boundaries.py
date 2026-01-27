@@ -9,9 +9,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Dependency rules (kept intentionally small and explicit):
 # - contracts (sast_benchmark/) must not depend on tools/ or pipeline/
 # - tools/ must not depend on pipeline/
+# - pipeline/ must not depend on tools/
 FORBIDDEN_IMPORTS = {
     "sast_benchmark": ("tools", "pipeline"),
     "tools": ("pipeline",),
+    "pipeline": ("tools",),
 }
 
 

@@ -46,7 +46,7 @@ from pipeline.suites.manifests import (
     update_suite_artifacts,
     write_case_manifest,
 )
-from tools.io import read_json, write_json
+from sast_benchmark.io.fs import read_json, write_json_atomic
 
 
 def _now_iso() -> str:
@@ -176,7 +176,7 @@ def _write_run_json(
         },
     }
 
-    write_json(run_dir / "run.json", data)
+    write_json_atomic(run_dir / "run.json", data)
 
 
 @dataclass(frozen=True)
@@ -430,7 +430,7 @@ def import_legacy_repo_to_suite(
         "warnings": list(warnings),
     }
     try:
-        write_json(import_manifest_path, payload)
+        write_json_atomic(import_manifest_path, payload)
     except Exception:
         pass
 

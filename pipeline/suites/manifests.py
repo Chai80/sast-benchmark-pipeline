@@ -42,7 +42,7 @@ from pipeline.core import ROOT_DIR as REPO_ROOT
 from pipeline.suites.bundles import BundlePaths
 from pipeline.suites import bundles as _bundles
 from pipeline.suites.layout import SuitePaths
-from tools.io import write_json
+from sast_benchmark.io.fs import write_json_atomic
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ def write_case_manifest(
 
     # Best-effort write: never fail a scan due to manifest IO.
     try:
-        write_json(paths.case_json_path, manifest)
+        write_json_atomic(paths.case_json_path, manifest)
     except Exception as e:
         # Preserve a visible on-disk warning even if the case manifest write failed.
         try:

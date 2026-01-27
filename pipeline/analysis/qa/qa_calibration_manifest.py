@@ -41,7 +41,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 
 from pipeline.analysis.io.config_receipts import summarize_scanner_config
 from pipeline.suites.manifests import runtime_environment
-from tools.io import write_json
+from sast_benchmark.io.fs import write_json_atomic
 
 
 QA_CALIBRATION_MANIFEST_SCHEMA_V1 = "qa_calibration_manifest_v1"
@@ -239,7 +239,7 @@ def _best_effort_update_suite_json_scanner_config(
         pass
 
     try:
-        write_json(suite_json_path, raw)
+        write_json_atomic(suite_json_path, raw)
     except Exception:
         return
 
@@ -368,7 +368,7 @@ def _best_effort_update_suite_json_gt_tolerance(
         pass
 
     try:
-        write_json(suite_json_path, raw)
+        write_json_atomic(suite_json_path, raw)
     except Exception:
         return
 
@@ -388,7 +388,7 @@ def write_qa_calibration_manifest(
     For backward compatibility, we also write a copy to any filenames listed in
     `legacy_aliases` (by default: qa_calibration_manifest.json).
 
-    Uses atomic replace via tools.io.write_json.
+    Uses atomic replace via sast_benchmark.io.fs.write_json_atomic.
     """
 
     suite_dir = Path(suite_dir).resolve()
@@ -399,7 +399,7 @@ def write_qa_calibration_manifest(
     # Ensure JSON serializability early so callers don't write a partial file.
     _ = json.dumps(manifest)
 
-    write_json(out_path, dict(manifest))
+    write_json_atomic(out_path, dict(manifest))
 
     # Optional compatibility aliases.
     for alias in legacy_aliases or ():  # type: ignore[truthy-bool]
@@ -410,7 +410,7 @@ def write_qa_calibration_manifest(
             continue
         alias_path = (analysis_dir / a).resolve()
         try:
-            write_json(alias_path, dict(manifest))
+            write_json_atomic(alias_path, dict(manifest))
         except Exception:
             # Best-effort: the canonical file is the one CI should scrape.
             pass

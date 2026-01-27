@@ -54,7 +54,7 @@ from pipeline.suites.suite_definition import (
     SuiteDefinition,
 )
 
-from tools.io import write_json
+from sast_benchmark.io.fs import write_json_atomic
 
 
 def _now_iso() -> str:
@@ -302,7 +302,7 @@ def write_suite_manifest(
         "cases": cases_summary,
     }
 
-    write_json(path, manifest)
+    write_json_atomic(path, manifest)
     return path
 
 

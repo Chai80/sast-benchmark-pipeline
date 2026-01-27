@@ -65,7 +65,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from tools.io import write_json
+from sast_benchmark.io.fs import write_json_atomic
 
 
 def _append_suite_warning(paths: "BundlePaths", message: str) -> None:
@@ -300,7 +300,7 @@ def _ensure_suite_json(paths: BundlePaths) -> None:
         "updated_at": now,
         "cases": {},
     }
-    write_json(paths.suite_json_path, data)
+    write_json_atomic(paths.suite_json_path, data)
 
 
 def _load_json(
@@ -371,7 +371,7 @@ def _update_suite_json(
         "exit_codes": exit_codes,
     }
 
-    write_json(paths.suite_json_path, data)
+    write_json_atomic(paths.suite_json_path, data)
 
 
 def _write_suite_summary(
