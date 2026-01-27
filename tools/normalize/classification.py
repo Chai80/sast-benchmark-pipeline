@@ -1,28 +1,26 @@
-"""Compatibility wrapper for normalization classification helpers.
+"""tools.normalize.classification
 
-Historically, the shared classification helpers lived under ``tools.normalize``.
+Compatibility shim.
 
-To keep ``tools`` as a leaf executor package (and avoid higher-level orchestration
-code importing from ``tools``), the canonical implementation now lives in the
-neutral ``sast_benchmark`` layer:
-
-    ``sast_benchmark.normalize.classification``
-
-This module remains as a thin re-export so existing imports keep working.
+The canonical implementation for classification helpers lives in
+`sast_benchmark.normalize.classification`. Keep this module thin and
+only re-export symbols that actually exist there.
 """
 
+from __future__ import annotations
+
 from sast_benchmark.normalize.classification import (
-    infer_language,
-    normalize_language,
-    normalize_severity,
+    OWASP_TOP_10_2017_NAMES,
+    OWASP_TOP_10_2021_NAMES,
+    normalize_cwe_id,
+    normalize_owasp_top10_code,
     resolve_owasp_and_cwe,
-    strip_sentinel_values,
 )
 
 __all__ = [
-    "infer_language",
-    "normalize_language",
-    "normalize_severity",
+    "OWASP_TOP_10_2017_NAMES",
+    "OWASP_TOP_10_2021_NAMES",
+    "normalize_cwe_id",
+    "normalize_owasp_top10_code",
     "resolve_owasp_and_cwe",
-    "strip_sentinel_values",
 ]
