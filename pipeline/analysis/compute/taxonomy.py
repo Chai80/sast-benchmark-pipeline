@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
 
-from tools.normalize.classification import resolve_owasp_and_cwe
+from sast_benchmark.normalize.classification import resolve_owasp_and_cwe
 
 
 def _repo_root() -> Path:
