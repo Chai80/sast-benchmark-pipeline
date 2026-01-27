@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from sast_benchmark.io.fs import write_json_atomic as write_json
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from pipeline.suites.layout import (
@@ -28,7 +29,6 @@ from pipeline.suites.manifests import (
     write_case_manifest,
 )
 from sast_benchmark.gt.catalog import materialize_case_gt_catalog
-from tools.io import write_json
 
 from .model import RunCaseRequest, ToolExecution, now_iso
 
