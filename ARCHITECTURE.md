@@ -22,8 +22,10 @@ The design goal is **clean, non-spaghetti automation**:
 8. `pipeline/analysis/runner.py` + `pipeline/analysis/framework/*` — stage engine for per-case analysis
 9. `pipeline/analysis/qa_calibration_runbook/` + `pipeline/analysis/suite_triage_*` — suite-scoped triage calibration (legacy wrapper: `pipeline/analysis/qa/qa_calibration_runbook.py`)
 10. `pipeline/analysis/suite_report/` — suite report builder (legacy wrapper: `pipeline/analysis/suite/suite_report.py`)
-11. `pipeline/scoring/gt_scorer.py` + `pipeline/scoring/gt_markers.py` — GT matching + scoring primitives
+11. `experiments/gt_scoring/gt_scorer.py` + `experiments/gt_scoring/gt_markers.py` — experimental GT matching + scoring primitives
 12. `tools/scan_semgrep.py` → `tools/semgrep/*` — representative scanner adapter pattern
+
+Optional / experimental: `experiments/api_prototype/*` — early API ingest/models (not wired into CLI).
 
 
 ---
