@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any, Dict, Optional, Union
 
 from sast_benchmark.io.layout import (
     discover_latest_run_dir as _discover_latest_run_dir,
@@ -119,6 +119,120 @@ def _to_bundle_paths(sp: SuitePaths) -> BundlePaths:
     )
 
 
+def list_suite_dirs(*, suite_root: Union[str, Path] = "runs/suites") -> list[Path]:
+    """List suite directories under the suite root.
+
+    Returns an empty list if the suite_root does not exist.
+    """
+    root = anchor_under_repo_root(suite_root)
+    if not root.exists():
+        return []
+    return sorted([p.resolve() for p in root.iterdir() if p.is_dir()])
+
+
+def resolve_suite_id(*, suite_id: str, suite_root: Union[str, Path] = "runs/suites") -> str:
+    """Resolve a suite id, supporting the special alias ``latest``.
+
+    Rules:
+    - If suite_id is not "latest" (case-insensitive), return the trimmed suite_id.
+    - If suite_id is "latest" and ``<suite_root>/LATEST`` exists, use its contents.
+    - Otherwise, fall back to lexicographically-latest directory name under suite_root.
+
+    This is intentionally conservative: it only resolves to existing suites.
+    """
+    bid = (suite_id or "").strip()
+    if bid.lower() != "latest":
+        return bid
+
+    root = anchor_under_repo_root(suite_root)
+
+    # Prefer an explicit pointer file if present.
+    latest_file = root / "LATEST"
+    if latest_file.exists():
+        pointer = latest_file.read_text(encoding="utf-8").strip()
+        if pointer:
+            suite_dir = (root / safe_name(pointer)).resolve()
+            if suite_dir.is_dir():
+                return pointer
+            raise FileNotFoundError(f"Latest suite pointer points to missing dir: {suite_dir}")
+
+    if not root.exists():
+        raise FileNotFoundError(f"No suites directory found: {root}")
+
+    candidates = [p for p in root.iterdir() if p.is_dir()]
+    if not candidates:
+        raise FileNotFoundError(f"No suite runs found under: {root}")
+
+    # Fall back to lexicographically-latest suite directory name.
+    return max(candidates, key=lambda p: p.name).name
+
+
+def resolve_suite_dir(*, suite_id: str, suite_root: Union[str, Path] = "runs/suites") -> Path:
+    """Resolve a suite id to an on-disk suite directory."""
+    root = anchor_under_repo_root(suite_root)
+    resolved_suite_id = resolve_suite_id(suite_id=suite_id, suite_root=root)
+    suite_dir = (root / safe_name(resolved_suite_id)).resolve()
+    if not suite_dir.exists() or not suite_dir.is_dir():
+        raise FileNotFoundError(f"Suite dir not found: {suite_dir}")
+    return suite_dir
+
+
+def resolve_suite_dir_ref(
+    *, suite_dir_ref: Union[str, Path], suite_root: Union[str, Path] = "runs/suites"
+) -> Path:
+    """Resolve either a suite directory path or a suite id (including ``latest``)."""
+    ref = Path(suite_dir_ref)
+    if ref.is_dir():
+        return ref.resolve()
+
+    anchored = anchor_under_repo_root(ref)
+    if anchored.is_dir():
+        return anchored.resolve()
+
+    return resolve_suite_dir(suite_id=str(suite_dir_ref), suite_root=suite_root)
+
+
+def find_case_dir(path: Union[str, Path]) -> Optional[Path]:
+    """Walk up from *path* to locate ``.../cases/<case_id>``.
+
+    Returns ``None`` if the path is not inside a v2 suite layout.
+    """
+    p = Path(path)
+    if p.is_file():
+        p = p.parent
+    p = p.resolve()
+
+    for candidate in [p, *p.parents]:
+        if candidate.parent.name == "cases":
+            return candidate
+
+    return None
+
+
+def suite_dir_from_case_dir(case_dir: Path) -> Path:
+    """Return the suite dir for a ``.../cases/<case_id>`` directory."""
+    case_dir = Path(case_dir).resolve()
+    if case_dir.parent.name != "cases":
+        raise ValueError(f"Not a case dir (expected .../cases/<case_id>): {case_dir}")
+    return case_dir.parent.parent.resolve()
+
+
+def suite_paths_from_case_dir(case_dir: Path) -> SuitePaths:
+    """Build :class:`SuitePaths` from an existing case directory."""
+    case_dir = Path(case_dir).resolve()
+    suite_dir = suite_dir_from_case_dir(case_dir)
+    suite_root = suite_dir.parent
+    return get_suite_paths(case_id=case_dir.name, suite_id=suite_dir.name, suite_root=suite_root)
+
+
+def suite_paths_from_path(path: Union[str, Path]) -> SuitePaths:
+    """Build :class:`SuitePaths` from any path inside a case directory."""
+    case_dir = find_case_dir(path)
+    if case_dir is None:
+        raise ValueError(f"Path is not inside a suite case directory: {path}")
+    return suite_paths_from_case_dir(case_dir)
+
+
 def new_suite_id() -> str:
     """Generate a new suite id (sortable UTC timestamp)."""
     return new_bundle_id()
@@ -131,7 +245,8 @@ def get_suite_paths(
     suite_root: Union[str, Path] = "runs/suites",
 ) -> SuitePaths:
     """Compute filesystem paths for one case inside one suite."""
-    bundle = get_bundle_paths(target=case_id, bundle_id=suite_id, bundle_root=suite_root)
+    resolved_suite_id = resolve_suite_id(suite_id=suite_id, suite_root=suite_root)
+    bundle = get_bundle_paths(target=case_id, bundle_id=resolved_suite_id, bundle_root=suite_root)
     return _to_suite_paths(bundle)
 
 
@@ -174,33 +289,12 @@ def resolve_case_dir(
     discovery and error handling.
     """
 
-    def _resolve_suite_id(*, root: Path, suite_id: str) -> str:
-        bid = (suite_id or "").strip()
-        if bid.lower() != "latest":
-            return bid
-
-        latest_file = root / "LATEST"
-        if latest_file.exists():
-            bid = latest_file.read_text(encoding="utf-8").strip()
-
-        if bid:
-            return bid
-
-        if not root.exists():
-            raise FileNotFoundError(f"No suites directory found: {root}")
-
-        candidates = [p for p in root.iterdir() if p.is_dir()]
-        if not candidates:
-            raise FileNotFoundError(f"No suite runs found under: {root}")
-
-        return max(candidates, key=lambda p: p.name).name
-
     def _canon_case_id(s: str) -> str:
         # Treat '-' and '_' as interchangeable for historical reasons.
         return s.replace("-", "_")
 
     root = anchor_under_repo_root(suite_root)
-    resolved_suite_id = _resolve_suite_id(root=root, suite_id=str(suite_id))
+    resolved_suite_id = resolve_suite_id(suite_id=str(suite_id), suite_root=root)
     suite_dir = (root / safe_name(resolved_suite_id)).resolve()
     if not suite_dir.exists() or not suite_dir.is_dir():
         raise FileNotFoundError(f"Suite dir not found: {suite_dir}")
@@ -209,7 +303,7 @@ def resolve_case_dir(
     if not cases_dir.exists() or not cases_dir.is_dir():
         raise FileNotFoundError(f"Cases dir not found: {cases_dir}")
 
-    available: Sequence[str] = sorted([p.name for p in cases_dir.iterdir() if p.is_dir()])
+    available = sorted([p.name for p in cases_dir.iterdir() if p.is_dir()])
     if not available:
         raise FileNotFoundError(f"No case directories found under: {cases_dir}")
 

@@ -5,30 +5,26 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
 from pipeline.analysis.utils.path_norm import normalize_exclude_prefixes
+from pipeline.suites.layout import find_case_dir, suite_dir_from_case_dir
 
 
-def _derive_suite_case_ids(out_dir: Path) -> Tuple[Optional[str], Optional[str]]:
-    """Best-effort derive suite_id and case_id from v2 layout paths.
+def _derive_suite_case_ids(out_dir: str | Path) -> tuple[str | None, str | None]:
+    """Best-effort derivation of (suite_id, case_id) from an out_dir.
 
-    Expected v2 layout:
-      runs/suites/<suite_id>/cases/<case_id>/analysis/
-
-    Returns (suite_id, case_id) if the path matches; otherwise (None, None).
+    Supports passing either:
+      - .../runs/suites/<suite_id>/cases/<case_id>
+      - .../runs/suites/<suite_id>/cases/<case_id>/analysis
+      - .../runs/suites/<suite_id>/cases/<case_id>/analysis/...
     """
     try:
-        # out_dir/.../<case_id>/analysis
-        case_dir = out_dir.parent if out_dir.name == "analysis" else None
-        if not case_dir:
+        case_dir = find_case_dir(out_dir)
+        if case_dir is None:
             return None, None
-        if case_dir.parent.name != "cases":
-            return None, None
-        suite_id = case_dir.parent.parent.name  # runs/suites/<suite_id>/cases
-        case_id = case_dir.name
-        if suite_id and case_id:
-            return suite_id, case_id
+
+        suite_dir = suite_dir_from_case_dir(case_dir)
+        return suite_dir.name, case_dir.name
     except Exception:
         return None, None
-    return None, None
 
 
 @dataclass(frozen=True)

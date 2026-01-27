@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence
 
-from pipeline.suites.layout import resolve_case_dir
+from pipeline.suites.layout import find_case_dir, resolve_case_dir, suite_dir_from_case_dir
 from pipeline.models import CaseSpec
 from pipeline.scanners import SUPPORTED_SCANNERS
 
@@ -123,7 +123,7 @@ def run_analyze(req: AnalyzeRequest) -> int:
             try:
                 suite_dir = None
                 if case_dir is not None and getattr(case_dir.parent, "name", None) == "cases":
-                    suite_dir = case_dir.parent.parent
+                    suite_dir = suite_dir_from_case_dir(case_dir)
 
                 if suite_dir is not None:
                     from pipeline.analysis.io.gt_tolerance_policy import (
@@ -186,8 +186,11 @@ def run_analyze(req: AnalyzeRequest) -> int:
                     build_triage_dataset,
                 )
 
-                # out_dir is the per-case analysis dir: .../runs/suites/<suite_id>/cases/<case_id>/analysis
-                suite_dir = out_dir.parent.parent.parent  # .../runs/suites/<suite_id>
+                # out_dir is typically the per-case analysis dir: .../runs/suites/<suite_id>/cases/<case_id>/analysis
+                case_dir = find_case_dir(out_dir)
+                if case_dir is None:
+                    raise ValueError(f"Could not infer case dir from out_dir: {out_dir}")
+                suite_dir = suite_dir_from_case_dir(case_dir)
                 suite_id = suite_dir.name
 
                 ds = build_triage_dataset(suite_dir=str(suite_dir), suite_id=str(suite_id))

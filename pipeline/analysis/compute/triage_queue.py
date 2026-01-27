@@ -19,6 +19,7 @@ from pipeline.analysis.suite.suite_triage_calibration import (
 )
 from pipeline.analysis.utils.owasp import infer_owasp
 from pipeline.analysis.stages.common.severity import max_severity, severity_rank
+from pipeline.suites.layout import find_case_dir, suite_dir_from_case_dir
 
 
 TRIAGE_QUEUE_SCHEMA_VERSION = "v1"
@@ -118,9 +119,10 @@ def _suite_dir_from_out_dir(out_dir: Path, *, suite_id: Optional[str]) -> Option
     """Best-effort resolve suite_dir from a per-case analysis out_dir."""
 
     try:
-        if out_dir.name != "analysis":
+        case_dir = find_case_dir(out_dir)
+        if not case_dir:
             return None
-        suite_dir = out_dir.parent.parent.parent
+        suite_dir = suite_dir_from_case_dir(case_dir)
         if suite_id and suite_dir.name != str(suite_id):
             return None
         return suite_dir
