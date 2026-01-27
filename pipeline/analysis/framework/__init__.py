@@ -21,7 +21,7 @@ from .store import ArtifactStore
 from .stage import StageResult, StageFunc
 from .registry import register_stage, get_stage, list_stages, StageDefinition
 from .pipelines import PIPELINES
-from .runner import run_pipeline, write_analysis_manifest
+from .stage_engine import run_pipeline, write_analysis_manifest
 
 __all__ = [
     "AnalysisContext",
