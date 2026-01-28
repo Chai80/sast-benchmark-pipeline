@@ -1,34 +1,68 @@
-"""pipeline.analysis.suite.triage_calibration_build
+"""pipeline.analysis.suite.triage_calibration.build
 
 Suite-level triage calibration builder.
 
-The original implementation lived in
-:mod:`pipeline.analysis.suite.suite_triage_calibration` and grew large. The
-core build logic now lives here, while the public module keeps a small facade
-for backwards compatibility.
+This is the only module in the calibration implementation that performs
+filesystem writes.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from pipeline.analysis.io.write_artifacts import write_csv, write_json
+from pipeline.analysis.io.write_artifacts import write_csv, write_json, write_text
 
-from .triage_calibration_counts import _accumulate_calibration_counts, _partition_cases_by_gt
-from .triage_calibration_io import _load_csv_rows
-from .triage_calibration_log import _write_best_effort_calibration_log
-from .triage_calibration_stats import (
+from .compute import (
+    _accumulate_calibration_counts,
     _build_suspicious_cases,
     _build_tool_stats_by_owasp,
     _compute_tool_stats,
     _flatten_report_by_owasp_rows,
+    _partition_cases_by_gt,
 )
-from .triage_calibration_types import (
+from .core import (
     TRIAGE_CALIBRATION_SCHEMA_VERSION,
     CalibrationParamsV1,
+    _load_csv_rows,
+    _now_iso,
 )
-from .triage_calibration_utils import _now_iso
+
+
+def _write_best_effort_calibration_log(
+    *,
+    out_log: Path,
+    sid: str,
+    dataset_csv: Path,
+    out_json: Path,
+    included_cases: Sequence[str],
+    excluded_cases_no_gt: Sequence[str],
+    tool_stats_global: Sequence[Mapping[str, Any]],
+    suspicious_cases: Sequence[Mapping[str, Any]],
+    generated_at: str,
+) -> None:
+    """Best-effort log: surface suspicious cases explicitly."""
+
+    try:
+        lines: List[str] = []
+        lines.append(f"[{generated_at}] triage_calibration build")
+        lines.append(f"suite_id              : {sid}")
+        lines.append(f"dataset_csv           : {dataset_csv}")
+        lines.append(f"included_cases        : {len(list(included_cases))}")
+        lines.append(f"excluded_cases_no_gt  : {len(list(excluded_cases_no_gt))}")
+        lines.append(f"tools                 : {len(list(tool_stats_global))}")
+        lines.append(f"out_json              : {out_json}")
+        if suspicious_cases:
+            lines.append("")
+            lines.append(f"suspicious_cases ({len(list(suspicious_cases))}):")
+            for sc in suspicious_cases:
+                lines.append(
+                    f"  - {sc.get('case_id')}: clusters={sc.get('cluster_count')} overlap_sum={sc.get('gt_overlap_sum')}"
+                )
+        write_text(out_log, "\n".join(lines) + "\n")
+    except Exception:
+        # Best-effort by design: never crash the pipeline for log output.
+        pass
 
 
 def build_triage_calibration(
@@ -110,7 +144,6 @@ def build_triage_calibration(
         "suspicious_cases": list(suspicious_cases),
         "tool_stats_global": list(tool_stats_global),
         # Backwards compatible alias for v1 consumers/tests that still read `tool_stats`.
-        # Keep this during the v1->v2 transition so older tooling continues to work.
         "tool_stats": list(tool_stats_global),
         "tool_stats_by_owasp": tool_stats_by_owasp,
         "scoring": {
@@ -121,9 +154,6 @@ def build_triage_calibration(
         },
     }
 
-    # Deterministic JSON ordering is achieved by:
-    # - stable list ordering (sorted tools/cases)
-    # - dict insertion order defined above
     write_json(out_json, payload, indent=2)
 
     if write_report_csv:

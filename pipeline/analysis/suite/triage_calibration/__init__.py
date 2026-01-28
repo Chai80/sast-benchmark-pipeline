@@ -1,21 +1,17 @@
-"""pipeline.analysis.suite.suite_triage_calibration
+"""pipeline.analysis.suite.triage_calibration
 
-Suite-level triage calibration builder.
+Internal implementation for suite-level triage calibration.
 
-Historically this module contained the full implementation (700+ lines). To keep
-files small and reduce "spaghetti" drift, the implementation has been split into
-smaller, focused modules. This file remains as a compatibility facade so that
-imports like:
+External code should continue to import from
+:mod:`pipeline.analysis.suite.suite_triage_calibration`.
 
-    from pipeline.analysis.suite.suite_triage_calibration import build_triage_calibration
-
-continue to work.
+This package exists mainly to keep ``pipeline.analysis.suite`` from being
+cluttered with many ``triage_calibration_*`` modules while keeping each file
+small (≈<300 LOC).
 """
 
-from __future__ import annotations
-
-from .triage_calibration import build_triage_calibration
-from .triage_calibration.core import (
+from .build import build_triage_calibration
+from .core import (
     TRIAGE_CALIBRATION_SCHEMA_V1,
     TRIAGE_CALIBRATION_SCHEMA_VERSION,
     TRIAGE_CALIBRATION_SUPPORTED_VERSIONS,
@@ -24,7 +20,7 @@ from .triage_calibration.core import (
     log_odds,
     smoothed_precision,
 )
-from .triage_calibration.scoring import (
+from .scoring import (
     tool_weights_for_owasp,
     tool_weights_from_calibration,
     triage_score_v1,
