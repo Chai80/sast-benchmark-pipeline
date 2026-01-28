@@ -8,7 +8,7 @@ This module is an internal split of ``pipeline.analysis.suite.suite_triage_eval`
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from pipeline.analysis.suite.suite_triage_calibration import (
     load_triage_calibration,
@@ -17,6 +17,9 @@ from pipeline.analysis.suite.suite_triage_calibration import (
 )
 
 from .metrics import _to_float, _to_int, _tools_for_row
+
+RankFn = Callable[[List[Dict[str, str]]], List[Dict[str, str]]]
+
 
 
 def _key_file_path(r: Dict[str, str]) -> str:
@@ -74,6 +77,27 @@ def _rank_agreement(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
             str(r.get("cluster_id") or ""),
         ),
     )
+
+
+def _build_marginal_strategies(cal: Optional[Dict[str, Any]]) -> Dict[str, RankFn]:
+    """Strategies used for drop-one marginal value tables."""
+
+    strategies_marginal: Dict[str, RankFn] = {
+        "baseline": (lambda rows: _rank_baseline(rows, use_triage_rank=False)),
+        "agreement": _rank_agreement,
+    }
+
+    if cal:
+
+        def _rank_cal_m(
+            rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal
+        ) -> List[Dict[str, str]]:
+            return _rank_calibrated(rows, cal=_cal)
+
+        strategies_marginal["calibrated"] = _rank_cal_m
+
+    return strategies_marginal
+
 
 
 def _load_suite_calibration(
