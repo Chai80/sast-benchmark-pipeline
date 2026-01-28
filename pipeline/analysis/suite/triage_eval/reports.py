@@ -20,13 +20,95 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from pipeline.analysis.io.write_artifacts import write_markdown
+
 from .compute import compute_triage_eval
-from .io import write_readme, write_tables_and_summary
+from .io import write_tables_and_summary
 from .load import load_strategies, load_triage_dataset, normalize_ks, resolve_case_ids
 from .model import TriageEvalBuildRequest, TriageEvalPaths
 
 
 logger = logging.getLogger(__name__)
+
+
+def write_readme(
+    *,
+    out_tables: Path,
+    suite_id: str,
+    ks: Sequence[int],
+) -> Path:
+    """Write a small README next to triage eval artifacts.
+
+    This keeps metric definitions (especially K) discoverable alongside
+    generated outputs.
+    """
+
+    out_tables = Path(out_tables).resolve()
+    out_tables.mkdir(parents=True, exist_ok=True)
+
+    readme_path = out_tables / "README_triage_eval.md"
+    ks_str = ", ".join(str(k) for k in ks)
+    built_at = datetime.now(timezone.utc).isoformat()
+
+    content = f"""# Triage evaluation artifacts
+
+Suite: {suite_id}
+Generated: {built_at}
+
+This folder contains suite-level evaluation outputs comparing triage ranking strategies.
+
+## What is a cluster?
+A *cluster* is one triage-able unit of work: multiple tool findings that point to the same code location
+(same file + nearby line range within the clustering tolerance). The triage queue ranks clusters, not raw findings.
+
+## What is K?
+*K* means: **how many top-ranked clusters a human looks at**.
+
+Examples:
+- Precision@1 answers: "Is the first item we show correct?"
+- Precision@3 answers: "If I review the first 3 items, how many are real?"
+- Coverage@5 answers: "By the time I review 5 items, how much of the ground truth did I surface?"
+
+This run evaluates K values: {ks_str}
+
+## Metrics
+### Precision@K
+Of the top K clusters (or all clusters if fewer than K exist), what fraction overlap ground truth?
+
+Precision@K = (GT-positive clusters in top K) / (clusters considered)
+
+### GT coverage@K
+Ground truth items can be many-to-one with clusters. A single cluster may overlap multiple GT IDs.
+
+Coverage@K = (unique GT IDs covered by top K clusters) / (total GT IDs for the case)
+
+Notes:
+- If a case has no GT (or GT artifacts are missing), GT-based metrics are reported as N/A for that case.
+- Coverage reflects end-to-end performance (detection + ranking). If tools produce no clusters for a GT-heavy case,
+  coverage will be low even if ranking is good on other cases.
+
+## Macro vs micro averages
+We report two suite-level aggregations:
+
+- Macro average: compute the metric per case, then average across cases (each case counts equally).
+- Micro average: pool numerators/denominators across cases (large cases count more).
+
+Both are useful:
+- Macro tells you if the system is consistently good across cases.
+- Micro tells you overall quality across the whole suite's top-K items.
+
+## Files
+- triage_eval_by_case.csv: per-case metrics for each strategy and K
+- triage_eval_summary.json: suite-level macro/micro summaries + warnings
+- triage_tool_utility.csv: tool contribution (unique GT coverage) vs noise (exclusive negatives)
+- triage_tool_marginal.csv: drop-one tool marginal value (micro Precision@K / Coverage@K deltas)
+- triage_eval_topk.csv: top-ranked clusters per case/strategy (up to max(K))
+- triage_eval_deltas_by_case.csv: per-case deltas vs baseline (helps interpret lifts per case)
+"""
+
+    write_markdown(readme_path, content)
+    return readme_path
+
 
 
 def _now_iso() -> str:
