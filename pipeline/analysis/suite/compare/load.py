@@ -1,26 +1,20 @@
 """pipeline.analysis.suite.compare.load
 
 Filesystem loaders for suite-to-suite comparison.
-
-This module loads the small set of suite artifacts needed to compute a drift
-report. It does not re-run analysis.
 """
-
 from __future__ import annotations
 
 import csv
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pipeline.analysis.io.config_receipts import load_scanner_config
 from pipeline.analysis.io.meta import read_json_if_exists
-from pipeline.analysis.suite.suite_triage_calibration import (
-    tool_weights_from_calibration,
-)
+from pipeline.analysis.suite.suite_triage_calibration import tool_weights_from_calibration
 
 from .diff import _to_float, _to_int
+from .model import SuiteArtifacts
 
 
 def _load_csv_rows(path: Path) -> List[Dict[str, str]]:
@@ -40,9 +34,7 @@ def _parse_json_list(raw: str) -> List[str]:
     if not raw:
         return []
     s = str(raw).strip()
-    if not s:
-        return []
-    if not s.startswith("["):
+    if not s or not s.startswith("["):
         return []
     try:
         v = json.loads(s)
@@ -61,28 +53,6 @@ def _parse_tools_any(tools_json: str, tools_csv: str) -> List[str]:
     return sorted(set([p for p in parts if p]))
 
 
-@dataclass(frozen=True)
-class SuiteArtifacts:
-    suite_id: str
-    suite_dir: Path
-
-    suite_json_path: Path
-    suite_json: Optional[Dict[str, Any]]
-
-    scanner_config: Dict[str, Any]
-
-    qa_manifest_path: Optional[Path]
-    qa_manifest: Optional[Dict[str, Any]]
-
-    eval_summary_path: Optional[Path]
-    eval_summary: Optional[Dict[str, Any]]
-
-    dataset_csv: Optional[Path]
-    tool_utility_csv: Optional[Path]
-    calibration_json: Optional[Path]
-    tool_marginal_csv: Optional[Path]
-
-
 def _find_first_existing(paths: Sequence[Path]) -> Optional[Path]:
     for p in paths:
         if Path(p).exists():
@@ -91,10 +61,8 @@ def _find_first_existing(paths: Sequence[Path]) -> Optional[Path]:
 
 
 def _load_suite_artifacts(suite_dir: Path) -> Tuple[SuiteArtifacts, List[str]]:
-    """Load suite artifacts needed for comparison.
+    """Load suite artifacts needed for comparison (best-effort)."""
 
-    Returns (artifacts, warnings).
-    """
 
     suite_dir = Path(suite_dir).resolve()
     sid = suite_dir.name
@@ -103,10 +71,7 @@ def _load_suite_artifacts(suite_dir: Path) -> Tuple[SuiteArtifacts, List[str]]:
     tables_dir = analysis_dir / "_tables"
 
     qa_manifest_path = _find_first_existing(
-        [
-            analysis_dir / "qa_manifest.json",
-            analysis_dir / "qa_calibration_manifest.json",
-        ]
+        [analysis_dir / "qa_manifest.json", analysis_dir / "qa_calibration_manifest.json"]
     )
     qa_manifest = read_json_if_exists(qa_manifest_path) if qa_manifest_path else None
 
@@ -118,14 +83,14 @@ def _load_suite_artifacts(suite_dir: Path) -> Tuple[SuiteArtifacts, List[str]]:
     try:
         if isinstance(qa_manifest, Mapping):
             inputs = qa_manifest.get("inputs")
-            if isinstance(inputs, Mapping) and isinstance(inputs.get("scanners"), list):
-                expected_scanners = [
-                    str(x).strip() for x in inputs.get("scanners") if str(x).strip()
-                ]
+            scanners = inputs.get("scanners") if isinstance(inputs, Mapping) else None
+            if isinstance(scanners, list):
+                expected_scanners = [str(x).strip() for x in scanners if str(x).strip()]
         if not expected_scanners and isinstance(suite_json, Mapping):
             plan = suite_json.get("plan")
-            if isinstance(plan, Mapping) and isinstance(plan.get("scanners"), list):
-                expected_scanners = [str(x).strip() for x in plan.get("scanners") if str(x).strip()]
+            scanners = plan.get("scanners") if isinstance(plan, Mapping) else None
+            if isinstance(scanners, list):
+                expected_scanners = [str(x).strip() for x in scanners if str(x).strip()]
     except Exception:
         expected_scanners = []
 
@@ -153,15 +118,12 @@ def _load_suite_artifacts(suite_dir: Path) -> Tuple[SuiteArtifacts, List[str]]:
     if not dataset_csv.exists():
         dataset_csv = None
         warnings.append("triage_dataset.csv missing")
-
     if not tool_utility_csv.exists():
         tool_utility_csv = None
         warnings.append("triage_tool_utility.csv missing")
-
     if not calibration_json.exists():
         calibration_json = None
         warnings.append("triage_calibration.json missing")
-
     if not tool_marginal_csv.exists():
         tool_marginal_csv = None
 
@@ -240,10 +202,7 @@ def _dataset_counts(dataset_csv: Optional[Path]) -> Dict[str, Any]:
 def _load_calibration_weights(
     cal_path: Optional[Path],
 ) -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]:
-    """Return (global_weights, weights_by_owasp).
-
-    weights_by_owasp is best-effort from triage_calibration.json v2 shape.
-    """
+    """Return (global_weights, weights_by_owasp)."""
 
     if cal_path is None:
         return {}, {}
@@ -300,10 +259,7 @@ def _load_tool_utility(tool_utility_csv: Optional[Path]) -> Dict[str, Dict[str, 
 def _load_tool_marginal(
     tool_marginal_csv: Optional[Path],
 ) -> Dict[Tuple[str, str, int], Dict[str, Any]]:
-    """Best-effort loader for triage_tool_marginal.csv (PR6).
-
-    Returns dict keyed by (tool, strategy, k) with selected delta metrics.
-    """
+    """Best-effort loader for triage_tool_marginal.csv."""
 
     if tool_marginal_csv is None:
         return {}
@@ -320,11 +276,7 @@ def _load_tool_marginal(
 
         # Column names are best-effort; tolerate partial tables.
         row_out: Dict[str, Any] = {}
-        for key in (
-            "delta_precision",
-            "delta_gt_coverage",
-            "delta_neg_in_topk",
-        ):
+        for key in ("delta_precision", "delta_gt_coverage", "delta_neg_in_topk"):
             if key in r:
                 row_out[key] = _to_float(r.get(key), None)
 
@@ -332,3 +284,15 @@ def _load_tool_marginal(
             out[(tool, strat, int(k))] = row_out
 
     return out
+
+
+__all__ = [
+    "SuiteArtifacts",
+    "_dataset_counts",
+    "_extract_eval",
+    "_extract_gt_policy",
+    "_load_calibration_weights",
+    "_load_suite_artifacts",
+    "_load_tool_marginal",
+    "_load_tool_utility",
+]
