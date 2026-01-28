@@ -14,6 +14,7 @@ from typing import Any, Dict
 
 from pipeline.analysis.suite_report import (
     build_suite_report,
+    render_suite_report_html,
     render_suite_report_markdown,
     write_suite_report,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "build_suite_report",
     "write_suite_report",
     "render_suite_report_markdown",
+    "render_suite_report_html",
     "_render_markdown",
 ]
 

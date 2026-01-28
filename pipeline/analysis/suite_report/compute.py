@@ -252,6 +252,15 @@ def _build_pointers(
         "triage_eval_topk_csv": _existing_rel(
             out_tables / "triage_eval_topk.csv", suite_dir=suite_dir
         ),
+        "triage_eval_deltas_by_case_csv": _existing_rel(
+            out_tables / "triage_eval_deltas_by_case.csv", suite_dir=suite_dir
+        ),
+        "triage_tool_utility_csv": _existing_rel(
+            out_tables / "triage_tool_utility.csv", suite_dir=suite_dir
+        ),
+        "triage_tool_marginal_csv": _existing_rel(
+            out_tables / "triage_tool_marginal.csv", suite_dir=suite_dir
+        ),
         "triage_calibration_json": _existing_rel(
             analysis_dir / "triage_calibration.json", suite_dir=suite_dir
         ),
@@ -262,6 +271,9 @@ def _build_pointers(
             out_tables / "triage_calibration_report_by_owasp.csv", suite_dir=suite_dir
         ),
         "triage_eval_log": _existing_rel(analysis_dir / "triage_eval.log", suite_dir=suite_dir),
+        "triage_eval_readme": _existing_rel(
+            analysis_dir / "README_triage_eval.md", suite_dir=suite_dir
+        ),
         "qa_checklist_md": _existing_rel(analysis_dir / "qa_checklist.md", suite_dir=suite_dir),
         "qa_checklist_json": _existing_rel(analysis_dir / "qa_checklist.json", suite_dir=suite_dir),
         "qa_calibration_checklist_txt": _existing_rel(
@@ -318,9 +330,25 @@ def build_suite_report_model(inputs: SuiteReportInputs) -> Dict[str, Any]:
 
     case_rows = scan.case_rows
 
-    # Load macro eval metrics (best-effort)
-    topk_rows = _load_topk_csv(suite_dir, inputs.out_dirname)
-    macro = _compute_macro_from_topk_rows(topk_rows) if topk_rows else {}
+    # Load eval context (best-effort)
+    # Prefer triage_eval_summary.json (authoritative suite-level macro/micro)
+    # but fall back to deriving macro from triage_eval_topk.csv if needed.
+    triage_eval_summary = _safe_read_json(out_tables / "triage_eval_summary.json") or {}
+    macro: Dict[str, Any] = {}
+    micro: Dict[str, Any] = {}
+    delta_vs_baseline: Dict[str, Any] = {}
+
+    if isinstance(triage_eval_summary, dict):
+        if isinstance(triage_eval_summary.get("macro"), dict):
+            macro = triage_eval_summary.get("macro")  # type: ignore[assignment]
+        if isinstance(triage_eval_summary.get("micro"), dict):
+            micro = triage_eval_summary.get("micro")  # type: ignore[assignment]
+        if isinstance(triage_eval_summary.get("delta_vs_baseline"), dict):
+            delta_vs_baseline = triage_eval_summary.get("delta_vs_baseline")  # type: ignore[assignment]
+
+    if not macro:
+        topk_rows = _load_topk_csv(suite_dir, inputs.out_dirname)
+        macro = _compute_macro_from_topk_rows(topk_rows) if topk_rows else {}
 
     # Calibration context
     triage_cal = inputs.triage_calibration
@@ -375,6 +403,8 @@ def build_suite_report_model(inputs: SuiteReportInputs) -> Dict[str, Any]:
         "per_case": [asdict(r) for r in case_rows],
         "triage_eval": {
             "macro": macro,
+            "micro": micro,
+            "delta_vs_baseline": delta_vs_baseline,
         },
         "calibration": {
             "min_support_by_owasp": min_support_by_owasp,

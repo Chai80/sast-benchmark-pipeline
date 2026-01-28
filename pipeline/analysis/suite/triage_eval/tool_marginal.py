@@ -7,12 +7,19 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .io import _parse_tool_counts_json, _stable_tool_counts_json
-from .metrics import _compute_tool_cluster_counts, _micro_totals_for_rows, _metrics_from_totals, _to_int, _tools_for_row
-from .strategies import _build_marginal_strategies
+from .metrics import (
+    _compute_tool_cluster_counts,
+    _gt_ids_for_row,
+    _metrics_from_totals,
+    _micro_totals_for_rows,
+    _to_int,
+    _tools_for_row,
+)
 
+RankFn = Callable[[List[Dict[str, str]]], List[Dict[str, str]]]
 
 def _compute_tool_utility(
     *,
@@ -74,6 +81,29 @@ def _drop_tool_from_row(row: Dict[str, str], tool: str) -> Optional[Dict[str, st
         rr["triage_score_v1"] = ""
 
     return rr
+
+
+def _build_marginal_strategies(cal: Optional[Dict[str, Any]]) -> Dict[str, RankFn]:
+    """Strategies used for drop-one marginal value tables."""
+
+    # Local import avoids pulling strategy code into import-time side effects.
+    from .strategies import _rank_agreement, _rank_baseline, _rank_calibrated
+
+    strategies_marginal: Dict[str, RankFn] = {
+        "baseline": (lambda rows: _rank_baseline(rows, use_triage_rank=False)),
+        "agreement": _rank_agreement,
+    }
+
+    if cal:
+
+        def _rank_cal_m(
+            rows: List[Dict[str, str]], *, _cal: Dict[str, Any] = cal
+        ) -> List[Dict[str, str]]:
+            return _rank_calibrated(rows, cal=_cal)
+
+        strategies_marginal["calibrated"] = _rank_cal_m
+
+    return strategies_marginal
 
 
 def _drop_tool_by_case(

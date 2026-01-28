@@ -11,7 +11,9 @@ import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+
+RankFn = Callable[[List[Dict[str, str]]], List[Dict[str, str]]]
 
 
 def _to_int(x: Any, default: int = 0) -> int:
@@ -118,8 +120,13 @@ def _tools_for_row(r: Dict[str, str]) -> List[str]:
         return []
     return [t.strip() for t in raw.split(",") if t.strip()]
 
-RankFn = Callable[[List[Dict[str, str]]], List[Dict[str, str]]]
 
+@dataclass(frozen=True)
+class CaseEval:
+    case_id: str
+    has_gt: bool
+    gt_total: int
+    n_clusters: int
 
 
 def _micro_totals_for_rows(
@@ -169,7 +176,6 @@ def _micro_totals_for_rows(
     return out
 
 
-
 def _metrics_from_totals(t: Mapping[str, int]) -> Dict[str, Any]:
     denom = int(t.get("denom", 0) or 0)
     gt_total = int(t.get("gt_total", 0) or 0)
@@ -182,6 +188,7 @@ def _metrics_from_totals(t: Mapping[str, int]) -> Dict[str, Any]:
         "neg_in_topk": int(neg),
     }
 
+
 def _compute_tool_cluster_counts(
     *,
     all_tools: Sequence[str],
@@ -191,7 +198,6 @@ def _compute_tool_cluster_counts(
 ) -> Dict[str, Dict[str, int]]:
     """Counts used to contextualize marginal value rows."""
 
-    # Pre-seed keys so missing tools still appear with zeros.
     out: Dict[str, Dict[str, int]] = {
         str(t): {
             "clusters_with_tool": 0,
@@ -237,17 +243,8 @@ def _compute_tool_cluster_counts(
                 else:
                     out[tt]["clusters_exclusive_neg"] += 1
 
-    # Normalize types
     for t, d in out.items():
         out[t] = {k: int(v) for k, v in d.items()}
 
     return out
 
-
-
-@dataclass(frozen=True)
-class CaseEval:
-    case_id: str
-    has_gt: bool
-    gt_total: int
-    n_clusters: int

@@ -30,6 +30,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _stable_tool_counts_json(counts: Dict[str, int]) -> str:
+    """Deterministic JSON encoding for tool-count dicts."""
+
+    return json.dumps({k: int(v) for k, v in sorted(counts.items())}, sort_keys=True)
+
+
+def _parse_tool_counts_json(raw: str, fallback_tools: Sequence[str]) -> Dict[str, int]:
+    """Parse tool_counts_json, falling back to 1-per-tool from tools list."""
+
+    if raw:
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict):
+                out: Dict[str, int] = {}
+                for k, v in obj.items():
+                    kk = str(k).strip()
+                    if not kk:
+                        continue
+                    out[kk] = _to_int(v, 0)
+                out = {k: int(v) for k, v in out.items() if int(v) > 0}
+                if out:
+                    return out
+        except Exception:
+            pass
+
+    return {t: 1 for t in sorted(set(str(x) for x in fallback_tools if str(x).strip()))}
+
+
 
 def _stable_tool_counts_json(counts: Dict[str, int]) -> str:
     """Deterministic JSON encoding for tool-count dicts."""

@@ -375,6 +375,8 @@ def _qa_stage_write_manifest(
             write_qa_calibration_manifest,
         )
 
+        from pipeline.analysis.suite_report import DEFAULT_SUITE_REPORT_DIRNAME
+
         suite_dir = qa_ctx.suite_dir
 
         artifacts = {
@@ -387,8 +389,10 @@ def _qa_stage_write_manifest(
             "triage_eval_summary_json": str(
                 (suite_dir / "analysis" / "_tables" / "triage_eval_summary.json").resolve()
             ),
-            "suite_report_md": str((suite_dir / "analysis" / "suite_report.md").resolve()),
-            "suite_report_json": str((suite_dir / "analysis" / "suite_report.json").resolve()),
+            # Suite report outputs are written at the suite root in a dedicated folder.
+            "suite_report_md": str((suite_dir / DEFAULT_SUITE_REPORT_DIRNAME / "suite_report.md").resolve()),
+            "suite_report_json": str((suite_dir / DEFAULT_SUITE_REPORT_DIRNAME / "suite_report.json").resolve()),
+            "suite_summary_html": str((suite_dir / DEFAULT_SUITE_REPORT_DIRNAME / "suite_summary.html").resolve()),
             "triage_tool_utility_csv": str(
                 (suite_dir / "analysis" / "_tables" / "triage_tool_utility.csv").resolve()
             ),
@@ -477,6 +481,8 @@ def _qa_stage_write_suite_report(*, qa_ctx: QARunbookContext) -> Dict[str, Any]:
         print("\n📄 Suite report")
         print(f"  Markdown: {rep_paths.get('out_md')}")
         print(f"  JSON    : {rep_paths.get('out_json')}")
+        if rep_paths.get("out_html"):
+            print(f"  HTML    : {rep_paths.get('out_html')}")
     except Exception as e:
         print(f"\n⚠️  Failed to build suite_report: {e}")
         rep_paths = {}
@@ -496,16 +502,21 @@ def _qa_stage_append_suite_report_checks(
         from pipeline.analysis.qa.qa_calibration_runbook import QACheck
 
         suite_dir = qa_ctx.suite_dir
+        from pipeline.analysis.suite_report import DEFAULT_SUITE_REPORT_DIRNAME
+
         md_path = Path(
-            str(rep_paths.get("out_md") or (suite_dir / "analysis" / "suite_report.md"))
+            str(rep_paths.get("out_md") or (suite_dir / DEFAULT_SUITE_REPORT_DIRNAME / "suite_report.md"))
         ).resolve()
         js_path = Path(
-            str(rep_paths.get("out_json") or (suite_dir / "analysis" / "suite_report.json"))
+            str(rep_paths.get("out_json") or (suite_dir / DEFAULT_SUITE_REPORT_DIRNAME / "suite_report.json"))
+        ).resolve()
+        html_path = Path(
+            str(rep_paths.get("out_html") or (suite_dir / DEFAULT_SUITE_REPORT_DIRNAME / "suite_summary.html"))
         ).resolve()
 
         checks.append(
             QACheck(
-                name="analysis/suite_report.md exists",
+                name=f"{DEFAULT_SUITE_REPORT_DIRNAME}/suite_report.md exists",
                 ok=True,
                 warn=not md_path.exists(),
                 path=str(md_path),
@@ -514,11 +525,22 @@ def _qa_stage_append_suite_report_checks(
         )
         checks.append(
             QACheck(
-                name="analysis/suite_report.json exists",
+                name=f"{DEFAULT_SUITE_REPORT_DIRNAME}/suite_report.json exists",
                 ok=True,
                 warn=not js_path.exists(),
                 path=str(js_path),
                 detail="" if js_path.exists() else "missing",
+            )
+        )
+
+        # Optional but encouraged: suite summary HTML is a top-level consumption artifact.
+        checks.append(
+            QACheck(
+                name=f"{DEFAULT_SUITE_REPORT_DIRNAME}/suite_summary.html exists",
+                ok=True,
+                warn=not html_path.exists(),
+                path=str(html_path),
+                detail="" if html_path.exists() else "missing",
             )
         )
     except Exception as e:
