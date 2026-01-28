@@ -59,9 +59,13 @@ from __future__ import annotations
 import argparse
 from typing import Dict
 
+from cli.args.analyze import add_analyze_args
+from cli.args.base import add_base_args
+from cli.args.import_mode import add_import_mode_args
+from cli.args.suite import add_suite_args
+from cli.args.tool_overrides import add_tool_override_args
 from cli.dispatch import dispatch
 from pipeline.core import ROOT_DIR as PIPELINE_ROOT_DIR
-from pipeline.scanners import DEFAULT_SCANNERS_CSV, SUPPORTED_SCANNERS
 from pipeline.wiring import build_pipeline
 
 ROOT_DIR = PIPELINE_ROOT_DIR  # repo root
@@ -84,365 +88,20 @@ REPOS: Dict[str, Dict[str, str]] = {
 }
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Top-level CLI for SAST pipeline (Durinn).")
 
-    parser.add_argument(
-        "--mode",
-        choices=["scan", "benchmark", "suite", "analyze", "import"],
-        help=(
-            "scan = one tool, benchmark = multiple tools, suite = multi-case suite run (interactive/CSV/worktrees/replay file), "
-            "analyze = compute metrics from existing runs"
-        ),
-    )
-    parser.add_argument(
-        "--scanner",
-        choices=sorted(SUPPORTED_SCANNERS),
-        help="(scan mode) Which scanner to run",
-    )
-    parser.add_argument(
-        "--scanners",
-        help=f"(benchmark|suite mode) Comma-separated scanners (default: {DEFAULT_SCANNERS_CSV})",
-    )
+    add_base_args(parser, root_dir=ROOT_DIR, repo_keys=sorted(REPOS.keys()))
+    add_suite_args(parser)
+    add_analyze_args(parser, root_dir=ROOT_DIR)
+    add_import_mode_args(parser)
+    add_tool_override_args(parser)
 
-    parser.add_argument(
-        "--track",
-        type=str,
-        default=None,
-        help=(
-            "Optional benchmark track to scope scoring/execution (e.g. sast|sca|iac|secrets). "
-            "If omitted, scoring considers all GT tracks present in the repo."
-        ),
-    )
+    return parser
 
-    # Suite layout
-    parser.add_argument(
-        "--suite-root",
-        "--bundle-root",
-        dest="suite_root",
-        default=str(ROOT_DIR / "runs" / "suites"),
-        help="Base directory for suite runs (default: runs/suites).",
-    )
-    parser.add_argument(
-        "--suite-id",
-        "--bundle-id",
-        dest="suite_id",
-        help=(
-            "Suite run id to create/use. If omitted in scan/benchmark, a new UTC timestamp is used. "
-            "In analyze mode, omit to use LATEST (recommended), or pass --suite-id latest explicitly."
-        ),
-    )
 
-    parser.add_argument(
-        "--suite-file",
-        dest="suite_file",
-        help=(
-            "(suite mode) Optional Python *replay file* (.py exporting SUITE_DEF or SUITE_RAW). "
-            "Think of this as a replay button for an interactively curated suite (usually saved under runs/suites/<suite_id>/replay/). "
-            "If omitted, you can build a suite interactively "
-            "or use --cases-from / --worktrees-root to load many cases quickly. "
-            "suite.json/case.json/run.json are always written as the ground-truth record of what actually ran."
-        ),
-    )
-
-    parser.add_argument(
-        "--cases-from",
-        dest="cases_from",
-        help=(
-            "(suite mode) Load cases from a CSV file (columns: case_id,repo_path[,label][,branch][,track][,tags_json]). "
-            "Recommended locations: examples/suite_inputs/ (portable) or inputs/suite_inputs/ (local, ignored). "
-            "Useful for CI runs or when you need an explicit case list."
-        ),
-    )
-
-    parser.add_argument(
-        "--worktrees-root",
-        dest="worktrees_root",
-        help=(
-            "(suite mode) Import cases by discovering git worktrees/checkouts under this folder (recommended for branch-per-case suites). "
-            "Each git checkout becomes one case. Example: repos/worktrees/durinn-owasp2021-python-micro-suite"
-        ),
-    )
-
-    parser.add_argument(
-        "--branches",
-        dest="branches",
-        default=None,
-        help=(
-            "(suite mode) When used with --repo-url, bootstrap a git worktrees root containing these branches. "
-            "Comma-separated; supports OWASP-ish ranges like 'A01-A10'. "
-            "Example: --repo-url https://... --branches A03,A07"
-        ),
-    )
-
-    parser.add_argument(
-        "--max-cases",
-        dest="max_cases",
-        type=int,
-        default=None,
-        help="(suite mode) When loading cases from --cases-from/--worktrees-root, only include the first N cases.",
-    )
-
-    parser.add_argument(
-        "--case-id",
-        dest="case_id",
-        help=(
-            "Override the case id within the suite (folder name under runs/suites/<suite_id>/cases/<case_id>/). "
-            "If omitted, we derive it from the repo name. Useful for branch-per-case micro-suites."
-        ),
-    )
-    parser.add_argument(
-        "--case-path",
-        "--bundle-path",
-        dest="case_path",
-        help="(analyze mode) Path to an existing case dir (overrides --suite-root/--suite-id).",
-    )
-    parser.add_argument(
-        "--no-suite",
-        "--no-bundle",
-        dest="no_suite",
-        action="store_true",
-        help="Disable suite layout and use legacy runs/<tool>/<repo>/<run_id>/... paths.",
-    )
-    parser.add_argument(
-        "--skip-analysis",
-        action="store_true",
-        help="(benchmark|suite mode) Skip the analysis suite step (scans only).",
-    )
-
-    # QA runbook: triage calibration (suite mode)
-    parser.add_argument(
-        "--qa-calibration",
-        dest="qa_calibration",
-        action="store_true",
-        help=(
-            "(suite mode) Run the triage-calibration QA runbook: run suite, build calibration artifacts, "
-            "re-run analysis so per-case triage_queue includes populated triage_score_v1, then validate outputs."
-        ),
-    )
-    parser.add_argument(
-        "--qa-scope",
-        dest="qa_scope",
-        choices=["smoke", "full"],
-        default="smoke",
-        help=(
-            "(suite mode, --qa-calibration) Which default OWASP set to run: "
-            "smoke=A03+A07, full=A01..A10. Overridden by --qa-owasp or --qa-cases."
-        ),
-    )
-    parser.add_argument(
-        "--qa-owasp",
-        dest="qa_owasp",
-        default=None,
-        help=(
-            "(suite mode, --qa-calibration) Override OWASP selection, e.g. 'A03,A07' or 'A01-A10'. "
-            "If provided, this filters cases by OWASP id when the suite is OWASP-structured."
-        ),
-    )
-    parser.add_argument(
-        "--qa-cases",
-        dest="qa_cases",
-        default=None,
-        help=(
-            "(suite mode, --qa-calibration) Optional case selectors to include (comma-separated). "
-            "Each selector is treated as a substring/glob matched against case_id/branch/label. "
-            "If provided, overrides --qa-scope/--qa-owasp and works for non-OWASP suites too."
-        ),
-    )
-    parser.add_argument(
-        "--qa-no-reanalyze",
-        dest="qa_no_reanalyze",
-        action="store_true",
-        help=(
-            "(suite mode, --qa-calibration) Skip the extra analyze pass that recomputes per-case triage_queue.csv "
-            "using the newly built suite calibration. Useful for debugging."
-        ),
-    )
-
-    # Analysis / metrics
-    parser.add_argument(
-        "--metric",
-        choices=["hotspots", "suite", "suite_compare"],
-        help="(analyze mode) Metric to compute (hotspots|suite|suite_compare)",
-    )
-
-    # Suite-to-suite compare (analyze mode)
-    parser.add_argument(
-        "--compare-suites",
-        dest="compare_suites",
-        default=None,
-        help=(
-            "(analyze mode, --metric suite_compare) Compare two suites and write a drift report. "
-            "Format: 'A,B'. Each value may be a suite_id folder name under --suite-root or a special ref: "
-            "latest|previous. Example: --compare-suites latest,previous or --compare-suites 20260101T...,20260105T..."
-        ),
-    )
-    parser.add_argument(
-        "--compare-latest-previous",
-        dest="compare_latest_previous",
-        action="store_true",
-        help=(
-            "(analyze mode, --metric suite_compare) Convenience: compare LATEST vs the previous suite under --suite-root. "
-            "If no explicit compare flags are provided, this is the default behavior."
-        ),
-    )
-    parser.add_argument(
-        "--compare-latest-to",
-        dest="compare_latest_to",
-        default=None,
-        help=(
-            "(analyze mode, --metric suite_compare) Convenience: compare LATEST vs the given suite_id. "
-            "Example: --compare-latest-to 20260101T000000Z"
-        ),
-    )
-    parser.add_argument(
-        "--tools",
-        help=f"(analyze mode) Comma-separated tools to include (default: {DEFAULT_SCANNERS_CSV})",
-    )
-    parser.add_argument(
-        "--runs-dir",
-        default=str(ROOT_DIR / "runs"),
-        help="(analyze mode, legacy) Base runs directory (default: <repo_root>/runs)",
-    )
-    parser.add_argument(
-        "--format",
-        choices=["text", "json"],
-        default="text",
-        help="(analyze mode) Output format (default: text)",
-    )
-    parser.add_argument(
-        "--out",
-        help="(analyze mode) Optional output path to write the JSON report",
-    )
-    parser.add_argument(
-        "--analysis-out-dir",
-        help=(
-            "(analyze mode, suite) Optional output directory for suite artifacts. "
-            "If using suites, default is <case>/analysis/."
-        ),
-    )
-    parser.add_argument(
-        "--tolerance",
-        type=int,
-        default=3,
-        help="(analysis suite) Line clustering tolerance for location matrix (default: 3)",
-    )
-    parser.add_argument(
-        "--gt-tolerance",
-        type=int,
-        default=0,
-        help=(
-            "(analysis suite) GT scoring line-match tolerance (default: 0). "
-            "NOTE: gt_score is intended for benchmark/test suites with ground truth markers/YAML. "
-            "This affects only gt_score; it does NOT change location clustering/triage."
-        ),
-    )
-    parser.add_argument(
-        "--gt-tolerance-sweep",
-        default=None,
-        help=(
-            "(suite qa-calibration) Deterministically sweep multiple GT tolerances and write a comparison report. "
-            "Value is a comma-separated list of ints, e.g. '0,1,2,3,5,10'. "
-            "Writes runs/suites/<suite_id>/analysis/_tables/gt_tolerance_sweep_report.csv and snapshots under "
-            "runs/suites/<suite_id>/analysis/_sweeps/gt_tol_<t>/."
-        ),
-    )
-    parser.add_argument(
-        "--gt-tolerance-auto",
-        action="store_true",
-        help=(
-            "(suite qa-calibration) Pick a GT tolerance deterministically (no prompts). "
-            "Uses --gt-tolerance-sweep candidates when provided; otherwise defaults to '0,1,2,3,5,10'."
-        ),
-    )
-    parser.add_argument(
-        "--gt-tolerance-auto-min-fraction",
-        type=float,
-        default=0.95,
-        help=(
-            "(suite qa-calibration) Auto selection rule: choose the smallest tolerance achieving >= this fraction of "
-            "the maximum GT-positive clusters observed in the sweep (default: 0.95)."
-        ),
-    )
-    parser.add_argument(
-        "--gt-source",
-        choices=["auto", "markers", "yaml", "none"],
-        default="auto",
-        help=(
-            "(analysis suite) GT source selection (default: auto). "
-            "NOTE: gt_score is intended for benchmark/test suites (cases with GT markers or gt_catalog.yaml). "
-            "auto = markers then YAML if present. "
-            "markers = require inline markers like '# DURINN_GT id=a07_01 track=sast set=core owasp=A07'. "
-            "yaml = require benchmark/gt_catalog.yaml (copied to <case>/gt/gt_catalog.yaml). "
-            "none = skip GT scoring."
-        ),
-    )
-    parser.add_argument(
-        "--analysis-filter",
-        choices=["security", "all"],
-        default="security",
-        help="(analysis suite) Finding filter mode (default: security)",
-    )
-    parser.add_argument(
-        "--max-unique",
-        type=int,
-        default=25,
-        help="(analyze hotspots) For text output, show up to N unique files per tool (default: 25)",
-    )
-    parser.add_argument(
-        "--runs-repo-name",
-        help=(
-            "(analyze mode) Override the repo directory name under runs/<tool>/. "
-            "By default we derive it from the repo URL (e.g., juice-shop) or local folder name."
-        ),
-    )
-
-    # Legacy import: migrate runs/<tool>/... into suite layout
-    parser.add_argument(
-        "--import-run-id",
-        default="latest",
-        help=(
-            "(import mode) Which legacy run_id folder to import for each tool. \n            Default: 'latest'. You can also pass an explicit run id like '20260101011234'."
-        ),
-    )
-    parser.add_argument(
-        "--import-link-mode",
-        choices=["copy", "hardlink"],
-        default="copy",
-        help=(
-            "(import mode) File transfer strategy when importing legacy outputs into a suite. \n            'copy' is safest; 'hardlink' is faster and saves disk when supported."
-        ),
-    )
-
-    # Repo selection
-    parser.add_argument(
-        "--repo-key", choices=sorted(REPOS.keys()), help="Preset repo key (recommended)"
-    )
-    parser.add_argument("--repo-url", help="Custom git repo URL")
-    parser.add_argument("--repo-path", help="Local repo path (skip clone)")
-
-    # Sonar-specific
-    parser.add_argument(
-        "--sonar-project-key",
-        help="(sonar only) Override SonarCloud project key. If omitted, we derive ORG_<repo_id>.",
-    )
-    # Aikido-specific
-    parser.add_argument(
-        "--aikido-git-ref",
-        help=(
-            "(aikido only) Override the git reference passed to scan_aikido.py as --git-ref. "
-            "Use this when running aikido with --repo-path and no --repo-url (e.g., suite branch clones/worktrees). "
-            "Example: Chai80/durinn-owasp2021-python-micro-suite"
-        ),
-    )
-
-    parser.add_argument("--dry-run", action="store_true", help="Print commands but do not execute")
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Suppress scanner stdout/stderr (not recommended for debugging)",
-    )
-
+def parse_args() -> argparse.Namespace:
+    parser = build_parser()
     args = parser.parse_args()
 
     # Backwards-compatible attribute aliases (legacy bundle terminology).
@@ -454,6 +113,7 @@ def parse_args() -> argparse.Namespace:
     args.no_bundle = args.no_suite
 
     return args
+
 
 
 def main() -> None:
