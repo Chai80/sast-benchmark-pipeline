@@ -18,6 +18,22 @@ Notes (refactor-aware):
 - QA calibration runbook lives in `pipeline/analysis/qa_calibration_runbook/` (legacy wrapper: `pipeline/analysis/qa/qa_calibration_runbook.py`).
 - Suite CLI runbook lives in `cli/commands/suite/runbook.py` with step modules in `cli/commands/suite/runbook_steps/`.
 
+---
+
+## Analytics star schema
+
+This diagram shows the **analytics-facing** star schema we export for each suite run.
+
+![Analytics star schema](diagrams/analytics_star_schema.svg)
+
+Source (Graphviz): `diagrams/analytics_star_schema.dot`
+
+The exported CSV tables are written to:
+
+`runs/suites/<suite_id>/AnalyticsMart/`
+
+See `docs/analytics_mart.md` for table definitions and example queries.
+
 ## End-to-end pipeline
 
 ```mermaid

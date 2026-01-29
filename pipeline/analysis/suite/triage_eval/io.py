@@ -265,6 +265,21 @@ def write_tables_and_summary(
         logger.warning(msg)
         _append_best_effort_warning(out_log=paths.out_log, message=msg)
 
+    # Best-effort: export an analytics-friendly star schema to the suite root.
+    # This is intentionally read-only and should never fail the eval build.
+    try:
+        from pipeline.analysis.analytics_mart import write_analytics_mart
+
+        write_analytics_mart(
+            suite_dir=suite_dir,
+            suite_id=str(suite_id),
+            out_dirname="AnalyticsMart",
+        )
+    except Exception as e:
+        msg = f"Failed to build AnalyticsMart exports (best-effort): {e}"
+        logger.warning(msg)
+        _append_best_effort_warning(out_log=paths.out_log, message=msg)
+
 
 def _write_best_effort_log(
     *,
