@@ -183,6 +183,18 @@ def extract_gt_markers(
             if not rel:
                 continue
 
+            # Avoid treating documentation examples (README/docs/*.md) as GT.
+            # Suites sometimes include marker examples in README/docs; those should not
+            # silently become ground truth.
+            name_lower = p.name.lower()
+            rel_lower = rel.lower()
+            if name_lower.startswith("readme"):
+                continue
+            if rel_lower.startswith("docs/") or rel_lower.startswith("doc/"):
+                continue
+            if p.suffix.lower() in {".md", ".rst"}:
+                continue
+
             try:
                 text = p.read_text(encoding="utf-8", errors="ignore")
             except Exception:

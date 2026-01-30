@@ -33,8 +33,12 @@ class CaseRow:
     gt_score_json: Optional[str]
     gt_gap_queue_csv: Optional[str]
     hotspot_pack_json: Optional[str]
-    # tool findings counts (best-effort)
+    # Tool findings counts (best-effort)
+    #
+    # - tool_findings: raw count from normalized.json (before Durinn analysis filters)
+    # - tool_findings_filtered: count after Durinn filters (mode + exclude_prefixes/include_harness)
     tool_findings: Dict[str, Optional[int]]
+    tool_findings_filtered: Dict[str, Optional[int]]
 
 
 @dataclass(frozen=True)
@@ -77,4 +81,7 @@ class _CaseScanSummary:
     cases_missing_outputs: List[str]
     cases_no_clusters: List[str]
     cases_analyzed_ok: List[str]
+    # Tools with 0 raw findings (normalized.json count)
     empty_tool_cases: Dict[str, List[str]]
+    # Tools that had findings, but all were filtered out by Durinn filters (raw>0, filtered==0)
+    filtered_to_zero_tool_cases: Dict[str, List[str]]

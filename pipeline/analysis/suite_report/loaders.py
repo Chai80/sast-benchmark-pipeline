@@ -13,6 +13,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from pipeline.analysis.utils.filters import filter_findings
+from pipeline.analysis.utils.path_norm import is_excluded_path
+
 from .model import CaseRow, SuiteReportInputs, _CaseScanSummary
 
 
@@ -133,6 +136,49 @@ def _count_normalized_findings(normalized_json_path: Path) -> Optional[int]:
     except Exception:
         return None
     return None
+
+
+def _count_filtered_findings(
+    normalized_json_path: Path,
+    *,
+    tool: str,
+    mode: str,
+    repo_name: str,
+    exclude_prefixes: Sequence[str] | None,
+) -> Optional[int]:
+    """Count findings after Durinn analysis filters (best-effort).
+
+    This mirrors the filtering used during analysis:
+      1) mode filter (security vs all)
+      2) scope filter (exclude_prefixes / include_harness default)
+    """
+
+    try:
+        data = _read_json(normalized_json_path)
+        findings = data.get("findings") or []
+        if not isinstance(findings, list):
+            findings = []
+
+        # 1) Mode filter (security vs all)
+        findings_f = filter_findings(str(tool), findings, mode=str(mode))
+
+        # 2) Scope filter (exclude_prefixes)
+        ex = exclude_prefixes or ()
+        if ex:
+            findings_f = [
+                f
+                for f in findings_f
+                if isinstance(f, dict)
+                and not is_excluded_path(
+                    str(f.get("file_path") or ""),
+                    repo_name=str(repo_name or ""),
+                    exclude_prefixes=ex,
+                )
+            ]
+
+        return len(findings_f)
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +414,10 @@ def _collect_case_rows(
     # For action items: track tool findings == 0 in any case
     empty_tool_cases: Dict[str, List[str]] = {}
 
+    # For action items: track cases where a tool produced findings, but all were
+    # filtered out by analysis (raw>0, filtered==0).
+    filtered_to_zero_tool_cases: Dict[str, List[str]] = {}
+
     for cid in case_ids:
         case_dir = suite_dir / "cases" / cid
         manifest_path = case_dir / out_dirname / "analysis_manifest.json"
@@ -399,6 +449,7 @@ def _collect_case_rows(
                     else None,
                     hotspot_pack_json=None,
                     tool_findings={},
+                    tool_findings_filtered={},
                 )
             )
             continue
@@ -467,17 +518,43 @@ def _collect_case_rows(
         gt_score_path = case_dir / "gt" / "gt_score.json"
         gt_gap_csv = case_dir / "gt" / "gt_gap_queue.csv"
 
+        # Context used to reproduce analysis filtering for counts.
+        mode = str(ctx.get("mode") or "security")
+        exclude_prefixes = (
+            ctx.get("exclude_prefixes")
+            if isinstance(ctx.get("exclude_prefixes"), (list, tuple))
+            else []
+        )
+        exclude_prefixes = [str(x) for x in (exclude_prefixes or []) if str(x).strip()]
+        repo_name = str(ctx.get("repo_name") or "")
+
         # Tool findings counts (best-effort)
         tool_findings: Dict[str, Optional[int]] = {}
+        tool_findings_filtered: Dict[str, Optional[int]] = {}
         for t, p in normalized_paths.items():
             resolved = _try_resolve_path(str(p), suite_dir=suite_dir)
             if resolved is None:
                 tool_findings[str(t)] = None
+                tool_findings_filtered[str(t)] = None
                 continue
-            n = _count_normalized_findings(resolved)
-            tool_findings[str(t)] = n
-            if n == 0:
+
+            raw_n = _count_normalized_findings(resolved)
+            tool_findings[str(t)] = raw_n
+
+            filtered_n = _count_filtered_findings(
+                resolved,
+                tool=str(t),
+                mode=mode,
+                repo_name=repo_name,
+                exclude_prefixes=exclude_prefixes,
+            )
+            tool_findings_filtered[str(t)] = filtered_n
+
+            if raw_n == 0:
                 empty_tool_cases.setdefault(str(t), []).append(cid)
+
+            if isinstance(raw_n, int) and raw_n > 0 and filtered_n == 0:
+                filtered_to_zero_tool_cases.setdefault(str(t), []).append(cid)
 
         case_rows.append(
             CaseRow(
@@ -499,6 +576,7 @@ def _collect_case_rows(
                 gt_gap_queue_csv=_rel(gt_gap_csv, suite_dir) if gt_gap_csv.exists() else None,
                 hotspot_pack_json=hotspot_pack,
                 tool_findings=tool_findings,
+                tool_findings_filtered=tool_findings_filtered,
             )
         )
 
@@ -510,4 +588,5 @@ def _collect_case_rows(
         cases_no_clusters=cases_no_clusters,
         cases_analyzed_ok=cases_analyzed_ok,
         empty_tool_cases=empty_tool_cases,
+        filtered_to_zero_tool_cases=filtered_to_zero_tool_cases,
     )

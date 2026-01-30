@@ -157,6 +157,7 @@ def _build_action_items(
     cases_missing_outputs: Sequence[str],
     cases_no_clusters: Sequence[str],
     empty_tool_cases: Dict[str, List[str]],
+    filtered_to_zero_tool_cases: Dict[str, List[str]],
     min_support_by_owasp: Optional[int],
     owasp_fallback: Sequence[str],
     case_rows: Sequence[CaseRow],
@@ -206,6 +207,15 @@ def _build_action_items(
             action_items.append(
                 f"{tool} produced empty results (0 findings) for {len(cids)} case(s) (e.g., {examples}{extra}). "
                 "Check scanner enablement/auth/config for that repo."
+            )
+
+    for tool, cids in sorted(filtered_to_zero_tool_cases.items()):
+        if cids:
+            examples = ", ".join(cids[:3])
+            extra = "" if len(cids) <= 3 else f" (+{len(cids)-3} more)"
+            action_items.append(
+                f"{tool} produced findings, but 0 survived filtering for {len(cids)} case(s) (e.g., {examples}{extra}). "
+                "This usually means findings landed only in excluded paths (e.g., benchmark/ harness) or were filtered by mode."
             )
 
     if owasp_fallback and isinstance(min_support_by_owasp, int):
@@ -366,6 +376,7 @@ def build_suite_report_model(inputs: SuiteReportInputs) -> Dict[str, Any]:
         cases_missing_outputs=scan.cases_missing_outputs,
         cases_no_clusters=scan.cases_no_clusters,
         empty_tool_cases=scan.empty_tool_cases,
+        filtered_to_zero_tool_cases=scan.filtered_to_zero_tool_cases,
         min_support_by_owasp=min_support_by_owasp,
         owasp_fallback=owasp_fallback,
         case_rows=case_rows,
@@ -399,6 +410,9 @@ def build_suite_report_model(inputs: SuiteReportInputs) -> Dict[str, Any]:
             "tools_used_union": sorted(list(scan.tools_used_union)),
             "tools_missing_union": sorted(list(scan.tools_missing_union)),
             "empty_tool_cases": {k: list(v) for k, v in scan.empty_tool_cases.items()},
+            "filtered_to_zero_tool_cases": {
+                k: list(v) for k, v in scan.filtered_to_zero_tool_cases.items()
+            },
         },
         "per_case": [asdict(r) for r in case_rows],
         "triage_eval": {

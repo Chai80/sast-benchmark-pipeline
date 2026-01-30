@@ -70,6 +70,7 @@ def render_suite_report_html(
     tools_used_union = exec_.get("tools_used_union") or []
     tools_missing_union = exec_.get("tools_missing_union") or []
     empty_tool_cases = exec_.get("empty_tool_cases") or {}
+    filtered_to_zero_tool_cases = exec_.get("filtered_to_zero_tool_cases") or {}
 
     macro = triage_eval.get("macro") if isinstance(triage_eval.get("macro"), dict) else {}
     micro = triage_eval.get("micro") if isinstance(triage_eval.get("micro"), dict) else {}
@@ -171,9 +172,28 @@ def render_suite_report_html(
     # Empty tool outputs (expandable)
     if isinstance(empty_tool_cases, dict) and any(v for v in empty_tool_cases.values()):
         parts.append("  <details>")
-        parts.append("    <summary>Empty tool outputs</summary>")
+        parts.append("    <summary>Empty tool outputs (raw)</summary>")
         parts.append("    <ul>")
         for tool, cids in sorted(empty_tool_cases.items()):
+            if not cids:
+                continue
+            items = ", ".join([f"<code>{escape(str(c))}</code>" for c in cids])
+            parts.append(f"      <li><code>{escape(str(tool))}</code>: {items}</li>")
+        parts.append("    </ul>")
+        parts.append("  </details>")
+
+    # Tool outputs that were fully filtered away (raw>0, filtered==0).
+    if isinstance(filtered_to_zero_tool_cases, dict) and any(
+        v for v in filtered_to_zero_tool_cases.values()
+    ):
+        parts.append("  <details>")
+        parts.append("    <summary>Tool outputs filtered to zero</summary>")
+        parts.append(
+            "    <p class='hint'>These tools emitted findings, but 0 survived Durinn filtering (mode + exclude_prefixes/include_harness). "
+            "This often means the findings were only in excluded paths like <code>benchmark/</code>.</p>"
+        )
+        parts.append("    <ul>")
+        for tool, cids in sorted(filtered_to_zero_tool_cases.items()):
             if not cids:
                 continue
             items = ", ".join([f"<code>{escape(str(c))}</code>" for c in cids])
@@ -344,7 +364,7 @@ def render_suite_report_html(
             "    <thead><tr>"
             "<th>case_id</th>"
             "<th class='num'>clusters</th>"
-            "<th class='num'>triage_rows</th>"
+            "<th class='num'>triage_rows</th>""<th>findings raw→filtered</th>"
             "<th class='num'>gt_matched</th>"
             "<th class='num'>gt_total</th>"
             "<th class='num'>match_rate</th>"
@@ -359,6 +379,27 @@ def render_suite_report_html(
             parts.append(f"        <td><code>{escape(row.get('case_id') or '')}</code></td>")
             parts.append(f"        <td class='num'>{escape(str(row.get('clusters') or 0))}</td>")
             parts.append(f"        <td class='num'>{escape(str(row.get('triage_rows') or 0))}</td>")
+
+            # Raw vs filtered findings per tool (helps explain "not empty, but nothing survived filtering").
+            raw_map = row.get("tool_findings") if isinstance(row.get("tool_findings"), dict) else {}
+            fil_map = (
+                row.get("tool_findings_filtered")
+                if isinstance(row.get("tool_findings_filtered"), dict)
+                else {}
+            )
+            bits: List[str] = []
+            for t in sorted(raw_map.keys()):
+                raw_n = raw_map.get(t)
+                fil_n = fil_map.get(t)
+                if raw_n is None and fil_n is None:
+                    continue
+                raw_s = "?" if raw_n is None else str(raw_n)
+                fil_s = "?" if fil_n is None else str(fil_n)
+                bits.append(
+                    f"<code>{escape(str(t))}</code>: {escape(raw_s)}→{escape(fil_s)}"
+                )
+            findings_cell = "<br>".join(bits) if bits else "-"
+            parts.append(f"        <td class='mono'>{findings_cell}</td>")
             parts.append(f"        <td class='num'>{escape(str(row.get('gt_matched') or 0))}</td>")
             parts.append(f"        <td class='num'>{escape(str(row.get('gt_total') or 0))}</td>")
             parts.append(f"        <td class='num'>{_fmt_float(row.get('match_rate'))}</td>")

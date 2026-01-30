@@ -10,21 +10,16 @@ This module keeps the resolver and mapping logic away from the stage wrapper.
 
 import json
 from collections import Counter, defaultdict
-from pathlib import Path
 from typing import Any, Dict, List, Mapping
 
+from pipeline.core import ROOT_DIR
 from sast_benchmark.normalize.classification import resolve_owasp_and_cwe
-
-
-def _repo_root() -> Path:
-    # .../pipeline/analysis/compute/taxonomy.py -> repo root is parents[4]
-    return Path(__file__).resolve().parents[4]
 
 
 def load_cwe_to_owasp_map() -> Dict[str, Any]:
     """Load the CWE->OWASP mapping JSON shipped with the repo."""
 
-    p = _repo_root() / "mappings" / "cwe_to_owasp_top10_mitre.json"
+    p = ROOT_DIR / "mappings" / "cwe_to_owasp_top10_mitre.json"
     data = json.loads(p.read_text(encoding="utf-8"))
     m = data.get("cwe_to_owasp") or {}
     return m if isinstance(m, dict) else {}

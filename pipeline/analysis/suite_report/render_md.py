@@ -47,6 +47,7 @@ def _render_execution_summary_lines(
     tools_used: Sequence[Any],
     tools_missing: Sequence[Any],
     empty_tool_cases: Dict[str, Any],
+    filtered_to_zero_tool_cases: Dict[str, Any],
 ) -> List[str]:
     lines: List[str] = []
 
@@ -65,8 +66,19 @@ def _render_execution_summary_lines(
 
     if empty_tool_cases:
         lines.append("")
-        lines.append("### Empty tool outputs")
+        lines.append("### Empty tool outputs (raw)")
         for tool, cids in sorted(empty_tool_cases.items()):
+            if not cids:
+                continue
+            lines.append(f"- `{tool}`: {', '.join([f'`{c}`' for c in cids])}")
+
+    if filtered_to_zero_tool_cases:
+        lines.append("")
+        lines.append("### Tool outputs filtered to zero")
+        lines.append(
+            "- These tools emitted findings, but 0 survived Durinn filtering (mode + exclude_prefixes/include_harness)."
+        )
+        for tool, cids in sorted(filtered_to_zero_tool_cases.items()):
             if not cids:
                 continue
             lines.append(f"- `{tool}`: {', '.join([f'`{c}`' for c in cids])}")
@@ -290,6 +302,7 @@ def _render_markdown(report: Dict[str, Any]) -> str:
     tools_used = exec_.get("tools_used_union") or []
     tools_missing = exec_.get("tools_missing_union") or []
     empty_tool_cases = exec_.get("empty_tool_cases") or {}
+    filtered_to_zero_tool_cases = exec_.get("filtered_to_zero_tool_cases") or {}
 
     macro = triage_eval.get("macro") if isinstance(triage_eval.get("macro"), dict) else {}
 
@@ -345,6 +358,7 @@ def _render_markdown(report: Dict[str, Any]) -> str:
             tools_used=tools_used,
             tools_missing=tools_missing,
             empty_tool_cases=empty_tool_cases,
+            filtered_to_zero_tool_cases=filtered_to_zero_tool_cases,
         )
     )
 
