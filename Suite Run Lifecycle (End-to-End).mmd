@@ -1,0 +1,24 @@
+sequenceDiagram
+  autonumber
+
+  participant CLI as CLI (sast_cli.py)
+  participant RES as Suite resolver (pipeline/suites)
+  participant EXE as Execution (pipeline/execution)
+  participant TOOL as Tool scan entrypoint (tools/scan_*.py)
+  participant ANA as Analysis + exports (pipeline/analysis)
+  participant FS as runs/ (filesystem)
+
+  CLI->>RES: resolve suite (suite mode)
+  RES->>FS: write suite.json (plan) and create dirs
+
+  CLI->>EXE: run cases (repeat per case)
+  EXE->>TOOL: run scan subprocess (repeat per tool)
+  TOOL->>FS: write run artifacts (raw, metadata.json, normalized.json)
+
+  EXE->>FS: write receipts (run.json and config_receipt.json)
+  EXE->>FS: write or update manifests (case.json, suite.json, summary.csv)
+
+  EXE->>ANA: optional: run analysis and exports
+  ANA->>FS: write derived outputs (analysis dirs, tables, packs, reports)
+
+  Note over FS: Bronze immutable per run_id, Silver normalized.json is canonical, Gold is derived and regeneratable
