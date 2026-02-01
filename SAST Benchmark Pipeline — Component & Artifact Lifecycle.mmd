@@ -1,24 +1,57 @@
-sequenceDiagram
-  autonumber
+flowchart LR
+  %% Durinn SAST Benchmark Pipeline — Component Diagram (static)
 
-  participant CLI as CLI (sast_cli.py)
-  participant RES as Suite resolver (pipeline/suites)
-  participant EXE as Execution (pipeline/execution)
-  participant TOOL as Tool scan entrypoint (tools/scan_*.py)
-  participant ANA as Analysis + exports (pipeline/analysis)
-  participant FS as runs/ (filesystem)
+  subgraph CLI["CLI"]
+    direction TB
+    CLI_LAYER["CLI Layer<br/>(sast_cli.py, cli/*)<br/>Entry point"]
+  end
 
-  CLI->>RES: resolve suite (suite mode)
-  RES->>FS: write suite.json (plan) and create dirs
+  subgraph SUITE["Suite planning"]
+    direction LR
+    PLAN["Planning / Resolver<br/>(cli/commands/suite/runbook_steps/resolve.py,<br/> pipeline/suites/suite_resolver.py)<br/>Suite mode (scan/benchmark can skip)"]
+    MANIFESTS["suite.json + summary.csv + cases/*/case.json<br/>(runs/suites/...)<br/>Source-of-truth manifests<br/>(pipeline/suites/suite_resolver.py, pipeline/suites/manifests.py)"]
+    PLAN -->|writes plan| MANIFESTS
+  end
 
-  CLI->>EXE: run cases (repeat per case)
-  EXE->>TOOL: run scan subprocess (repeat per tool)
-  TOOL->>FS: write run artifacts (raw, metadata.json, normalized.json)
+  subgraph EXEC["Execution"]
+    direction LR
+    ORCH["Execution / Orchestration<br/>(pipeline/execution/run_case.py,<br/> plan.py, runner.py, record.py)<br/>Run lifecycle + coordination"]
+    RECEIPTS["run.json + config_receipt.json (+ logs/ if present)<br/>(per tool run; receipts written by<br/> pipeline/execution/record.py)"]
+    ORCH -->|writes| RECEIPTS
+  end
 
-  EXE->>FS: write receipts (run.json and config_receipt.json)
-  EXE->>FS: write or update manifests (case.json, suite.json, summary.csv)
+  subgraph TOOLS["Tools"]
+    direction LR
+    TOOL_ENTRY["Tool entrypoints + adapters<br/>(tools/scan_*.py, tools/*/)<br/>Stable subprocess boundary"]
+    TOOL_ARTIFACTS["raw.* + metadata.json + normalized.json<br/>normalized.json = canonical contract<br/>(normalized-schema.md,<br/> sast_benchmark/normalize/*)"]
+    TOOL_ENTRY -->|writes| TOOL_ARTIFACTS
+  end
 
-  EXE->>ANA: optional: run analysis and exports
-  ANA->>FS: write derived outputs (analysis dirs, tables, packs, reports)
+  subgraph ANALYSIS["Analysis"]
+    direction LR
+    ANA_FW["Analysis framework + stages<br/>(pipeline/analysis/framework,<br/> pipeline/analysis/stages/*)<br/>Can be rerun from artifacts"]
+    ANA_OUT["analysis/* + manifests<br/>Derived, regeneratable"]
+    ANA_FW -->|writes| ANA_OUT
+  end
 
-  Note over FS: Bronze immutable per run_id, Silver normalized.json is canonical, Gold is derived and regeneratable
+  subgraph REPORTS["Reports"]
+    direction LR
+    R_EXPORTS["Reports / Exports<br/>(pipeline/analysis/exports,<br/> pipeline/analysis/suite_report/*,<br/> pipeline/analysis/analytics_mart/*)"]
+    R_OUT["tables + packs + suite-level reports<br/>(SuiteReportAnalytics/, AnalyticsMart/)"]
+    R_EXPORTS -->|writes| R_OUT
+  end
+
+  %% Cross-component wiring (static dependencies + artifact flow)
+  CLI_LAYER --> PLAN
+  PLAN --> ORCH
+  MANIFESTS --> ORCH
+  MANIFESTS --> RECEIPTS
+
+  ORCH -->|python -m tools.scan_*| TOOL_ENTRY
+  RECEIPTS --> TOOL_ARTIFACTS
+
+  TOOL_ARTIFACTS --> ANA_FW
+  TOOL_ARTIFACTS --> ANA_OUT
+
+  ANA_FW --> R_EXPORTS
+  ANA_OUT --> R_OUT
