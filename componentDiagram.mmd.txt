@@ -1,0 +1,96 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif",
+    "fontSize": "16px"
+  },
+  "flowchart": { "nodeSpacing": 40, "rankSpacing": 60, "htmlLabels": true }
+}}%%
+
+flowchart LR
+  %% Durinn SAST Benchmark Pipeline — Component Diagram (final, contract pinned inside Tools)
+
+  %% ---- Styles ----
+  classDef comp fill:#ffffff,stroke:#111827,stroke-width:1px;
+  classDef store fill:#e8f4ff,stroke:#2563eb,stroke-width:1px;
+  classDef derived fill:#dbeafe,stroke:#1d4ed8,stroke-width:1px;
+  classDef contract fill:#fff7ed,stroke:#fb923c,stroke-width:1px,stroke-dasharray: 3 3;
+
+  %% ---- Legend ----
+  subgraph LEGEND["Legend"]
+    direction LR
+    LG1[<b>Code component</b>]:::comp
+    LG2[(<b>Persisted artifact</b>)]:::store
+    LG3[(<b>Derived output</b>)]:::derived
+    LG4[[<b>Contract / schema</b>]]:::contract
+  end
+  style LEGEND fill:#ffffff,stroke:#94a3b8,stroke-width:1px,stroke-dasharray: 4 4;
+
+  %% ---- CLI ----
+  subgraph CLI["CLI"]
+    direction TB
+    CLI_LAYER["<b>CLI layer</b><br/>sast_cli.py · cli/"]:::comp
+  end
+
+  %% ---- Suite planning ----
+  subgraph SUITE["Suite planning"]
+    direction LR
+    PLAN["<b>Planning / Resolver</b><br/>resolve.py · pipeline/suites/"]:::comp
+    MANIFESTS[(<b>Source-of-truth manifests</b><br/>suite.json · case.json · summary.csv<br/>runs/suites/...)]:::store
+    PLAN -.->|writes plan| MANIFESTS
+  end
+
+  %% ---- Execution ----
+  subgraph EXEC["Execution"]
+    direction LR
+    ORCH["<b>Execution / Orchestration</b><br/>pipeline/execution/<br/>run_case · plan · runner · record"]:::comp
+    RECEIPTS[(<b>Run receipts</b><br/>run.json · config_receipt.json<br/>run.json references logs/ if present)]:::store
+    ORCH -.->|writes| RECEIPTS
+  end
+
+  %% ---- Tools ----
+  subgraph TOOLS["Tools"]
+    direction LR
+
+    TOOL_ENTRY["<b>Entrypoints + adapters</b><br/>tools/scan_*.py · tools/&lt;tool&gt;/<br/>stable subprocess boundary"]:::comp
+
+    %% Keep contract in the Tools box, but move it away from the incoming "spawns" edge.
+    subgraph TOOL_STORE[" "]
+      direction TB
+      CONTRACT[[<b>Normalized contract</b><br/>normalized-schema.md]]:::contract
+      TOOL_RUN[(<b>Tool run artifacts</b><br/>raw.* · metadata.json · normalized.json<br/>tool_runs/&lt;tool&gt;/&lt;run_id&gt;/...)]:::store
+    end
+    style TOOL_STORE fill:transparent,stroke:transparent
+
+    TOOL_ENTRY -.->|writes| TOOL_RUN
+    CONTRACT -.->|schema for normalized.json| TOOL_RUN
+  end
+
+  %% ---- Analysis ----
+  subgraph ANALYSIS["Analysis"]
+    direction LR
+    ANA_FW["<b>Framework + stages</b><br/>pipeline/analysis/framework<br/>pipeline/analysis/stages/"]:::comp
+    ANA_OUT[(<b>Case analysis outputs</b><br/>cases/&lt;case_id&gt;/analysis/...)]:::derived
+    ANA_FW -.->|writes| ANA_OUT
+  end
+
+  %% ---- Reports ----
+  subgraph REPORTS["Reports"]
+    direction LR
+    R_EXPORTS["<b>Reports / Exports</b><br/>analysis/exports<br/>analysis/suite_report · analysis/analytics_mart"]:::comp
+    R_OUT[(<b>Suite outputs</b><br/>SuiteReportAnalytics/ · AnalyticsMart/)]:::derived
+    R_EXPORTS -.->|writes| R_OUT
+  end
+
+  %% ---- Wiring ----
+  CLI_LAYER --> PLAN
+  PLAN --> ORCH
+  MANIFESTS --> ORCH
+
+  ORCH -->|spawns| TOOL_ENTRY
+  RECEIPTS --> TOOL_RUN
+
+  TOOL_RUN --> ANA_FW
+  CONTRACT -.->|schema| ANA_FW
+
+  ANA_FW --> R_EXPORTS
