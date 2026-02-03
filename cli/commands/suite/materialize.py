@@ -7,18 +7,21 @@ from typing import Dict, List, Tuple
 
 from cli.common import derive_runs_repo_name, parse_csv
 from cli.suite_sources import (
+    _bootstrap_worktrees_from_repo_url,
     _case_id_from_pathlike,
     _discover_git_checkouts_under,
     _load_suite_cases_from_csv,
     _load_suite_cases_from_worktrees_root,
+    _parse_branches_spec,
     _resolve_repo_for_suite_case_interactive,
     _suite_case_from_repo_path,
 )
+
 from cli.ui import choose_from_menu, _parse_index_selection, _prompt_text
-from pipeline.core import ROOT_DIR as PIPELINE_ROOT_DIR
+from pipeline.core import ROOT_DIR as PIPELINE_ROOT_DIR, repo_id_from_repo_url
 from pipeline.models import CaseSpec
 from pipeline.scanners import DEFAULT_SCANNERS_CSV, SUPPORTED_SCANNERS
-from pipeline.suites.bundles import safe_name
+from pipeline.suites.bundles import anchor_under_repo_root, safe_name
 from pipeline.suites.layout import new_suite_id
 from pipeline.suites.suite_definition import (
     SuiteAnalysisDefaults,
@@ -29,6 +32,84 @@ from pipeline.suites.suite_definition import (
 
 
 ROOT_DIR = PIPELINE_ROOT_DIR
+
+
+def _add_cases_from_worktrees_root_interactively(
+    root: Path,
+    *,
+    cases: List[SuiteCase],
+    seen_case_ids: set[str],
+    default_select: str = "all",
+) -> int:
+    """Discover git checkouts under a worktrees root and add them as suite cases.
+
+    This powers both:
+      - "Add cases from local worktrees" (already cloned)
+      - "Bootstrap worktrees from repo URL + branches" (clone + add cases)
+
+    Notes
+    -----
+    - Excludes a top-level '_base' clone (used as the worktree anchor).
+    - Prompts the user to select which worktrees to include.
+    """
+
+    root = Path(root).expanduser().resolve()
+    discovered = _discover_git_checkouts_under(root)
+
+    # Filter out the base clone used to anchor worktrees.
+    repos: list[Path] = []
+    rels: list[str] = []
+    for repo_dir in discovered:
+        try:
+            rel = repo_dir.relative_to(root).as_posix()
+        except Exception:
+            rel = repo_dir.name
+        if repo_dir.name == "_base" or rel == "_base":
+            continue
+        repos.append(repo_dir)
+        rels.append(rel)
+
+    if not repos:
+        print(f"  ❌ No git checkouts found under: {root}")
+        return 0
+
+    print("\nDiscovered worktrees:")
+    for i, rel in enumerate(rels, start=1):
+        print(f"[{i}] {rel}")
+
+    raw_sel = _prompt_text(
+        "Select worktrees by number (e.g., 1,3-5) or 'all'", default=default_select
+    )
+    sel = _parse_index_selection(raw_sel, n=len(rels))
+    if not sel:
+        print("  ⚠️  No worktrees selected.")
+        return 0
+
+    added = 0
+    for i in sel:
+        rel = rels[i]
+        repo_dir = repos[i]
+
+        proposed_id = _case_id_from_pathlike(rel)
+        case_id = proposed_id
+        k = 2
+        while case_id in seen_case_ids:
+            case_id = f"{proposed_id}_{k}"
+            k += 1
+
+        sc = _suite_case_from_repo_path(
+            case_id=case_id,
+            repo_path=repo_dir,
+            label=rel,
+            branch=rel,
+        )
+
+        cases.append(sc)
+        seen_case_ids.add(case_id)
+        added += 1
+
+    return added
+
 
 
 def _parse_scanners_str(value: str) -> List[str]:
@@ -72,14 +153,52 @@ def _build_suite_interactively(
         action = choose_from_menu(
             "Add a case:",
             {
-                "add": "Add a new case",
-                "add_worktrees": "Add cases from local worktrees",
-                "add_csv": "Add cases from CSV file (legacy / CI)",
+                "add": "Add a case (preset / URL auto-clone / local path)",
+                "bootstrap_worktrees": "Bootstrap worktrees from repo URL + branches (clone + add cases)",
+                "add_worktrees": "Add cases from local worktrees (already cloned)",
+                "add_csv": "Add cases from CSV file (paths or URLs)",
                 "done": "Finish suite definition",
             },
         )
         if action == "done":
             break
+
+        if action == "bootstrap_worktrees":
+            # Clone + materialize branch worktrees, then add as many cases as desired.
+            repo_spec, label, _repo_id = _resolve_repo_for_suite_case_interactive(
+                repo_registry=repo_registry
+            )
+            if not repo_spec.repo_url:
+                print("  ❌ Worktree bootstrap requires a repo URL. Choose a preset or custom URL.")
+                continue
+
+            default_branches = "A01-A10" if "owasp" in str(label).lower() else "main"
+            raw_branches = _prompt_text(
+                "Branches to materialize (comma-separated; supports ranges like 'A01-A10')",
+                default=default_branches,
+            ).strip()
+            branches = _parse_branches_spec(raw_branches)
+            if not branches:
+                print("  ❌ No branches provided.")
+                continue
+
+            default_root = ROOT_DIR / "repos" / "worktrees" / repo_id_from_repo_url(str(repo_spec.repo_url))
+            root_in = _prompt_text("Worktrees root folder", default=str(default_root)).strip()
+            wt_root = anchor_under_repo_root(Path(root_in).expanduser())
+
+            wt_root = _bootstrap_worktrees_from_repo_url(
+                repo_url=str(repo_spec.repo_url),
+                branches=branches,
+                worktrees_root=wt_root,
+            )
+            print(f"🌿 Suite worktrees ready: {wt_root}")
+
+            added = _add_cases_from_worktrees_root_interactively(
+                wt_root, cases=cases, seen_case_ids=seen_case_ids
+            )
+            if added:
+                print(f"  ✅ Added {added} case(s) from bootstrapped worktrees.")
+            continue
 
         if action == "add_worktrees":
             # Discover git checkouts under repos/worktrees/<something> and add many cases at once.
@@ -105,54 +224,11 @@ def _build_suite_interactively(
                 entered = _prompt_text("Worktrees folder path", default=str(base)).strip()
                 root = Path(entered).expanduser().resolve()
 
-            discovered = _discover_git_checkouts_under(root)
-            if not discovered:
-                print(f"  ❌ No git checkouts found under: {root}")
-                continue
-
-            rels = []
-            for d in discovered:
-                try:
-                    rels.append(d.relative_to(root).as_posix())
-                except Exception:
-                    rels.append(d.name)
-
-            print("\nDiscovered worktrees:")
-            for i, rel in enumerate(rels, start=1):
-                print(f"[{i}] {rel}")
-
-            raw_sel = _prompt_text(
-                "Select worktrees by number (e.g., 1,3-5) or 'all'", default="all"
+            added = _add_cases_from_worktrees_root_interactively(
+                root, cases=cases, seen_case_ids=seen_case_ids
             )
-            sel = _parse_index_selection(raw_sel, n=len(rels))
-            if not sel:
-                print("  ⚠️  No worktrees selected.")
-                continue
-
-            added = 0
-            for i in sel:
-                rel = rels[i]
-                repo_dir = discovered[i]
-
-                proposed_id = _case_id_from_pathlike(rel)
-                case_id = proposed_id
-                k = 2
-                while case_id in seen_case_ids:
-                    case_id = f"{proposed_id}_{k}"
-                    k += 1
-
-                sc = _suite_case_from_repo_path(
-                    case_id=case_id,
-                    repo_path=repo_dir,
-                    label=rel,
-                    branch=rel,
-                )
-
-                cases.append(sc)
-                seen_case_ids.add(case_id)
-                added += 1
-
-            print(f"  ✅ Added {added} case(s) from worktrees.")
+            if added:
+                print(f"  ✅ Added {added} case(s) from worktrees.")
             continue
 
         if action == "add_csv":
@@ -217,6 +293,8 @@ def _build_suite_interactively(
 
         cases.append(SuiteCase(case=case, overrides=SuiteCaseOverrides()))
         print(f"  ✅ Added case: {case.case_id} ({label})")
+        if repo_spec.repo_url:
+            print("  ℹ️  This case uses a repo URL; it will be cloned automatically during scanner execution.")
 
     if not cases:
         raise SystemExit("Suite mode requires at least one case.")

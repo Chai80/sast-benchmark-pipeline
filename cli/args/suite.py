@@ -27,7 +27,7 @@ def add_suite_args(parser: argparse.ArgumentParser) -> None:
         "--cases-from",
         dest="cases_from",
         help=(
-            "(suite mode) Load cases from a CSV file (columns: case_id,repo_path[,label][,branch][,track][,tags_json]). "
+            "(suite mode) Load cases from a CSV file. Supported header columns include: case_id, repo_path (local) OR repo_url (git URL) OR repo_key (preset), plus optional label, branch, commit, track, tags_json (or tags), sonar_project_key, aikido_git_ref. "
             "Recommended locations: examples/suite_inputs/ (portable) or inputs/suite_inputs/ (local, ignored). "
             "Useful for CI runs or when you need an explicit case list."
         ),

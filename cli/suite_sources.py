@@ -497,6 +497,9 @@ def _load_suite_cases_from_worktrees_root(worktrees_root: Path) -> List[SuiteCas
     repos = _discover_git_checkouts_under(root)
     out: list[SuiteCase] = []
     for repo_dir in repos:
+        # Ignore the base clone used to anchor worktrees.
+        if repo_dir.name == "_base":
+            continue
         try:
             rel = repo_dir.relative_to(root).as_posix()
         except Exception:
