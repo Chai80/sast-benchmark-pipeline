@@ -1,0 +1,65 @@
+%%{init: {
+  "theme": "neutral",
+  "flowchart": { "curve": "linear", "nodeSpacing": 125, "rankSpacing": 165, "htmlLabels": true }
+}}%%
+
+flowchart LR
+
+  subgraph MAIN["Main Python process (suite mode)"]
+    direction LR
+    CLI["CLI<br/>parse args → suite runbook"]
+    RES["Suite resolver<br/>resolve plan + mkdirs"]
+
+    subgraph CASE["Per-case lifecycle (repeat per case)"]
+      direction TB
+      EXE["Execution / orchestration<br/>per-tool loop → spawn scan"]
+      REC["Record + manifests<br/>write receipts + update manifests"]
+      ANA["Analysis + exports (optional)<br/>runs unless --skip-analysis<br/>reads normalized.json → writes analysis/"]:::optional
+
+      EXE --> REC
+      REC -.->|if analysis enabled| ANA
+    end
+
+    CLI --> RES --> EXE
+  end
+
+  subgraph SUB["Tool subprocess (per tool)"]
+    direction TB
+    TOOL["tools/scan_TOOL.py<br/>write raw + metadata + normalized.json"]
+  end
+
+  subgraph FS["runs/suites/SUITE_ID/ (system of record)"]
+    direction TB
+    MAN[(Manifests<br/>suite.json<br/>cases/*/case.json<br/>summary.csv)]
+    RUNS[(Tool runs<br/>cases/*/tool_runs/TOOL/RUN_ID/<br/>raw.* + metadata.json + normalized.json<br/>run.json + config_receipt.json)]
+    DER[(Derived outputs<br/>cases/*/analysis/*<br/>optional: suite analysis/_tables/*)]
+  end
+
+  %% --- Manifests port (keeps top edges clean)
+  MAN_IO[" "]:::spacer
+  RES -->|write suite.json plan| MAN_IO
+  REC -->|update manifests| MAN_IO
+  MAN_IO --> MAN
+
+  %% --- Tool runs ports: separate READ vs WRITE to avoid confusing fan-in
+  RUNS_READ["READ"]:::port
+  RUNS_WRITE["WRITE"]:::port
+
+  %% Control flow to tool
+  EXE -->|spawn scan per tool| TOOL
+
+  %% Writes into tool runs (no junction pile-up)
+  TOOL -->|write tool outputs| RUNS_WRITE
+  REC  -->|write receipts| RUNS_WRITE
+  RUNS_WRITE --> RUNS
+
+  %% Reads from tool runs (kept separate)
+  ANA -.->|read normalized.json| RUNS_READ
+  RUNS_READ --> RUNS
+
+  %% Derived outputs
+  ANA -->|write derived outputs| DER
+
+  classDef optional stroke-dasharray: 5 5;
+  classDef spacer fill:transparent,stroke:transparent,color:transparent;
+  classDef port stroke-dasharray: 2 2;

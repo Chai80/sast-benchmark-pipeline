@@ -10,7 +10,7 @@ and evaluates top‑K triage quality.
 
 ---
 
-## What this repo demonstrates (hiring-manager signal)
+## What this repo demonstrates
 
 - **Reproducible runs**: one run folder per experiment (`runs/suites/<suite_id>/`) with pinned manifests (`suite.json`, `case.json`, `run.json`)
 - **Tool-agnostic normalization**: scanner outputs → `normalized.json` (stable schema, consumed by analysis)
